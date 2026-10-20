@@ -4,7 +4,7 @@ Standalone Windows/Linux installations now include an optional **SFTP-only SSH s
 
 ## Configure
 
-1. Open **Project → File Import/Export → SFTP Server → Settings** as a site administrator.
+1. Open **Project → File Import/Export → SFTP Server → Server settings** as a site administrator.
 2. Choose the bind IP and port (default `0.0.0.0:2222`, allowed range 1–65535). Ports below 1024 may need additional operating-system permission on Linux; prefer 2222 and firewall forwarding rather than running MeterFlo as root. Specify the actual customer-facing DNS name or IP, without a scheme/path/port. Enabling the server starts it; disabling disconnects all customers across all projects. Settings are shared by the instance, not separate listeners per project.
 3. Allow the chosen TCP port through Windows Firewall or the Linux firewall. Configure NAT/port forwarding if necessary. MeterFlo does not modify firewall rules, DNS, certificates, routers, or Windows service configuration. Prefer a firewall allowlist of customer source networks.
 4. The application/service account needs write access to the configured project FTP root and `.meterflo-sftp` under MeterFlo's working directory. Use a local filesystem supporting atomic hard links (for example NTFS or ext4); unsupported storage fails explicitly rather than exposing partial uploads.
@@ -22,6 +22,16 @@ The server uses its own persistent Ed25519 host key in `.meterflo-sftp/host_ed25
 - Shell, exec, SSH forwarding/tunnels, agent forwarding, filesystem links, and other subsystems are unavailable. Limits include 64 concurrent connections, four per peer, one session per connection, 16 open file/directory handles, bounded request queues, authentication timeout, idle timeout, and peer authentication throttling.
 
 Example: `sftp -P 2222 customer_project@files.example.com`, then `put orders_20261020.csv /incoming/orders_20261020.csv` or `get /outgoing/ACTUAL_GENERATED_FILENAME.csv`. Replace the example hostname, username, and filenames with the copied project instructions. Verify the server fingerprint before trusting the connection; never disable host-key checking in customer scripts.
+
+## FileZilla navigation and Windows updates
+
+Use **SFTP — SSH File Transfer Protocol**, the configured port and a MeterFlo project transfer account in FileZilla Site Manager. Compare its host fingerprint with MeterFlo. Leave the default remote directory blank or set it to `/`; do not enter a Windows drive path or the physical Project FTP Files path. The virtual root lists only folders granted to this account; `/incoming` intentionally lists no uploaded files.
+
+Current-directory requests such as `/.`, `//.`, `/incoming/.`, repeated separators inside a virtual path, and `/incoming/..` resolve within this project's virtual tree. Parent navigation above `/`, unknown intermediate folders, network/drive paths and paths through a filename remain denied. A path alias never grants upload/download access.
+
+If login succeeds but Activity shows failed **realpath/opendir** with the old **“Parent paths are not permitted”** message, the instance may still be running the old path validator. Update the standalone instance using the existing tracked Windows updater, complete its build and restart, and disconnect/reconnect FileZilla. For an existing PM2 installation, `pm2 restart meterflo` restarts the app after a successful update; `pm2 logs meterflo` and `pm2 describe meterflo` help confirm the running instance. Restart alone does not install changed code. Preserve `.meterflo-sftp` and verify that the fingerprint has not changed.
+
+No manual FTP-folder creation, operating-system SFTP user or broad Windows permission grant fixes a virtual-root path rejection. MeterFlo creates the physical project folder when needed; its service identity still needs the documented filesystem access for actual uploads/downloads. Account expiry/revocation, inactive/locked projects and disabled listener settings remain independent causes of denied operations.
 
 ## Status, history, and recovery
 

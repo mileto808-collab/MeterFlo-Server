@@ -101,6 +101,7 @@ export function ProjectColumnGuide({ projectId, mode, guide: suppliedGuide }: { 
           </details>
         </article>)}
       </div>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Built-in SFTP uses virtual folders, not Windows paths: /incoming accepts uploads and /outgoing exposes generated local exports according to the account permissions. FileZilla current-directory navigation does not change the columns or validation rules shown here.</p>
       <div className="mt-3 rounded border border-amber-700/15 bg-amber-50/60 p-2.5 text-xs leading-relaxed text-amber-950">
         <Rows3 className="mr-1 inline h-3.5 w-3.5" /><strong>Database nullability is not import validation.</strong> Required/conditional/generated/managed labels describe this route’s application behavior. Managed fields are supplied by MeterFlo; generated values may be filled when omitted; export-only/internal columns are not import inputs. Database defaults and nullable flags describe the installed schema only.
       </div>

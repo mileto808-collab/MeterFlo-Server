@@ -32,6 +32,23 @@ const { Client, utils } = require("ssh2");
     return client;
   };
   const call = (sftp, method, ...args) => new Promise((resolve, reject) => sftp[method](...args, (error, value) => error ? reject(error) : resolve(value)));
+  const directoryEntries = async (wire, location) => {
+    const handle = await call(wire, "opendir", location);
+    const entries = [];
+    try {
+      while (true) {
+        let batch;
+        try { batch = await call(wire, "readdir", handle); }
+        catch (error) {
+          if (error.code === 1) break; // ssh2 reports the protocol EOF status as an error.
+          throw error;
+        }
+        if (batch === false) break;
+        entries.push(...batch);
+      }
+    } finally { await call(wire, "close", handle); }
+    return entries.map(row => row.filename).sort();
+  };
   async function finished(runId) {
     for (let attempt = 0; attempt < 90; attempt++) {
       const row = (await json("GET", base + "/history?direction=export")).rows.find(r => r.exportRunId === runId);
@@ -70,13 +87,35 @@ const { Client, utils } = require("ssh2");
     const raw = sftp.sftp;
     assert.deepEqual((await sftp.list("/")).map(r => r.name).sort(), ["incoming", "outgoing"]);
     assert.deepEqual(await sftp.list("/incoming"), []);
+    // Raw wire replay: high-level clients often normalize these paths before transmitting them.
+    // The Windows screenshot does not contain the exact request; exercise each plausible alias.
+    for (const location of ["/.", "/./", "//.", "//./", "./.", "/incoming/..", "/outgoing/../."]) {
+      assert.equal(await call(raw, "realpath", location), "/", location);
+      assert.deepEqual(await directoryEntries(raw, location), ["incoming", "outgoing"], location);
+      assert.ok((await call(raw, "stat", location)).isDirectory());
+      assert.ok((await call(raw, "lstat", location)).isDirectory());
+    }
+    for (const location of ["./incoming/.", "/incoming//./", "/outgoing/../incoming/"]) {
+      assert.equal(await call(raw, "realpath", location), "/incoming");
+      assert.deepEqual(await directoryEntries(raw, location), []);
+    }
+    const safeDiscovery = await json("GET", root + "/events?report=1");
+    assert.ok(!safeDiscovery.rows.some(row => ["realpath", "opendir", "stat", "lstat"].includes(row.action) && row.status === "failed"));
+    for (const location of ["/..", "/incoming/../../outgoing", "//server/share", "C:/Windows",
+      "\\\\server\\share", "/unknown/../incoming", "/incoming/a.csv/.."]) {
+      for (const operation of ["realpath", "stat", "lstat", "opendir"])
+        await assert.rejects(call(raw, operation, location), `${operation} must deny ${location}`);
+    }
     await assert.rejects(sftp.get("/../../etc/passwd"));
     await assert.rejects(sftp.put(Buffer.from("no"), "/outgoing/not_allowed.csv"));
     await assert.rejects(sftp.mkdir("/incoming/child"));
     await assert.rejects(sftp.put(Buffer.from("no"), "/incoming/not_allowed.exe"));
     const filename = `customer_${randomUUID()}.csv`;
     const csv = Buffer.from('wo,customer,name,address,service\nINBOUND-SFTP-1,C-1,Owned customer,100 Test St,workspace-fixture\n');
-    await sftp.put(csv, "/incoming/" + filename);
+    // File OPEN uses the same canonical resolver as discovery; writes cannot bypass custody rules.
+    const aliasHandle = await call(raw, "open", "/./incoming//./" + filename, "w");
+    await call(raw, "write", aliasHandle, csv, 0, csv.length, 0);
+    await call(raw, "close", aliasHandle);
     await assert.rejects(sftp.put(Buffer.from("replacement"), "/incoming/" + filename), "Never overwrite a prior upload");
     await assert.rejects(sftp.get("/incoming/" + filename), "Inbox is upload-only");
     await assert.rejects(sftp.rename("/incoming/" + filename, "/incoming/renamed.csv"));
@@ -102,6 +141,12 @@ const { Client, utils } = require("ssh2");
     const run = await json("POST", base + `/exports/${config.id}/run`, {}, 202), exported = await finished(run.id);
     assert.ok((await sftp.list("/outgoing")).some(r => r.name === exported.fileName));
     assert.match((await sftp.get("/outgoing/" + exported.fileName)).toString(), /INBOUND-SFTP-1/);
+    const readAlias = await call(raw, "open", "./outgoing//./" + exported.fileName, "r");
+    const downloadBytes = Buffer.alloc(4096);
+    const bytesRead = await new Promise((resolve, reject) => raw.read(readAlias, downloadBytes, 0, downloadBytes.length, 0,
+      (error, count) => error ? reject(error) : resolve(count)));
+    assert.match(downloadBytes.subarray(0, bytesRead).toString(), /INBOUND-SFTP-1/);
+    await call(raw, "close", readAlias);
     otherProject = await json("POST", "/api/projects", { name: "Owned isolated SFTP " + randomUUID() }, 201);
     const otherRoot = `/api/projects/${otherProject.id}/file-transfers/sftp-server`;
     const other = await json("POST", otherRoot + "/accounts", accountBody({ canUpload: false }), 201), isolated = await connect(other);
@@ -109,6 +154,14 @@ const { Client, utils } = require("ssh2");
     await assert.rejects(isolated.get("/outgoing/" + exported.fileName), "Another project cannot read this project's exports");
     await isolated.end();
     const dl = await connect(download), up = await connect(upload);
+    assert.deepEqual(await directoryEntries(dl.sftp, "/."), ["outgoing"]);
+    assert.deepEqual(await directoryEntries(up.sftp, "/./"), ["incoming"]);
+    for (const operation of ["realpath", "stat", "lstat", "opendir"]) {
+      await assert.rejects(call(dl.sftp, operation, "/incoming/."), "Download-only cannot discover inbox");
+      await assert.rejects(call(up.sftp, operation, "/outgoing/."), "Upload-only cannot discover outbox");
+    }
+    await assert.rejects(call(dl.sftp, "open", "/outgoing/../incoming/denied.csv", "w"));
+    await assert.rejects(call(up.sftp, "open", "/incoming/../outgoing/" + exported.fileName, "r"));
     await assert.rejects(dl.put(csv, "/incoming/denied.csv"));
     await assert.rejects(up.get("/outgoing/" + exported.fileName));
     const pc = await connect(pwd, { privateKey: undefined, password });

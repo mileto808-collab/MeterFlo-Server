@@ -9,20 +9,12 @@ import { pool } from "../db";
 import { withBackupExclusive } from "../backups/lock";
 import { activeSftpAccount, sftpEvent } from "./embedded-service";
 import { TransferError } from "./sftp";
+import { sftpVirtualPath } from "./virtual-path";
+export { sftpVirtualPath } from "./virtual-path";
 const STATUS = utils.sftp.STATUS_CODE;
 const MAX = 25 * 1024 * 1024;
 type Handle = { file?: fs.FileHandle; stage?: string; target?: string; name?: string; size: number; offset: number;
   mode: "read" | "write" | "directory"; entries?: any[] };
-export function sftpVirtualPath(value: string) {
-  if (value === "." || value === "" || value === "/") return "/";
-  if (value.length > 250 || /[\\\x00-\x1f]/.test(value)) throw new TransferError("Invalid virtual path.", 403);
-  const full = value.startsWith("/") ? value : "/" + value;
-  if (full.split("/").some(part => part === ".." || part === ".")) throw new TransferError("Parent paths are not permitted.", 403);
-  if (full === "/incoming" || full === "/incoming/" || full === "/outgoing" || full === "/outgoing/") return full.replace(/\/$/, "");
-  if (!/^\/(incoming|outgoing)\/[A-Za-z0-9][A-Za-z0-9 ._-]{0,179}\.(csv|xlsx?|json)$/i.test(full))
-    throw new TransferError("Only CSV, XLS, XLSX and JSON files in the project inbox/outbox are available.", 403);
-  return full;
-}
 const attrs = (directory: boolean, size = 0, modified = Date.now()) => ({
   mode: directory ? 0o40700 : 0o100600, uid: 0, gid: 0, size,
   atime: Math.floor(modified / 1000), mtime: Math.floor(modified / 1000),
@@ -51,6 +43,13 @@ export function serveSftpFiles(stream: SFTPWrapper, accountId: string) {
     if (!found) throw new TransferError("Unknown file handle.", 400);
     return found;
   };
+  const authorizePath = (account: any, value: string) => {
+    const virtual = sftpVirtualPath(value);
+    if ((virtual === "/incoming" || virtual.startsWith("/incoming/")) && !account.can_upload ||
+      (virtual === "/outgoing" || virtual.startsWith("/outgoing/")) && !account.can_download)
+      throw new TransferError("Directory unavailable for this account.", 403);
+    return virtual;
+  };
   const putHandle = (entry: Handle) => {
     const id = Buffer.from(randomUUID());
     handles.set(id.toString("hex"), entry);
@@ -75,12 +74,12 @@ export function serveSftpFiles(stream: SFTPWrapper, accountId: string) {
       }).catch(() => { ended = true; stream.destroy(); }).finally(() => { pending--; });
     });
   };
-  request("REALPATH", async (_a, id, value) => {
-    const name = sftpVirtualPath(value);
+  request("REALPATH", async (account, id, value) => {
+    const name = authorizePath(account, value);
     stream.name(id, [{ filename: name, longname: name, attrs: attrs(["/", "/incoming", "/outgoing"].includes(name)) }]);
   });
   const stat = async (account: any, id: number, value: string) => {
-    const virtual = sftpVirtualPath(value);
+    const virtual = authorizePath(account, value);
     if (["/", "/incoming", "/outgoing"].includes(virtual)) return void stream.attrs(id, attrs(true));
     const name = virtual.split("/")[2];
     if (virtual.startsWith("/incoming/")) {
@@ -96,7 +95,7 @@ export function serveSftpFiles(stream: SFTPWrapper, accountId: string) {
   request("STAT", stat); request("LSTAT", stat);
   request("OPENDIR", async (account, id, value) => {
     if (handles.size >= 16) throw new TransferError("Too many open handles.");
-    const virtual = sftpVirtualPath(value);
+    const virtual = authorizePath(account, value);
     let names: string[];
     if (virtual === "/") names = [account.can_upload ? "incoming" : "", account.can_download ? "outgoing" : ""].filter(Boolean);
     else if (virtual === "/incoming" && account.can_upload) names = [];
@@ -124,7 +123,7 @@ export function serveSftpFiles(stream: SFTPWrapper, accountId: string) {
   });
   request("OPEN", async (account, id, value: string, flags: number) => {
     if (handles.size >= 16) throw new TransferError("Too many open handles.");
-    const virtual = sftpVirtualPath(value), name = virtual.split("/")[2], folder = await safeFolder(account);
+    const virtual = authorizePath(account, value), name = virtual.split("/")[2], folder = await safeFolder(account);
     const F = utils.sftp.OPEN_MODE;
     if (!name) throw new TransferError("Choose a file, not a directory.");
     if (virtual.startsWith("/incoming/") && account.can_upload && (flags & F.WRITE) &&
