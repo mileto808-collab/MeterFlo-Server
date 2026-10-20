@@ -2675,6 +2675,7 @@ export default function ProjectWorkOrders() {
             wizardMode: (project?.wizardMode as "changeout" | "reading_only" | "user_choice") ?? "changeout",
             gpsMode: (project?.wizardGpsMode as "automatic" | "manual_step" | "disabled") ?? "automatic",
             gpsMaxAccuracyMetres: project?.wizardGpsMaxAccuracyMetres ?? null,
+            reuseOldGps: project?.wizardReuseOldGps ?? false,
             timezone: project?.timezone,
             showNotesStep: project?.wizardShowNotesStep ?? true,
             showBeforePhotosStep: project?.wizardShowBeforePhotosStep ?? true,

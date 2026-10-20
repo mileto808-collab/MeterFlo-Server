@@ -21,11 +21,16 @@ import { schedulingDto, validateVisitScheduling, schedulingDefaultsSchema } from
 import { installGpsColumns } from "./gpsSchema";
 import { installWorkOrderLifecycle } from "./work-order-lifecycle/schema";
 import { closingPolicySchema } from "./work-order-lifecycle/service";
-import { gpsFixDto, gpsMetadataUpdate, completionGpsFix, validateGpsFix, gpsAccuracyError, type GpsFix } from "../shared/gps-capture";
+import { gpsFixDto, gpsMetadataUpdate, completionGpsFix, validateGpsFix, gpsAccuracyError, reusedOldGpsFix, sameCoordinates, type GpsFix } from "../shared/gps-capture";
 
-async function requireGpsAccuracy(client: Pick<PoolClient, "query">, schema: string, fix: GpsFix | null) {
+async function requireGpsAccuracy(client: Pick<PoolClient, "query">, schema: string, fix: GpsFix | null, oldGps?: string | null) {
   const { rows: [configuration] } = await client.query(
-    "SELECT wizard_gps_mode,wizard_gps_max_accuracy_metres FROM public.projects WHERE database_name=$1", [schema]);
+    "SELECT wizard_gps_mode,wizard_gps_max_accuracy_metres,wizard_reuse_old_gps FROM public.projects WHERE database_name=$1", [schema]);
+  if (fix?.source === "reused_old") {
+    const authorized = reusedOldGpsFix({ wizardReuseOldGps: configuration?.wizard_reuse_old_gps }, { oldGps });
+    if (authorized && sameCoordinates(authorized.coordinates, fix.coordinates)) return;
+    throw Object.assign(new Error("Old GPS reuse is not authorized for these coordinates."), { status: 400, code: "GPS_CAPTURE" });
+  }
   if (configuration?.wizard_gps_mode === "disabled") return;
   const message = gpsAccuracyError(fix, configuration?.wizard_gps_max_accuracy_metres);
   if (message) throw Object.assign(new Error(message), { status: 400, code: "GPS_ACCURACY" });
@@ -770,7 +775,7 @@ export class ProjectWorkOrderStorage {
       await client.query("BEGIN");
       await lockInventoryForSchema(client, this.schemaName);
       if (status === "Completed" && !ordinaryImport)
-        await requireGpsAccuracy(client, this.schemaName, validateGpsFix(workOrder.gpsCapture, workOrder.newGps));
+        await requireGpsAccuracy(client, this.schemaName, validateGpsFix(workOrder.gpsCapture, workOrder.newGps), workOrder.oldGps);
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
          (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
@@ -1264,7 +1269,7 @@ export class ProjectWorkOrderStorage {
         .some(key => gpsUpdate.fix![key] !== previousFix?.[key]);
       if (!ordinaryImport && ((updates.status === "Completed" && beforeGps?.status !== "Completed") ||
           (beforeGps?.status === "Completed" && (gpsUpdate.changed || proofChanged))))
-        await requireGpsAccuracy(client, this.schemaName, completionFix);
+        await requireGpsAccuracy(client, this.schemaName, completionFix, beforeGps?.old_gps);
       for (const [key, column] of Object.entries({
         serviceDurationMinutes: "service_duration_minutes",
         appointmentWindowStart: "appointment_window_start",

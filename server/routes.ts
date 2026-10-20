@@ -1,5 +1,5 @@
 import type { Express, RequestHandler } from "express";
-import { gpsSubmissionProblem, gpsFixDto } from "../shared/gps-capture";
+import { gpsSubmissionProblem, gpsFixDto, applyOldGpsReuse, reusedOldGpsFix } from "../shared/gps-capture";
 import { registerBackupRoutes } from "./backups/routes";
 import { registerSupportRoutes } from "./supportRequests";
 import { registerRoutingRoutes } from "./routing/routes";
@@ -1773,6 +1773,7 @@ export async function registerRoutes(
             name: parsed.data.name, description: parsed.data.description, customerEmail: parsed.data.customerEmail,
             inventoryEnabled: parsed.data.inventoryEnabled ?? false,
             wizardGpsMode: parsed.data.wizardGpsMode,
+            wizardReuseOldGps: parsed.data.wizardReuseOldGps ?? false,
             wizardGpsMaxAccuracyMetres: parsed.data.wizardGpsMaxAccuracyMetres ?? null,
             defaultServiceMinutes: parsed.data.defaultServiceMinutes,
             defaultAppointmentToleranceMinutes: parsed.data.defaultAppointmentToleranceMinutes,
@@ -1854,6 +1855,7 @@ export async function registerRoutes(
         timezone: sourceProject.timezone ?? undefined,
         wizardMode,
         wizardGpsMode,
+        wizardReuseOldGps: sourceProject.wizardReuseOldGps ?? false,
         wizardGpsMaxAccuracyMetres: sourceProject.wizardGpsMaxAccuracyMetres ?? null,
         ...getReadingPrecision(sourceProject),
         wizardShowNotesStep: sourceProject.wizardShowNotesStep ?? true,
@@ -2788,7 +2790,7 @@ export async function registerRoutes(
       if (["23514","23503","22P02"].includes((error as any)?.code))
         return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
-      if ((error as any)?.code === "GPS_ACCURACY") return res.status(400).json({ message: (error as Error).message, code: "GPS_ACCURACY" });
+      if (["GPS_ACCURACY", "GPS_CAPTURE"].includes((error as any)?.code)) return res.status(400).json({ message: (error as Error).message, code: (error as any).code });
       res.status(500).json({ message: "Failed to create work order" });
     }
   });
@@ -2900,6 +2902,8 @@ export async function registerRoutes(
         return res.status(409).json({ message: "Confirm the reset using the work order reset dialog before reopening this work order" });
       }
       if (finalStatus === "Completed") {
+        const reusedGps = reusedOldGpsFix(project, existingWorkOrder);
+        if (reusedGps) Object.assign(req.body, { newGps: reusedGps.coordinates, gpsCapture: reusedGps });
         const mergedData = { ...existingWorkOrder, ...req.body };
         const missingFields: string[] = [];
         
@@ -3033,7 +3037,7 @@ export async function registerRoutes(
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
-      if ((error as any)?.code === "GPS_ACCURACY") return res.status(400).json({ message: (error as Error).message, code: "GPS_ACCURACY" });
+      if (["GPS_ACCURACY", "GPS_CAPTURE"].includes((error as any)?.code)) return res.status(400).json({ message: (error as Error).message, code: (error as any).code });
       if (error instanceof z.ZodError) return res.status(400).json({ message: "Invalid visit scheduling fields.", errors: error.issues });
       if ((error as any)?.code === "23514" || (error as any)?.code === "23503" || (error as any)?.code === "22P02")
         return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
@@ -4061,6 +4065,7 @@ export async function registerRoutes(
       
       // Parse the changeout data
       const changeoutData = JSON.parse(req.body.data || "{}");
+      if (changeoutData.canChange) applyOldGpsReuse(project, workOrder, changeoutData);
       const gpsProblem = changeoutData.canChange && gpsSubmissionProblem(project, changeoutData.gpsCoordinates, changeoutData.gpsCapture, workOrder);
       if (gpsProblem) return res.status(400).json(gpsProblem);
       const {
@@ -4268,7 +4273,7 @@ export async function registerRoutes(
           }
         }
         
-        if (gpsCoordinates && project.wizardGpsMode !== "disabled") {
+        if (gpsCoordinates && (project.wizardGpsMode !== "disabled" || changeoutData.gpsCapture?.source === "reused_old")) {
           updateData.newGps = gpsCoordinates;
           updateData.gpsCapture = changeoutData.gpsCapture ?? null;
         }
@@ -4419,7 +4424,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error processing system changeout:", error);
-      if (error.code === "GPS_ACCURACY") return res.status(400).json({ message: error.message, code: error.code });
+      if (["GPS_ACCURACY", "GPS_CAPTURE"].includes(error.code)) return res.status(400).json({ message: error.message, code: error.code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to process system changeout" });
     }
@@ -9264,8 +9269,9 @@ export async function registerRoutes(
             count: result.rows.length,
             projectId,
             projectName: project.name,
-            gpsContractVersion: 1,
+            gpsContractVersion: 2,
             wizardGpsMode: project.wizardGpsMode ?? "automatic",
+            wizardReuseOldGps: project.wizardReuseOldGps ?? false,
             wizardGpsMaxAccuracyMetres: project.wizardGpsMaxAccuracyMetres ?? null,
             visitSchedulingContractVersion: 1,
             timezone: project.timezone || await storage.getSetting("default_timezone") || "America/Denver",
@@ -9614,6 +9620,7 @@ export async function registerRoutes(
       
       // Parse changeout data from request
       const changeoutData = JSON.parse(req.body.data || "{}");
+      if (changeoutData.canChange) applyOldGpsReuse(project, workOrder, changeoutData);
       const gpsProblem = changeoutData.canChange && gpsSubmissionProblem(project, changeoutData.gpsCoordinates, changeoutData.gpsCapture, workOrder);
       if (gpsProblem) return res.status(400).json(gpsProblem);
       const {
@@ -9724,7 +9731,7 @@ export async function registerRoutes(
         updateData.oldSystemReading = String(oldSystemReading).trim();
         updateData.newSystemId = newSystemId;
         updateData.newSystemReading = String(newSystemReading).trim();
-        if (gpsCoordinates && project.wizardGpsMode !== "disabled") {
+        if (gpsCoordinates && (project.wizardGpsMode !== "disabled" || changeoutData.gpsCapture?.source === "reused_old")) {
           updateData.newGps = gpsCoordinates;
           updateData.gpsCapture = changeoutData.gpsCapture ?? null;
         }
@@ -9791,7 +9798,7 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error completing mobile system changeout:", error);
-      if ((error as any)?.code === "GPS_ACCURACY") return res.status(400).json({ message: (error as Error).message, code: "GPS_ACCURACY" });
+      if (["GPS_ACCURACY", "GPS_CAPTURE"].includes((error as any)?.code)) return res.status(400).json({ message: (error as Error).message, code: (error as any).code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to complete system changeout" });
     }
@@ -9979,7 +9986,7 @@ export async function registerRoutes(
       const newModuleId = body.newModuleId ?? body.new_module_id;
       const oldModuleType = body.oldModuleType ?? body.old_module_type;
       const newModuleType = body.newModuleType ?? body.new_module_type;
-      const gpsCoordinates = body.gpsCoordinates ?? body.newGps ?? body.new_gps;
+      let gpsCoordinates = body.gpsCoordinates ?? body.newGps ?? body.new_gps;
       const signatureData = body.signatureData ?? body.signature_data;
       const signatureName = body.signatureName ?? body.signature_name;
       const completedAt = body.completedAt ?? body.completed_at;
@@ -10014,6 +10021,8 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
+      const reusedGps = applyOldGpsReuse(project, workOrder, body);
+      if (reusedGps) gpsCoordinates = reusedGps.coordinates;
       const folderName = workOrder.customerWoId || String(workOrder.id);
       const updatedByUsername = currentUser.username || currentUser.id;
       
@@ -10228,7 +10237,7 @@ export async function registerRoutes(
         }
       }
       
-      if (gpsCoordinates && project.wizardGpsMode !== "disabled") {
+      if (gpsCoordinates && (project.wizardGpsMode !== "disabled" || body.gpsCapture?.source === "reused_old")) {
         updateData.newGps = gpsCoordinates;
         updateData.gpsCapture = body.gpsCapture ?? null;
       }
@@ -10270,7 +10279,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error in project-scoped mobile complete endpoint:", error);
-      if (error.code === "GPS_ACCURACY") return res.status(400).json({ message: error.message, code: error.code });
+      if (["GPS_ACCURACY", "GPS_CAPTURE"].includes(error.code)) return res.status(400).json({ message: error.message, code: error.code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to complete system changeout" });
     }

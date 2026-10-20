@@ -55,7 +55,7 @@
 - [Project timezone display](project-timezone-display.md) — project-related dates and times inherit the project's timezone, including inventory receipts and detail history.
 - [Work-order display identity](work-order-display-identity.md) — display the customer work-order ID; fall back to the internal number only when empty, without changing relational IDs.
 - [Inventory activity histories](inventory-activity-histories.md) — one summary for related transactions, including batches; expandable, printable full history without changing the ledger.
-- [GPS capture priority](gps-capture-priority.md) — device GPS first, browser location last; target Android/iOS phones and tablets and Windows/Linux laptops.
+- [GPS capture priority](gps-capture-priority.md) — device GPS first, browser last; explicit project opt-in may reuse approved old GPS without acquisition.
 - [Scheduled backup scope](scheduled-backup-scope.md) — standalone and hosted backups; durable hosted storage and explicit schedule re-enablement after portable restores.
 - [Project file transfers](file-transfer-scope.md) — additive transfers, independent export scope, and required on-screen help checks against live tables for every import/export change.
 - [Orientation verification](orientation-verification.md) — verify settled touch-landscape controls with viewport screenshots; full-page capture alone can misrepresent the responsive state.

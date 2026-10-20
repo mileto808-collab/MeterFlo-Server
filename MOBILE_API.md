@@ -2,6 +2,24 @@
 
 ## GPS capture contract
 
+Contract version 2 adds `meta.wizardReuseOldGps` (default `false`) and the
+`gpsCapture.source` value `reused_old`. See the reuse policy below; this is not a fresh capture.
+
+When **Reuse old GPS** is enabled and the work order has valid `oldGps`, the
+native wizard must skip its GPS step and all background device/browser capture,
+use the old coordinates as new GPS, and display “Reused from old equipment” in
+review. Send `gpsCapture` with source `reused_old`, `accuracy: null`,
+`capturedAt: null`, and `receiver: "unknown"`. The server derives coordinates from
+the stored order rather than trusting submitted reuse coordinates. Missing or
+invalid old GPS falls back to the existing capture mode and accuracy policy.
+Trouble reports do not capture or reuse GPS. Reuse takes precedence over the
+capture mode, including disabled mode. Existing capture accuracy requirements
+are retained for fallback, but cannot be applied to an approved reused position.
+
+The Expo application is maintained separately: it must consume this policy before
+it can suppress its own location calls. Server handling alone cannot stop an
+older native app from requesting location.
+
 Project-scoped sync download exposes `gpsCapture` on work orders and
 `meta.gpsContractVersion`, `meta.wizardGpsMode`, `meta.wizardGpsMaxAccuracyMetres`,
 and the existing project timezone. Keep capture timestamps when uploading offline

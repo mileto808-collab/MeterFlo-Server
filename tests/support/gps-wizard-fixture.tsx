@@ -11,6 +11,7 @@ const query = new URLSearchParams(location.search);
 const settings: any = {
   wizardMode: query.get("workflow") || "changeout",
   gpsMode: query.get("mode") || "automatic",
+  reuseOldGps: query.get("reuse") === "true",
   gpsMaxAccuracyMetres: query.has("limit") ? Number(query.get("limit")) : null,
   timezone: "America/New_York",
   showNotesStep: false, showBeforePhotosStep: false, showAfterPhotosStep: false, showSignatureStep: false,
@@ -34,7 +35,7 @@ function Fixture() {
       }}
       projectId={3} workOrderId={id} customerWoId="GPS-TEST" serviceType="Electric"
       oldSystemId="OLD-SYSTEM" oldSystemType="E360" newSystemType="E460"
-      existingGps={query.get("saved") || undefined} oldGps="40, -80"
+      existingGps={query.get("saved") || undefined} oldGps={query.has("old") ? query.get("old") || undefined : "40, -80"}
       address="GPS fixture" wizardConfig={settings} />
     <Toaster />
   </TooltipProvider></QueryClientProvider>;

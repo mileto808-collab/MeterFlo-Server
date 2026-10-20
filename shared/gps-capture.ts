@@ -3,7 +3,7 @@ import { z } from "zod";
 export const gpsAccuracyLimitSchema = z.number().finite().positive().max(100000).nullable();
 export const gpsFixSchema = z.object({
   coordinates: z.string().max(100),
-  source: z.enum(["native", "browser", "manual", "existing", "geocode"]),
+  source: z.enum(["native", "browser", "manual", "existing", "geocode", "reused_old"]),
   accuracy: z.number().finite().nonnegative().nullable(),
   capturedAt: z.string().datetime({ offset: true }).nullable(),
   receiver: z.enum(["internal", "external", "unknown"]),
@@ -27,6 +27,21 @@ export function parseCoordinates(value: unknown): [number, number] | null {
 export function sameCoordinates(left: unknown, right: unknown): boolean {
   const a = parseCoordinates(left), b = parseCoordinates(right);
   return !!a && !!b && a[0] === b[0] && a[1] === b[1];
+}
+
+export function reusedOldGpsFix(policy: { wizardReuseOldGps?: boolean | null },
+  workOrder?: { oldGps?: string | null; old_gps?: string | null }): GpsFix | null {
+  const coordinates = workOrder?.oldGps ?? workOrder?.old_gps;
+  if (!policy.wizardReuseOldGps || !parseCoordinates(coordinates)) return null;
+  return { coordinates: coordinates!.trim(), source: "reused_old", accuracy: null, capturedAt: null, receiver: "unknown" };
+}
+
+/** Server-owned old coordinates override client GPS, including older mobile payloads. */
+export function applyOldGpsReuse(policy: { wizardReuseOldGps?: boolean | null },
+  workOrder: { oldGps?: string | null; old_gps?: string | null }, payload: Record<string, any>) {
+  const fix = reusedOldGpsFix(policy, workOrder);
+  if (fix) Object.assign(payload, { gpsCoordinates: fix.coordinates, gpsCapture: fix });
+  return fix;
 }
 
 /** An untouched/echoed coordinate must not erase earlier capture provenance. */
@@ -77,12 +92,19 @@ export function completionGpsFix(coordinates: unknown, metadata: unknown,
 
 /** Validate web/mobile payloads before writing photos or completing work. */
 export function gpsSubmissionProblem(
-  policy: { wizardGpsMode?: string | null; wizardGpsMaxAccuracyMetres?: number | null },
+  policy: { wizardGpsMode?: string | null; wizardGpsMaxAccuracyMetres?: number | null; wizardReuseOldGps?: boolean | null },
   coordinates: unknown, metadata: unknown,
-  previous?: { newGps?: string | null; gpsCapture?: GpsFix | null },
+  previous?: { newGps?: string | null; gpsCapture?: GpsFix | null; oldGps?: string | null; old_gps?: string | null },
 ): { message: string; code: string } | null {
-  if (policy.wizardGpsMode === "disabled") return null;
   try {
+    if ((metadata as any)?.source === "reused_old") {
+      const authorized = reusedOldGpsFix(policy, previous);
+      if (!authorized || !sameCoordinates(authorized.coordinates, coordinates))
+        return { message: "Reused GPS must match this work order's old GPS and be enabled for this project.", code: "GPS_CAPTURE" };
+      validateGpsFix(metadata, coordinates);
+      return null;
+    }
+    if (policy.wizardGpsMode === "disabled") return null;
     const message = gpsAccuracyError(completionGpsFix(coordinates, metadata, previous), policy.wizardGpsMaxAccuracyMetres);
     return message ? { message, code: "GPS_ACCURACY" } : null;
   } catch (error) {

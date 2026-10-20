@@ -62,6 +62,7 @@ const projectFormSchema = z.object({
   defaultAppointmentToleranceMinutes: z.number().int().min(0).max(240).nullable().optional(),
   wizardMode: z.enum(["changeout", "reading_only", "user_choice"]).optional().default("changeout"),
   wizardGpsMode: z.enum(["automatic", "manual_step", "disabled"]).optional().default("automatic"),
+  wizardReuseOldGps: z.boolean().optional().default(false),
   wizardGpsMaxAccuracyMetres: z.number().int().min(1).max(100000).nullable().optional(),
   wizardShowNotesStep: z.boolean().optional().default(true),
   wizardShowGpsStep: z.boolean().optional().default(true),
@@ -238,6 +239,7 @@ export default function ProjectForm() {
       defaultAppointmentToleranceMinutes: 60,
       wizardMode: "changeout",
       wizardGpsMode: "automatic",
+      wizardReuseOldGps: false,
       wizardGpsMaxAccuracyMetres: null,
       wizardShowNotesStep: true,
       wizardShowGpsStep: true,
@@ -320,6 +322,7 @@ export default function ProjectForm() {
         defaultAppointmentToleranceMinutes: (project as any).defaultAppointmentToleranceMinutes ?? null,
         wizardMode: (project.wizardMode as "changeout" | "reading_only" | "user_choice") || "changeout",
         wizardGpsMode: (project.wizardGpsMode as "automatic" | "manual_step" | "disabled") || "automatic",
+        wizardReuseOldGps: project.wizardReuseOldGps ?? false,
         wizardGpsMaxAccuracyMetres: project.wizardGpsMaxAccuracyMetres ?? null,
         wizardShowNotesStep: project.wizardShowNotesStep !== false,
         wizardShowGpsStep: project.wizardShowGpsStep !== false,
@@ -1147,6 +1150,28 @@ export default function ProjectForm() {
                           {field.value === "disabled" && "GPS coordinates are not captured during the wizard"}
                         </FormDescription>
                         <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="wizardReuseOldGps"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Reuse old GPS</FormLabel>
+                          <FormDescription className="text-xs">
+                            When customer-approved, reuse valid old equipment GPS without capturing a new location. Missing or invalid old GPS uses the normal capture rules.
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-reuse-old-gps"
+                          />
+                        </FormControl>
                       </FormItem>
                     )}
                   />

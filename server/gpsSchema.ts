@@ -17,6 +17,7 @@ export async function migrateGpsSchema(pool: Pool) {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext('meterflo-gps-capture'))");
     await client.query(`ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS wizard_gps_max_accuracy_metres integer;
+      ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS wizard_reuse_old_gps boolean NOT NULL DEFAULT false;
       DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.projects'::regclass AND conname='projects_gps_accuracy_range') THEN
         ALTER TABLE public.projects ADD CONSTRAINT projects_gps_accuracy_range CHECK(wizard_gps_max_accuracy_metres BETWEEN 1 AND 100000);
@@ -36,5 +37,5 @@ export async function initializeGpsSchema(pool: Pool) {
   // Replit's managed production is migrated by Publish, never startup DDL.
   // Standalone Windows/Linux installations retain their normal additive upgrade.
   if (!process.env.REPL_ID && process.env.REPLIT_DEPLOYMENT !== "1") await migrateGpsSchema(pool);
-  await pool.query("SELECT wizard_gps_max_accuracy_metres FROM public.projects LIMIT 0");
+  await pool.query("SELECT wizard_gps_max_accuracy_metres,wizard_reuse_old_gps FROM public.projects LIMIT 0");
 }

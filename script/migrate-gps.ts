@@ -7,7 +7,7 @@ async function main() {
   try {
     const { migrateGpsSchema } = await import("../server/gpsSchema");
     await migrateGpsSchema(pool);
-    console.log("Development GPS schema verified; existing coordinates preserved and accuracy requirements remain unset.");
+    console.log("Development GPS schema verified; existing coordinates and policies preserved. Old-GPS reuse defaults off.");
   } finally { await pool.end(); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

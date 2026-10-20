@@ -30,6 +30,11 @@ const { chromium, expect } = require("@playwright/test");
       { name: "required-coarse", accuracy: 80, limit: 10, width: 393, height: 850 },
       { name: "required-good", accuracy: 3, limit: 10, width: 1024, height: 768 },
       { name: "pending-submission", pending: true, width: 393, height: 850 },
+      { name: "reuse-auto-phone", reuse: true, native: true, saved: "10,20", width: 393, height: 850 },
+      { name: "reuse-manual-landscape", reuse: true, native: true, mode: "manual_step", limit: 1, width: 850, height: 393 },
+      { name: "reuse-disabled", reuse: true, mode: "disabled", width: 1024, height: 768 },
+      { name: "reuse-missing-fallback", reuse: true, old: "", width: 393, height: 850 },
+      { name: "reuse-invalid-fallback", reuse: true, old: "invalid", width: 1280, height: 900 },
     ];
     for (const scenario of scenarios) {
       const context = await browser.newContext({ viewport: { width: scenario.width, height: scenario.height } });
@@ -69,6 +74,9 @@ const { chromium, expect } = require("@playwright/test");
       const params = new URLSearchParams({ mode: scenario.mode || "automatic" });
       if (scenario.limit) params.set("limit", scenario.limit);
       if (scenario.saved) params.set("saved", scenario.saved);
+      if (scenario.reuse) params.set("reuse", "true");
+      if (scenario.old !== undefined) params.set("old", scenario.old);
+      const reusing = scenario.reuse && scenario.old === undefined;
       await page.goto(`http://127.0.0.1:${server.address().port}/tests/support/gps-wizard-fixture.html?${params}`);
       const next = page.getByTestId("button-wizard-next");
       await page.getByTestId("button-system-can-change").click();
@@ -84,7 +92,7 @@ const { chromium, expect } = require("@playwright/test");
       await next.click();
       await page.getByTestId("input-new-system-reading").fill("0.0039");
       await next.click();
-      if (scenario.mode === "manual_step") {
+      if (scenario.mode === "manual_step" && !reusing) {
         assert.equal((await page.evaluate(() => window.gpsCalls)).browser, 0);
         await page.getByTestId("input-gps-coordinates-capture").click();
         await expect(page.getByTestId("input-gps-coordinates")).toHaveValue("41.4412345678901, -81.7245123456789");
@@ -92,7 +100,15 @@ const { chromium, expect } = require("@playwright/test");
       }
       const review = page.getByRole("region", { name: "GPS location review" });
       const submit = page.getByTestId("button-wizard-submit");
-      if (scenario.mode === "disabled") {
+      if (reusing) {
+        await expect(review).toContainText("Reused from old equipment");
+        await expect(review).toContainText("40, -80");
+        const calls = await page.evaluate(() => window.gpsCalls);
+        assert.equal(calls.native, 0); assert.equal(calls.browser, 0);
+        await expect(review.getByRole("button")).toHaveCount(0);
+        fs.mkdirSync("generated-artifacts/gps", { recursive: true });
+        await page.screenshot({ path: `generated-artifacts/gps/${scenario.name}.jpg` });
+      } else if (scenario.mode === "disabled") {
         await expect(review).toHaveCount(0);
         assert.equal((await page.evaluate(() => window.gpsCalls)).browser, 0);
       } else {
@@ -121,7 +137,12 @@ const { chromium, expect } = require("@playwright/test");
         await submit.click();
         const submitted = await page.evaluate(() => window.submissions);
         assert.equal(submitted.length, 1);
-        if (!scenario.denied && !scenario.pending && scenario.mode !== "disabled")
+        if (reusing) {
+          assert.equal(submitted[0].gpsCapture.source, "reused_old");
+          assert.equal(submitted[0].gpsCoordinates, "40, -80");
+          assert.equal(submitted[0].gpsCapture.accuracy, null);
+          assert.equal(submitted[0].gpsCapture.capturedAt, null);
+        } else if (!scenario.denied && !scenario.pending && scenario.mode !== "disabled")
           assert.equal(submitted[0].gpsCapture.source, scenario.native ? "native" : "browser");
         if (scenario.pending) {
           assert.equal(submitted[0].gpsCoordinates, "");

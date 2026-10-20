@@ -9,7 +9,7 @@ Target devices include Android and iOS phones and tablets, plus Windows/Linux la
 
 **Why:** The user explicitly requested this source priority and clarified the supported device types.
 
-**How to apply:** Plan and verify device-first acquisition without representing browser geolocation as a separate direct hardware connection. Saved coordinates or address estimates must not prevent attempting the requested fresh device capture or be labeled as a successful fresh fix.
+**How to apply:** Plan and verify device-first acquisition without representing browser geolocation as a separate direct hardware connection. Saved coordinates or address estimates must not prevent fresh capture unless the project's explicit Reuse old GPS policy authorizes valid old equipment coordinates. Never label reuse as a fresh fix.
 
 The user approved requiring installed native apps/helpers for device-first GPS.
 
@@ -40,3 +40,9 @@ GPS policy verification must exercise real project creation, reload, and complet
 **Why:** A parsed accuracy requirement can silently disappear in creation-specific field selection, leaving completions unrestricted even though settings and validation tests pass.
 
 **How to apply:** Use an owned disposable database to cover minimal and settings-rich project creation, then verify behavior against the reloaded policy. Distinguish a recorded device/browser fix on the same order from saved coordinates with no capture evidence; preserve genuine capture timestamps through delayed completion.
+
+The per-project setting is named exactly "Reuse old GPS" and is off by default. With customer approval, valid old equipment GPS fills new GPS without a wizard GPS step, background acquisition, or location prompts. Missing or invalid old GPS keeps the existing capture rules.
+
+**Why:** The user requested this exception for projects that do not need new GPS and explicitly shortened the setting's label.
+
+**How to apply:** Use old equipment coordinates, not a previously saved new position. Mark reuse in review and audit history without inventing accuracy or capture time. Apply the policy to both systems and modules; trouble reports remain GPS-free. Keep the separately maintained Expo implementation distinct from web/API delivery.

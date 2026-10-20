@@ -33,6 +33,8 @@ function sourceLabel(fix: GpsFix | null): string | null {
       return "Saved position";
     case "geocode":
       return "Address-derived location";
+    case "reused_old":
+      return "Reused from old equipment";
   }
 }
 
@@ -92,13 +94,14 @@ export function GpsReview({
 }: GpsReviewProps) {
   const [manualValue, setManualValue] = useState(coordinates);
   const displayCoordinates = fix?.coordinates || coordinates;
-  const captureTime = fix?.capturedAt && fix.source !== "manual" && fix.source !== "existing"
+  const isReusedOldGps = fix?.source === "reused_old";
+  const captureTime = fix?.capturedAt && !["manual", "existing", "reused_old"].includes(fix.source)
     ? formatCaptureTime(fix.capturedAt, timezone)
     : null;
-  const accuracy = fix && fix.source !== "manual" && fix.source !== "existing"
+  const accuracy = fix && !["manual", "existing", "reused_old"].includes(fix.source)
     ? formatAccuracy(fix.accuracy)
     : null;
-  const configuredLimit = formatAccuracy(accuracyLimit);
+  const configuredLimit = isReusedOldGps ? null : formatAccuracy(accuracyLimit);
 
   const submitManual = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -111,7 +114,8 @@ export function GpsReview({
     : status === "error"
       ? "Location unavailable"
       : fix
-        ? fix.source === "manual" ? "Manual entry" : fix.source === "existing" ? "Saved position—not a fresh capture" : "Location captured"
+          ? isReusedOldGps ? "Reused from old equipment"
+            : fix.source === "manual" ? "Manual entry" : fix.source === "existing" ? "Saved position—not a fresh capture" : "Location captured"
         : displayCoordinates
           ? "Saved position—not a fresh capture"
         : "Location not captured";
@@ -137,16 +141,18 @@ export function GpsReview({
         </div>
 
         <div className="flex shrink-0 flex-wrap gap-2">
-          {onReuse && (
+          {!isReusedOldGps && onReuse && (
             <Button type="button" variant="outline" size="sm" onClick={onReuse} disabled={disabled || status === "capturing"}>
               <RotateCcw aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
               Reuse
             </Button>
           )}
-          <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={disabled || status === "capturing"}>
-            <MapPin aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
-            {status === "capturing" ? "Capturing…" : "Retry"}
-          </Button>
+          {!isReusedOldGps && (
+            <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={disabled || status === "capturing"}>
+              <MapPin aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+              {status === "capturing" ? "Capturing…" : "Retry"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -182,7 +188,7 @@ export function GpsReview({
         </dl>
       )}
 
-      {onManual && (
+      {!isReusedOldGps && onManual && (
         <details className="pl-[26px] text-sm">
           <summary className="w-fit cursor-pointer text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-foreground">
             Enter coordinates manually

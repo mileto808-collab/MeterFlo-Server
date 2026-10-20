@@ -32,7 +32,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useGpsCapture } from "@/hooks/use-gps-capture";
 import { GpsReview } from "./gps-review";
-import { gpsAccuracyError, type GpsFix } from "@shared/gps-capture";
+import { gpsAccuracyError, reusedOldGpsFix as getReusedOldGpsFix, type GpsFix } from "@shared/gps-capture";
 import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shared/reading-precision";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
@@ -96,6 +96,7 @@ export type GpsCaptureMode = "automatic" | "manual_step" | "disabled";
 export interface WizardConfig {
   wizardMode: WizardWorkflowMode;
   gpsMode: GpsCaptureMode;
+  reuseOldGps?: boolean;
   gpsMaxAccuracyMetres?: number | null;
   timezone?: string | null;
   showNotesStep: boolean;
@@ -192,6 +193,7 @@ function buildSuccessSteps(
   isUserChoice: boolean,
   effectiveGpsMode: GpsCaptureMode,
   inventoryEnabled = false,
+  hasReusableOldGps = false,
 ): WizardStep[] {
   const steps: WizardStep[] = [];
   
@@ -201,7 +203,7 @@ function buildSuccessSteps(
   }
   
   // GPS step is only shown when gpsMode is "manual_step"
-  const showGpsStep = effectiveGpsMode === "manual_step";
+  const showGpsStep = effectiveGpsMode === "manual_step" && !hasReusableOldGps;
   
   if (mode === "reading_only") {
     // Reading Only mode: simplified flow
@@ -430,6 +432,10 @@ export function SystemChangeoutWizard({
   };
   
   const effectiveGpsMode = config.gpsMode;
+  const reusableOldGps = getReusedOldGpsFix(
+    { wizardReuseOldGps: config.reuseOldGps },
+    { oldGps },
+  );
   const systemReadingLimit = config.systemReadingDecimalPlaces ?? 3;
   const moduleReadingLimit = config.moduleReadingDecimalPlaces ?? 3;
   
@@ -455,7 +461,8 @@ export function SystemChangeoutWizard({
       config,
       config.wizardMode === "user_choice",
       effectiveGpsMode,
-      inventoryEnabled
+      inventoryEnabled,
+      !!reusableOldGps,
     );
     return steps[0] || "canChange";
   };
@@ -554,7 +561,7 @@ export function SystemChangeoutWizard({
   };
 
   // Build steps dynamically based on config and mode
-  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode, inventoryEnabled);
+  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode, inventoryEnabled, !!reusableOldGps);
   const currentSteps = data.canChange ? successSteps : troubleSteps;
   const currentStepIndex = currentSteps.indexOf(currentStep);
   const isFirstStep = currentStepIndex === 0;
@@ -565,7 +572,7 @@ export function SystemChangeoutWizard({
   
   // GPS capture hook for background capture
   const gpsCapture = useGpsCapture({
-    captureKey: `${projectId}:${workOrderId}:${isOpen}:${effectiveGpsMode}`,
+    captureKey: `${projectId}:${workOrderId}:${isOpen}:${effectiveGpsMode}:${!!reusableOldGps}`,
     accuracyLimit: config.gpsMaxAccuracyMetres,
     onSuccess: (result) => {
       setData((prev) => ({ ...prev, gpsCoordinates: result.coordinates, gpsCapture: result }));
@@ -573,22 +580,40 @@ export function SystemChangeoutWizard({
   });
   useEffect(() => {
     gpsCapture.reset();
-    if (!isOpen || effectiveGpsMode === "disabled") return;
+    if (!isOpen || effectiveGpsMode === "disabled" || reusableOldGps) return;
     return gpsCapture.cancel;
-  }, [isOpen, workOrderId, effectiveGpsMode, gpsCapture.reset, gpsCapture.cancel]);
+  }, [isOpen, workOrderId, effectiveGpsMode, !!reusableOldGps, gpsCapture.reset, gpsCapture.cancel]);
+
+  // Keep GPS evidence scoped to the currently open order. Reuse is applied only
+  // after the user chooses a successful path, never during the trouble path.
+  const gpsOrderSession = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen) {
+      gpsOrderSession.current = null;
+      return;
+    }
+    const sessionKey = `${projectId}:${workOrderId}`;
+    if (gpsOrderSession.current === sessionKey) return;
+    gpsOrderSession.current = sessionKey;
+    setData((prev) => ({ ...prev, gpsCoordinates: existingGps || "", gpsCapture: null }));
+  }, [isOpen, projectId, workOrderId, existingGps]);
+
   const editGps = (coordinates: string) => {
     setData(prev => ({ ...prev, gpsCoordinates: coordinates, gpsCapture: null }));
     gpsCapture.setManualCoordinates(coordinates);
   };
-  const gpsReview = effectiveGpsMode !== "disabled" && data.canChange ? (
+  const isReusedOldGps = data.gpsCapture?.source === "reused_old";
+  const gpsReview = (effectiveGpsMode !== "disabled" || isReusedOldGps) && data.canChange ? (
     <div className="col-span-2 min-w-0">
       <GpsReview fix={data.gpsCapture ?? null} coordinates={data.gpsCoordinates}
-        status={gpsCapture.status} error={gpsCapture.error || (gpsCapture.status !== "capturing" ? gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres) : null)} timezone={config.timezone}
-        accuracyLimit={config.gpsMaxAccuracyMetres} disabled={isSubmitting}
+        status={isReusedOldGps ? "success" : gpsCapture.status}
+        error={isReusedOldGps ? null : gpsCapture.error || (gpsCapture.status !== "capturing" ? gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres) : null)}
+        timezone={config.timezone}
+        accuracyLimit={isReusedOldGps ? null : config.gpsMaxAccuracyMetres} disabled={isSubmitting}
         onRetry={() => void gpsCapture.startCapture()}
-        onReuse={(existingGps || oldGps) ? () => gpsCapture.setManualCoordinates(existingGps || oldGps || "", "existing") : undefined}
-        onManual={editGps} />
-      <a href="/gps-setup" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground underline">GPS device setup</a>
+        onReuse={!isReusedOldGps && (existingGps || oldGps) ? () => gpsCapture.setManualCoordinates(existingGps || oldGps || "", "existing") : undefined}
+        onManual={isReusedOldGps ? undefined : editGps} />
+      {!isReusedOldGps && <a href="/gps-setup" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground underline">GPS device setup</a>}
     </div>
   ) : null;
 
@@ -608,7 +633,7 @@ export function SystemChangeoutWizard({
       // GPS capture is now started when user confirms they can proceed (in handleCanChangeChoice)
       // This ensures we don't capture GPS for trouble events
     }
-  }, [isOpen, config.wizardMode, effectiveGpsMode]);
+  }, [isOpen, workOrderId, config.wizardMode, effectiveGpsMode]);
 
   // Reset photo capture state when user returns to page (handles camera cancel on mobile)
   useEffect(() => {
@@ -818,7 +843,8 @@ export function SystemChangeoutWizard({
       case "afterPhotos":
         return data.afterPhotos.length >= 1;
       case "gps":
-        return isValidGps(data.gpsCoordinates) && !gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres);
+        return isValidGps(data.gpsCoordinates) &&
+          (data.gpsCapture?.source === "reused_old" || !gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres));
       case "notes":
         return true; // Notes are optional
       case "signature":
@@ -848,7 +874,8 @@ export function SystemChangeoutWizard({
         // - "manual_step": GPS required (user went through the step)
         const gpsRequired = effectiveGpsMode === "manual_step";
         const gpsValid = (!gpsRequired || isValidGps(data.gpsCoordinates)) &&
-          (effectiveGpsMode === "disabled" || !gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres));
+          (effectiveGpsMode === "disabled" || data.gpsCapture?.source === "reused_old" ||
+            !gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres));
         
         if (isReadingOnlyMode) {
           // Check if this is a trouble event (canChange = false) in reading-only mode
@@ -951,8 +978,17 @@ export function SystemChangeoutWizard({
     setSessionStartTime(new Date());
     
     if (canChange) {
-      // Start GPS capture now that user has confirmed they can proceed
-      if (effectiveGpsMode === "automatic") {
+      // A valid old-equipment position is reused only on the successful path.
+      // It takes precedence over existing new GPS and never opens a location prompt.
+      if (reusableOldGps) {
+        gpsCapture.reset();
+        setData((prev) => ({
+          ...prev,
+          gpsCoordinates: reusableOldGps.coordinates,
+          gpsCapture: reusableOldGps,
+        }));
+      } else if (effectiveGpsMode === "automatic") {
+        // Start GPS capture now that user has confirmed they can proceed.
         void gpsCapture.startCapture();
       }
       

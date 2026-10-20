@@ -28,11 +28,19 @@ Project → Work Orders → Wizard:
   and recovery actions. Optional capture is cancelled/frozen at submission.
 * **Manual Step:** preserves the explicit GPS step. Review has the same information.
 * **Disabled:** no acquisition and no GPS accuracy gate.
+* **Reuse old GPS:** off by default. When enabled with customer approval and valid
+  old equipment GPS exists, copy it to new GPS and skip both the GPS step and
+  background acquisition, including device/browser permission prompts. Review
+  labels it “Reused from old equipment”; history records reuse, not a fresh fix.
+  This takes precedence over capture mode, including Disabled. Missing/invalid
+  old GPS follows the normal mode and accuracy rules. Trouble reports never reuse
+  or capture GPS.
 * **Maximum GPS error (metres):** optional, initially unset. When set, completion
   requires a captured native/browser position with reported error no greater than
   this value. Missing/unknown/coarse accuracy and manual/saved/address-derived
   coordinates cannot satisfy this policy. This is enforced by the server as well
-  as the wizard. A reported accuracy is an estimate—not a hardware certification.
+  as the wizard. Approved **Reuse old GPS** is a separate exception, not proof of
+  accuracy. A reported accuracy is an estimate—not a hardware certification.
 
 Manual/reuse actions are explicitly labelled. They do not invent measurement
 accuracy or a capture timestamp. Existing site/equipment coordinates are not
