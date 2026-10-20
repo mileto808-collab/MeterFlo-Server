@@ -59,6 +59,10 @@ export async function finishAuditOperation(id:string,outcome:string,counts:Recor
 }
 export async function auditedOperation<T>(type:string,target:string,fn:()=>Promise<T>,projectId:number|null=null,projectLabel:string|null=null):Promise<T> {
   if (["systemBackup", "systemRestore", "systemFilesRestore"].includes(type)) {
+    if (type === "systemRestore") {
+      const { stopEmbeddedSftp } = await import("./file-transfers/embedded-server");
+      await stopEmbeddedSftp();
+    }
     const { withBackupExclusive } = await import("./backups/lock");
     return withBackupExclusive(async () => {
       const result = await auditedOperationData(type,target,fn,projectId,projectLabel);
@@ -76,6 +80,8 @@ export async function auditedOperation<T>(type:string,target:string,fn:()=>Promi
         await pool.query("UPDATE public.file_exports SET is_enabled=false,next_run_at=null,updated_at=now()");
         await pool.query("UPDATE public.https_transfer_settings SET enabled=false,updated_at=now()");
         await pool.query("UPDATE public.https_transfer_credentials SET revoked_at=coalesce(revoked_at,now())");
+        await pool.query("UPDATE public.sftp_server_settings SET enabled=false,updated_at=now()");
+        await pool.query("UPDATE public.sftp_server_accounts SET revoked_at=coalesce(revoked_at,now())");
         await pool.query("UPDATE public.https_transfer_files SET status='received',message='Processing interrupted by restore; review before enabling.' WHERE status='processing'");
         await pool.query("UPDATE public.file_import_configs SET is_enabled=false WHERE source='sftp'");
         await pool.query(`UPDATE public.file_export_runs SET status='cancelled',completed_at=now(),

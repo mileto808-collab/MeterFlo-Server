@@ -13,6 +13,7 @@ Project Files/
 /generated-artifacts/
 **/.meterflo-attachment-migration/
 logs/
+.meterflo-sftp/
 meterflo.instance.json
 customer-packages/
 meterflo.activation.json

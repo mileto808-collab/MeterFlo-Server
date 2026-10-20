@@ -9,6 +9,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { SftpConnectionHelp } from "@/components/file-transfers/sftp-connection-help";
 import { HttpsExchangeWorkspace } from "@/components/file-transfers/https-exchange-workspace";
+import { EmbeddedSftpWorkspace } from "@/components/file-transfers/embedded-sftp-workspace";
 import { ProjectColumnGuide } from "@/components/file-transfers/project-column-guide";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { ExportConfig, ExportConfigInput, ExportSelection, SftpPublic, TransferContext, TransferHistory } from "@shared/file-transfers";
 import type { ReactNode } from "react";
 
-type Tab = "imports" | "exports" | "connection" | "https" | "history";
+type Tab = "imports" | "exports" | "connection" | "sftp-server" | "https" | "history";
 type HistoryResponse = { rows: TransferHistory[]; total: number; timezone: string };
 const PAGE_SIZE = 25;
 const base = (projectId: number) => `/api/projects/${projectId}/file-transfers`;
@@ -176,6 +177,7 @@ export function FileTransferWorkspace({ projectId, renderImports }: { projectId:
     { key: "imports", label: "Imports", icon: ArrowDownToLine, enabled: !!context?.permissions.canImport },
     { key: "exports", label: "Exports", icon: ArrowUpFromLine, enabled: !!context?.permissions.canExport },
     { key: "connection", label: "SFTP Connections", icon: Cable, enabled: !!context?.permissions.canManageConnection },
+    { key: "sftp-server", label: "SFTP Server", icon: Cable, enabled: true },
     { key: "https", label: "HTTPS Exchange", icon: ShieldCheck, enabled: !!(context?.permissions.canImport || context?.permissions.canExport || context?.permissions.canManageHttps) },
     { key: "history", label: "History", icon: FileClock, enabled: !!(context?.permissions.canImport || context?.permissions.canExport) },
   ];
@@ -193,6 +195,7 @@ export function FileTransferWorkspace({ projectId, renderImports }: { projectId:
       {context.exports.some(x => x.lastRunStatus === "failed") && <p className="text-xs text-muted-foreground">A failed pending run must be retried or cancelled before another run can be created for that configuration.</p>}
     </section>}
     {tab === "connection" && context.permissions.canManageConnection && <ConnectionSettings context={context} projectId={projectId} invalidate={invalidate} />}
+    {tab === "sftp-server" && <EmbeddedSftpWorkspace projectId={projectId} onUseHttps={() => setTab("https")} />}
     {tab === "https" && <HttpsExchangeWorkspace projectId={projectId} />}
     {tab === "history" && <section role="tabpanel" className="space-y-3"><SectionHeading icon={FileClock} title="Transfer history" description="A delivery record for each import and export, including failures." />
       <InventoryMobileTools tab="transfer-history"><div className="grid gap-2 rounded-md border bg-card p-2 sm:grid-cols-2 lg:grid-cols-6"><div className="relative lg:col-span-2"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input aria-label="Search transfer history" type="search" placeholder="Search file, configuration, message" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div><select aria-label="Filter direction" className="h-10 rounded-md border bg-background px-3 text-sm" value={direction} onChange={e => setDirection(e.target.value)}><option value="all">All transfers</option><option value="import">Imports</option><option value="export">Exports</option></select><select aria-label="Filter transfer status" className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={e => setStatus(e.target.value)}><option value="">All statuses</option>{["queued", "running", "success", "failed", "skipped", "interrupted", "cancelled"].map(s => <option key={s}>{s}</option>)}</select><Input aria-label="Created from" type="date" value={from} onChange={e => setFrom(e.target.value)} /><Input aria-label="Created to" type="date" value={to} onChange={e => setTo(e.target.value)} /></div></InventoryMobileTools>

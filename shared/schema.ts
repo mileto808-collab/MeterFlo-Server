@@ -471,6 +471,7 @@ export const importHistory = pgTable("import_history", {
 export { projectSftpConnections, fileExports, fileExportStatuses, fileExportSubStatuses, fileExportRuns,
   fileExportRunItems, fileExportCheckpoints, fileExportAttempts, fileImportReceipts, fileImportGeneratedIds } from "./file-transfer-db";
 export * from "./https-transfer-db";
+export * from "./embedded-sftp-db";
 export const fileImportConfigs = pgTable("file_import_configs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),

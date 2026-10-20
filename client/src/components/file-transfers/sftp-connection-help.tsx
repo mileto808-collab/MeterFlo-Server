@@ -11,7 +11,7 @@ export function SftpConnectionHelp() {
         <div className="min-w-0 flex-1">
           <h3 id="sftp-help-title" className="text-sm font-semibold">How this SFTP connection works</h3>
           <p className="mt-1 text-xs leading-relaxed text-sky-950/80">
-            MeterFlo is an <strong>outbound SFTP client</strong>: it connects to a remote server you specify to pull imports or push exports. This page does not create a server or provide customers with an address to connect to.
+            This tab configures MeterFlo's <strong>outbound SFTP client</strong>: it connects to a remote server to pull imports or push exports. For customers connecting to this Windows/Linux instance, use the separate SFTP Server tab. HTTPS Exchange is available on every platform.
           </p>
           <button
             type="button"
@@ -35,7 +35,7 @@ export function SftpConnectionHelp() {
                 <article className="rounded border border-sky-900/10 bg-background/70 p-3">
                   <h4 className="flex items-center gap-1.5 text-xs font-semibold"><Server className="h-3.5 w-3.5" />2. Customers connect to a server we operate</h4>
                   <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                    This needs a separately configured Windows/Linux or managed SFTP server; this page does not provide or provision one. Set up a restricted account per customer and project, with no interactive shell and isolated project directories. MeterFlo’s outbound client can use that shared handoff server: for example, the customer uploads to <code className="rounded bg-muted px-1">/incoming</code>, MeterFlo pulls; MeterFlo pushes to <code className="rounded bg-muted px-1">/outgoing</code>, and the customer downloads. These paths are examples only, not configured paths.
+                    On standalone Windows/Linux, use SFTP Server to enable MeterFlo's optional built-in listener and create restricted project accounts. Customers upload to <code className="rounded bg-muted px-1">/incoming</code> and download generated local exports from <code className="rounded bg-muted px-1">/outgoing</code>. Replit instances provide HTTPS Exchange instead. An independently managed SFTP server remains an option for the outbound connection configured here.
                   </p>
                   <p className="mt-1.5 text-xs font-medium leading-relaxed text-amber-900">Do not give customers the saved outbound profile as inbound instructions; they need the separately hosted server’s own address, account, and paths.</p>
                   <p className="mt-1.5 text-xs font-medium text-sky-900">Project FTP Files is a storage folder, not a listening FTP/SFTP endpoint.</p>
@@ -53,7 +53,7 @@ export function SftpConnectionHelp() {
                   <li className="sm:col-span-2"><Check className="mr-1 inline h-3 w-3 text-emerald-700" />Actual upload/download directory and agreed filename pattern</li>
                 </ul>
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                  Share the client’s <strong>public key</strong> with the SFTP administrator; private keys stay with the client that initiates the connection. Never share Replit workspace SSH credentials. Inbound customer accounts must be created on the hosting SFTP server—not here.
+                    Share the client’s <strong>public key</strong> with the SFTP administrator; private keys stay with the client that initiates the connection. Never share Replit workspace SSH credentials. Built-in inbound customer accounts are created in SFTP Server, not this outbound connection tab.
                 </p>
               </div>
             </div>

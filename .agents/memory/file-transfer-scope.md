@@ -51,6 +51,12 @@ The user approved the secure HTTPS equivalent on Replit and the same HTTPS optio
 
 **How to apply:** Keep HTTPS available on all three targets without claiming it supplies contractual SSH/SFTP support.
 
+Standalone HTTPS is additional to the built-in Windows/Linux SFTP server, never a replacement for it.
+
+**Why:** The user repeated the approved scope after the HTTPS implementation incorrectly left out inbound standalone SFTP. An outbound SFTP client does not satisfy inbound customer connectivity.
+
+**How to apply:** Verify each independently: Replit HTTPS, standalone HTTPS, and optional standalone inbound SFTP. Do not present one as completing the others.
+
 ## Storage-root changes
 
 Changing the FTP Files root is configuration, not an automatic file migration; leaving it unset preserves the existing Project Files-based layout.

@@ -10,6 +10,7 @@ import { exportFields, getExports, saveExport, enqueueExport, projectZone, frequ
 import { getConnection, publicConnection, saveConnection, withSftp, remoteDirectory, TransferError } from "./sftp";
 import { validateImportPattern } from "./imports";
 import { registerHttpsTransferRoutes } from "./https-routes";
+import { registerEmbeddedSftpRoutes } from "./embedded-routes";
 import { requireExchange } from "./https-service";
 import { workOrderColumnGuide } from "./column-guide";
 const uuid = (value: unknown) => z.string().uuid().parse(value);
@@ -75,6 +76,7 @@ async function history(project: number, canImport: boolean, canExport: boolean, 
 }
 export function registerFileTransferRoutes(app: Express, authenticated: RequestHandler) {
   registerHttpsTransferRoutes(app, authenticated, transferAccess);
+  registerEmbeddedSftpRoutes(app, authenticated, transferAccess);
   const base = "/api/projects/:projectId/file-transfers";
   const route = (method: "get" | "post" | "put" | "patch" | "delete", suffix: string, permission: "canImport" | "canExport" | "canManageConnection" | null,
     handler: (req: any, res: any, context: Awaited<ReturnType<typeof transferAccess>>) => Promise<any>) => {

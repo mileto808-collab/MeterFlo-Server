@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { httpsDdl } from "./https-schema";
+import { embeddedSftpDdl } from "./embedded-schema";
 export const transferDdl = `
 ALTER TABLE public.file_import_configs ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'local';
 ALTER TABLE public.file_import_configs ADD COLUMN IF NOT EXISTS remote_directory text NOT NULL DEFAULT '';
@@ -52,7 +53,7 @@ CREATE TABLE IF NOT EXISTS public.file_import_generated_ids (
 `;
 export async function migrateFileTransfers(pool: Pool) {
   const client = await pool.connect();
-  try { await client.query("BEGIN"); await client.query("SELECT pg_advisory_xact_lock(hashtext('file-transfer-schema'))"); await client.query(transferDdl + httpsDdl); await client.query("COMMIT"); }
+  try { await client.query("BEGIN"); await client.query("SELECT pg_advisory_xact_lock(hashtext('file-transfer-schema'))"); await client.query(transferDdl + httpsDdl + embeddedSftpDdl); await client.query("COMMIT"); }
   catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
 export async function initializeFileTransfers(pool: Pool) {
@@ -61,6 +62,7 @@ export async function initializeFileTransfers(pool: Pool) {
   await pool.query("SELECT schedule_timezone FROM public.file_exports LIMIT 0");
   for (const table of ["project_sftp_connections", "file_exports", "file_export_statuses", "file_export_substatuses", "file_export_runs",
     "file_export_run_items", "file_export_checkpoints", "file_export_attempts", "file_import_receipts", "file_import_generated_ids",
-    "https_transfer_settings", "https_transfer_credentials", "https_transfer_files", "https_transfer_events"])
+    "https_transfer_settings", "https_transfer_credentials", "https_transfer_files", "https_transfer_events",
+    "sftp_server_settings", "sftp_server_accounts", "sftp_server_events"])
     await pool.query(`SELECT * FROM public.${table} LIMIT 0`);
 }

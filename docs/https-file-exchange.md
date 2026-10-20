@@ -1,6 +1,6 @@
 # Secure HTTPS file exchange
 
-HTTPS exchange is an **additional delivery method** on Replit and standalone Windows/Linux. Existing manual web imports/downloads, Project FTP Files, local-directory schedules, and outbound customer SFTP are unchanged. This feature does not implement an inbound SSH/SFTP listener.
+HTTPS exchange is an **additional delivery method** on Replit and standalone Windows/Linux. Existing manual web imports/downloads, Project FTP Files, local-directory schedules, and outbound customer SFTP are unchanged. The separate **SFTP Server** tab now provides an optional inbound SFTP-only listener on standalone Windows/Linux; HTTPS exchange itself is not SSH/SFTP.
 
 ## Setup and access
 

@@ -37,6 +37,7 @@ import { initializeGpsSchema } from "./gpsSchema";
 import { initializeBackupSchema } from "./backups/schema";
 import { startBackupWorker } from "./backups/service";
 import { initializeFileTransfers } from "./file-transfers/schema";
+import { initializeEmbeddedSftp } from "./file-transfers/embedded-server";
 import { startFileExportWorker } from "./file-transfers/exports";
 import { initializeWorkOrderLifecycle } from "./work-order-lifecycle/schema";
 import { startAutomaticClosing } from "./work-order-lifecycle/service";
@@ -173,6 +174,8 @@ app.use(requestLogging(log));
     },
     () => {
       log(`serving on port ${port}`);
+      // Reserve the web port first. A saved optional SFTP listener must never prevent web administration.
+      void initializeEmbeddedSftp();
       startCustomerApiWorker();
       startApiImportWorker();
       startLogMaintenance();

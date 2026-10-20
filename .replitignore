@@ -1,5 +1,6 @@
 **/meterflo-scheduled-backups/
 /generated-artifacts/
+.meterflo-sftp/
 **/.cache/
 *.apk
 *.part

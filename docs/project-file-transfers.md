@@ -16,9 +16,9 @@ These permissions do not grant access to other projects. Existing customer-accou
 
 ### Who connects to whom?
 
-MeterFlo currently provides an **outbound SFTP client**, not an SSH/SFTP server. The SFTP Connections tab saves the remote server that MeterFlo connects to. Project FTP Files is a storage folder, not a listening FTP/SFTP endpoint.
+**SFTP Connections** configures MeterFlo's existing outbound SFTP client. The separate **SFTP Server** tab provides an optional embedded SFTP-only listener on standalone Windows/Linux, disabled by default. Replit uses HTTPS Exchange for inbound customer transfers. Project FTP Files remains a storage folder, not by itself a listening endpoint. See [Built-in SFTP server](embedded-sftp-server.md).
 
-For customer-hosted SFTP, the customer’s server administrator creates a restricted account for MeterFlo, preferably isolated per project. This is not a MeterFlo web-login account. For customers to connect to a server you operate, first provision a separate Windows/Linux or managed SFTP server with project-isolated accounts and no interactive shell. MeterFlo can connect to that same handoff server to import customer uploads and deliver exports.
+For customer-hosted SFTP, the customer’s server administrator creates a restricted account for MeterFlo, preferably isolated per project. This is not a MeterFlo web-login account. To let customers connect to a standalone MeterFlo instance, a site administrator enables the built-in listener in SFTP Server; authorized project administrators create project-isolated transfer accounts there. An independent managed SFTP server remains an alternative.
 
 Give customers the actual SFTP hostname, configured SSH port (usually 22), their project-specific username, approved authentication method, independently verified SHA256 server host-key fingerprint, actual upload/download directories, and agreed filename patterns. The MeterFlo website URL is not automatically an SFTP address. Share public keys with the server administrator, never private keys or Replit workspace SSH credentials. Directory names such as `/incoming` and `/outgoing` are examples, not automatically provisioned paths.
 
