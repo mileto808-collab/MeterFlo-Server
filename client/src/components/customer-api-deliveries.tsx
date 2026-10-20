@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RefreshCw } from "lucide-react";
+import { formatDateTimeInTimezone } from "@/lib/timezone";
 
 interface Delivery {
   id: string; projectName: string; workOrderId: number; customerWoId: string | null;
@@ -18,13 +19,12 @@ interface Attempt {
   requestUrl: string; responseStatus: number | null; errorMessage: string | null;
   triggeredBy: string; requestPayload: string | null; responseBody: string | null;
 }
-const date = (value: string) => new Date(value).toLocaleString();
 async function readJson(url: string) {
   const response = await fetch(url, { credentials: "include" });
   if (!response.ok) throw new Error(`Unable to load delivery information (${response.status})`);
   return response.json();
 }
-function readablePayload(value: string | null) {
+export function readablePayload(value: string | null) {
   if (!value) return "No request was sent (see the error above).";
   try {
     return JSON.stringify(JSON.parse(value), (key, item) =>
@@ -33,7 +33,8 @@ function readablePayload(value: string | null) {
   } catch { return value; }
 }
 
-export function CustomerApiDeliveries({ isAdmin, projects, fixedProjectId }: { isAdmin: boolean; projects: { id: number; name: string }[]; fixedProjectId?: number }) {
+export function CustomerApiDeliveries({ isAdmin, projects, fixedProjectId, timezone }: { isAdmin: boolean; projects: { id: number; name: string }[]; fixedProjectId?: number; timezone?: string }) {
+  const date = (value: string) => timezone ? formatDateTimeInTimezone(value, timezone) : new Date(value).toLocaleString();
   const [project, setProject] = useState(fixedProjectId == null ? "all" : String(fixedProjectId));
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);

@@ -9,7 +9,7 @@ const sections = [
   ["equipment","system-types","System Types"],["equipment","module-types","Module Types"],
   ["files","project-files","Project Files Directory"],["files","upload-settings","Upload Settings"],
   ["files","file-import-history","File Import History"],["files","external-import-history","External DB Import History"],
-  ["api","contact-support","Contact & Support Forms"],["api","customer-api-logs","Customer API Logs"],
+  ["api","contact-support","Contact & Support Forms"],
   ["security","security-settings","Security Settings"],
   ["updates","mobile-updates","Mobile Updates"],["updates","web-updates","Web Updates"],
   ["system","timezone","Timezone"],["system","log-maintenance","Log Maintenance"],

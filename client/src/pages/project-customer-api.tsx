@@ -6,7 +6,8 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
 import { customerPushSchema, customerPushSettings, type CustomerPushSettings } from "@shared/customer-api-settings";
 import ProjectApiImport from "@/pages/project-api-import";
-import { CustomerApiDeliveries } from "@/components/customer-api-deliveries";
+import { ProjectCustomerApiLogs } from "@/components/project-customer-api-logs";
+import { useTimezone } from "@/hooks/use-timezone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -45,13 +46,16 @@ export default function ProjectCustomerApi({ projectId: explicitProjectId, embed
   const search = useSearch();
   const { user, hasPermission } = usePermissions();
   const { toast } = useToast();
+  const { timezone: siteTimezone } = useTimezone();
   const canPull = hasPermission("project.apiImport");
   const canReadPush = hasPermission("projects.edit") || hasPermission("settings.customerApiLogs");
   const canReadLogs = hasPermission("settings.customerApiLogs");
   const isAdmin = user?.role === "admin" || user?.subroleKey === "administrator";
   const [embeddedSection, setEmbeddedSection] = useState(new URLSearchParams(search).get("direction"));
   const sectionParam = embedded ? embeddedSection : new URLSearchParams(search).get("section");
-  const section = sectionParam === "pull" && canPull ? "pull" : canReadPush ? "push" : "pull";
+  const section = sectionParam === "logs" && canReadLogs ? "logs" : sectionParam === "pull" && canPull ? "pull" : canReadPush ? "push" : "pull";
+  const [logsVisited, setLogsVisited] = useState(section === "logs");
+  useEffect(() => { if (section === "logs") setLogsVisited(true); }, [section]);
   const [form, setForm] = useState<CustomerPushSettings>(defaults);
   const [formProjectId, setFormProjectId] = useState(projectId);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -60,7 +64,7 @@ export default function ProjectCustomerApi({ projectId: explicitProjectId, embed
 
   const settingsQuery = useQuery<SettingsEnvelope>({
     queryKey: [endpoint],
-    enabled: !!projectId && canReadPush && section === "push",
+    enabled: !!projectId && canReadPush,
     retry: false,
   });
   const settings = settingsQuery.data?.settings;
@@ -98,7 +102,7 @@ export default function ProjectCustomerApi({ projectId: explicitProjectId, embed
     },
   });
 
-  const projectQuery = useQuery<{ id: number; name: string }>({
+  const projectQuery = useQuery<{ id: number; name: string; timezone?: string | null }>({
     queryKey: ["/api/projects", projectId],
     enabled: !!projectId && (canReadPush || canPull),
     retry: false,
@@ -129,8 +133,9 @@ export default function ProjectCustomerApi({ projectId: explicitProjectId, embed
   const activeTabs = useMemo(() => [
     ...(canReadPush ? [{ key: "push", label: "Push delivery", icon: Send }] : []),
     ...(canPull ? [{ key: "pull", label: "Pull import", icon: CloudDownload }] : []),
-  ], [canReadPush, canPull]);
-  const chooseSection = (next: "push" | "pull") => {
+    ...(canReadLogs ? [{ key: "logs", label: "Customer API Logs", icon: Clock3 }] : []),
+  ], [canReadPush, canPull, canReadLogs]);
+  const chooseSection = (next: "push" | "pull" | "logs") => {
     if (embedded) setEmbeddedSection(next);
     else navigate(`/projects/${projectId}/customer-api?section=${next}`);
   };
@@ -155,7 +160,7 @@ export default function ProjectCustomerApi({ projectId: explicitProjectId, embed
             {activeTabs.map(tab => {
               const Icon = tab.icon;
               const selected = section === tab.key;
-              return <Button key={tab.key} role="tab" aria-selected={selected} variant={selected ? "default" : "outline"} onClick={() => chooseSection(tab.key as "push" | "pull")}><Icon className="mr-2 h-4 w-4" />{tab.label}</Button>;
+              return <Button key={tab.key} type="button" role="tab" aria-selected={selected} variant={selected ? "default" : "outline"} onClick={() => chooseSection(tab.key as "push" | "pull" | "logs")}><Icon className="mr-2 h-4 w-4" />{tab.label}</Button>;
             })}
           </div>
         </header>
@@ -232,7 +237,6 @@ export default function ProjectCustomerApi({ projectId: explicitProjectId, embed
                           {user?.role === "admin" && <a className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline" href="/documentation?doc=customer-api#push-delivery-field-reference">Push delivery field reference <ExternalLink className="h-3.5 w-3.5" /></a>}
                         </CardContent>
                       </Card>
-                      {canReadLogs && <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Clock3 className="h-4 w-4 text-primary" />Delivery activity</CardTitle><CardDescription>Project-scoped attempts and outcomes. Administrators can retry eligible deliveries.</CardDescription></CardHeader><CardContent><CustomerApiDeliveries isAdmin={isAdmin} projects={projectQuery.data ? [projectQuery.data] : []} fixedProjectId={projectId} /></CardContent></Card>}
                     </div>
                   </div>
                 </>}
@@ -240,6 +244,9 @@ export default function ProjectCustomerApi({ projectId: explicitProjectId, embed
         )}
 
         {section === "pull" && canPull && <ProjectApiImport projectId={projectId} embedded={embedded} />}
+        {canReadLogs && logsVisited && <div hidden={section !== "logs"} className={section === "logs" ? "min-w-0" : "hidden"}>
+          <ProjectCustomerApiLogs key={projectId} projectId={projectId} timezone={projectQuery.data?.timezone || siteTimezone} isAdmin={isAdmin} />
+        </div>}
       </div>
     </div>
   );

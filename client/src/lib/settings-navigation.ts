@@ -4,7 +4,7 @@ export type SettingsSectionKey =
   | "statuses" | "trouble-codes" | "service-types" | "routing"
   | "system-types" | "module-types"
   | "project-files" | "ftp-files" | "upload-settings" | "file-import-history" | "external-import-history"
-  | "contact-support" | "customer-api-logs"
+  | "contact-support"
   | "security-settings" | "access-locks"
   | "mobile-updates" | "web-updates"
   | "timezone" | "log-maintenance" | "backup-restore" | "audit-logs";
@@ -51,7 +51,6 @@ export const settingsGroups: SettingsGroup[] = [
   ] },
   { key: "api", label: "API & Messaging", sections: [
     { key: "contact-support", label: "Contact & Support Forms", permission: "settings.contactSupport" },
-    { key: "customer-api-logs", label: "Customer API Logs", permission: "settings.customerApiLogs" },
   ] },
   { key: "security", label: "Security", sections: [
     { key: "audit-logs", label: "Audit logs", permission: "audit.view" },

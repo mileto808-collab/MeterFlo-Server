@@ -22,13 +22,12 @@ import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, EyeOff, Smartphone, Globe, GitBranch, ArrowUpCircle, FileCode, Clipboard, Lock, Mail } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, ModuleType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, ModuleType, Project, FileImportHistory, ImportHistory } from "@shared/schema";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Database } from "lucide-react";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
-import { CustomerApiDeliveries } from "@/components/customer-api-deliveries";
 import { MobileReleaseManager } from "@/components/mobile-release-manager";
 import { CoreUpdatePreview, type UpdatePreview } from "@/components/core-update-preview";
 import { WindowsUpdateInstructions } from "@/components/windows-update-instructions";
@@ -420,7 +419,7 @@ export default function Settings() {
 
   const { data: projectsList } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: isAdmin || hasPermission("settings.systemTypes") || hasPermission("settings.moduleTypes") || hasPermission("settings.userGroups") || hasPermission("settings.customerApiLogs"),
+    enabled: isAdmin || hasPermission("settings.systemTypes") || hasPermission("settings.moduleTypes") || hasPermission("settings.userGroups"),
   });
 
   // File Import History query
@@ -433,27 +432,6 @@ export default function Settings() {
   const { data: externalDbImportHistoryList, isLoading: loadingExternalDbImportHistory } = useQuery<(ImportHistory & { configName?: string; databaseName?: string; projectName?: string })[]>({
     queryKey: ["/api/import-history"],
     enabled: isAdmin || hasPermission("settings.dbImportHistory"),
-  });
-
-  // Customer API Logs state and query
-  const [apiLogStatusFilter, setApiLogStatusFilter] = useState<string>("all");
-  const [apiLogProjectFilter, setApiLogProjectFilter] = useState<string>("all");
-  const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
-  
-  const { data: customerApiLogsList, isLoading: loadingApiLogs, refetch: refetchApiLogs } = useQuery<(CustomerApiLog & { projectName?: string | null })[]>({
-    queryKey: ["/api/customer-api-logs", apiLogStatusFilter, apiLogProjectFilter],
-    queryFn: async () => {
-      let url = "/api/customer-api-logs?limit=100";
-      if (apiLogStatusFilter !== "all") {
-        url += `&success=${apiLogStatusFilter === "success"}`;
-      }
-      if (apiLogProjectFilter !== "all") {
-        url += `&projectId=${apiLogProjectFilter}`;
-      }
-      const res = await fetch(url, { credentials: "include" });
-      return res.json();
-    },
-    enabled: isAdmin || hasPermission("settings.customerApiLogs"),
   });
 
   // Mobile App Configuration state and query
@@ -2177,160 +2155,6 @@ export default function Settings() {
                   <Save className="h-4 w-4 mr-2" />
                   Save Timezone Settings
                 </Button>
-              </CardContent>
-            </Card>
-        )}
-
-        {hasPermission("settings.customerApiLogs") && (
-            <Card data-settings-group="api" data-settings-section="customer-api-logs" data-testid="settings-section-customer-api-logs" hidden={effectiveSettingsSection !== "customer-api-logs"}>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <Send className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <CardTitle>Customer API Logs</CardTitle>
-                      <CardDescription className="mt-1">Track customer deliveries, retry failures, and inspect completion and trouble-report attempts</CardDescription>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => refetchApiLogs()}
-                    disabled={loadingApiLogs}
-                    data-testid="button-refresh-api-logs"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${loadingApiLogs ? 'animate-spin' : ''}`} />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <CustomerApiDeliveries isAdmin={isAdmin} projects={projectsList || []} />
-                <h3 className="font-semibold">Attempt history</h3>
-                <div className="flex gap-3 flex-wrap items-center">
-                  <div className="flex items-center gap-2">
-                    <Filter className="h-4 w-4 text-muted-foreground" />
-                    <Select
-                      value={apiLogStatusFilter}
-                      onValueChange={setApiLogStatusFilter}
-                    >
-                      <SelectTrigger className="w-32" data-testid="select-api-log-status-filter">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="success">Success</SelectItem>
-                        <SelectItem value="failed">Failed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Select
-                    value={apiLogProjectFilter}
-                    onValueChange={setApiLogProjectFilter}
-                  >
-                    <SelectTrigger className="w-48" data-testid="select-api-log-project-filter">
-                      <SelectValue placeholder="Project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Projects</SelectItem>
-                      {projectsList?.map((project) => (
-                        <SelectItem key={project.id} value={String(project.id)}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                {loadingApiLogs ? (
-                  <p className="text-muted-foreground">Loading...</p>
-                ) : customerApiLogsList && customerApiLogsList.length > 0 ? (
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-2">
-                      {customerApiLogsList.map((log) => (
-                        <Collapsible 
-                          key={log.id}
-                          open={expandedLogId === log.id}
-                          onOpenChange={(open) => setExpandedLogId(open ? log.id : null)}
-                        >
-                          <div className="border rounded-md">
-                            <CollapsibleTrigger asChild>
-                              <div 
-                                className="flex items-center gap-3 p-3 cursor-pointer hover-elevate"
-                                data-testid={`row-api-log-${log.id}`}
-                              >
-                                {expandedLogId === log.id ? (
-                                  <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                )}
-                                {log.success ? (
-                                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                                ) : (
-                                  <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-medium truncate">
-                                      WO #{log.workOrderId}
-                                    </span>
-                                    <Badge variant="outline" className="text-xs">
-                                      {log.projectName || `Project ${log.projectId}`}
-                                    </Badge>
-                                    {log.responseStatus && (
-                                      <Badge 
-                                        variant={log.responseStatus >= 200 && log.responseStatus < 300 ? "default" : "destructive"}
-                                        className="text-xs"
-                                      >
-                                        HTTP {log.responseStatus}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    {log.createdAt ? formatDateTime(log.createdAt) : "—"}
-                                  </p>
-                                </div>
-                              </div>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent>
-                              <div className="border-t p-3 space-y-3 bg-muted/30">
-                                {log.errorMessage && (
-                                  <div>
-                                    <Label className="text-xs text-muted-foreground">Error Message</Label>
-                                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">{log.errorMessage}</p>
-                                  </div>
-                                )}
-                                <div>
-                                  <Label className="text-xs text-muted-foreground">Request URL</Label>
-                                  <p className="text-sm font-mono break-all mt-1">{log.requestUrl || "Not configured"}</p>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                  <div>
-                                    <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                                      <Eye className="h-3 w-3" /> Request Payload
-                                    </Label>
-                                    <pre className="text-xs font-mono bg-muted p-2 rounded mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all">
-                                      {log.requestPayload ? (() => { try { return JSON.stringify(JSON.parse(log.requestPayload), null, 2); } catch { return log.requestPayload; } })() : "No request payload"}
-                                    </pre>
-                                  </div>
-                                  <div>
-                                    <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                                      <Eye className="h-3 w-3" /> Response Body
-                                    </Label>
-                                    <pre className="text-xs font-mono bg-muted p-2 rounded mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all">
-                                      {log.responseBody ? (() => { try { return JSON.stringify(JSON.parse(log.responseBody), null, 2); } catch { return log.responseBody; } })() : "No response body"}
-                                    </pre>
-                                  </div>
-                                </div>
-                              </div>
-                            </CollapsibleContent>
-                          </div>
-                        </Collapsible>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                ) : (
-                  <p className="text-muted-foreground">No API attempts match these filters. New attempts appear after a queued delivery runs.</p>
-                )}
               </CardContent>
             </Card>
         )}
