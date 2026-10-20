@@ -15,6 +15,7 @@ import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendo
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 import { InventoryError } from "./inventory-errors";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
+import { fieldUseSplit, resolveStockDiscrepancySchema } from "./inventory-stock-discrepancies";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
 import { settledLines } from "./inventory-shipment-model";
 import { applyShipmentDraftCommand, isShipmentDraftAction, validateDraftPosting, draftFingerprintCommand, validateDraftReplay } from "./inventory-shipment-drafts";
@@ -403,12 +404,47 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     // this work order's own reservations. Preparation itself reserves nothing.
     const trial = structuredClone(s);
     const groups = new Map<string, Allocation[]>();
-    for (const l of input.used) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) ?? []), l]);
+    for (const l of fieldUseSplit(trial, input.used, input.workOrderId).debit)
+      groups.set(l.warehouseId, [...(groups.get(l.warehouseId) ?? []), l]);
     for (const [warehouse, selected] of groups) move(trial, warehouse, selected, -1, input.workOrderId);
     assert(new Set(input.dispositions.map(x => x.equipment)).size === input.dispositions.length, "Only one disposition per removed equipment type.");
     input.dispositions = input.dispositions.map(value => resolveFieldDisposition(s, value));
     for (const r of input.dispositions) if (r.disposition === "returned") { assert(r.warehouseId, "Choose a return warehouse."); access(r.warehouseId); }
     allocation.used = input.used; allocation.dispositions = input.dispositions; allocation.mode = input.mode; allocation.revision++;
+  } else if (a === "resolveStockDiscrepancy") {
+    const input = resolveStockDiscrepancySchema.parse(d);
+    const discrepancy = s.stockDiscrepancies?.find(value => value.id === input.id);
+    assert(discrepancy && discrepancy.status === "open", "This discrepancy was already resolved or is unavailable. Refresh the review list.");
+    access(discrepancy.warehouseId);
+    assert(s.allocations.some(value => value.workOrderId === discrepancy.workOrderId && value.status === "consumed"),
+      "The original completed usage is unavailable; investigate before resolving.");
+    const evidence = input.receiptIds.map(id => {
+      const entry = s.receipts.find(value => value.id === id);
+      assert(entry && entry.warehouseId === discrepancy.warehouseId &&
+        entry.lines.some(line => line.itemId === discrepancy.itemId),
+      "Linked evidence must be a receipt for this item and stock location.");
+      return entry;
+    });
+    if (input.method === "apply_stock") {
+      assert(evidence.length && evidence.some(value =>
+        ["receive", "accept", "assemble", "countPost", "returnRelease", "resolveHold"].includes(value.action) &&
+        s.receipts.indexOf(value) > s.receipts.findIndex(receipt => receipt.id === discrepancy.sourceReceiptId)),
+        "Link the receipt, accepted transfer, assembly or posted count that corrected this stock.");
+      move(s, discrepancy.warehouseId, [{ itemId: discrepancy.itemId, quantity: discrepancy.quantity, serials: discrepancy.serials }],
+        -1, discrepancy.workOrderId, { to: { kind: "work", id: String(discrepancy.workOrderId) } });
+    } else {
+      // Explicit, evidenced accounting correction for already-used off-book stock.
+      // Never manufacture a PO, transfer, assembly recipe, or available quantity.
+      const balance = s.stock.find(value => value.warehouseId === discrepancy.warehouseId && value.itemId === discrepancy.itemId);
+      assert(!discrepancy.serials.some(serial => balance?.serials.includes(serial)),
+        "The installed serial is recorded in available stock. Apply the recorded stock instead.");
+    }
+    Object.assign(discrepancy, { status: "resolved", resolvedBy: actor, resolvedAt: now,
+      method: input.method, reason: input.reason, evidence: input.evidence, receiptIds: [...new Set(input.receiptIds)] });
+    receipt(discrepancy.id, discrepancy.warehouseId,
+      [{ itemId: discrepancy.itemId, quantity: discrepancy.quantity, serials: discrepancy.serials }],
+      `${input.method === "apply_stock" ? "Pending usage debited" : "Documented off-book usage adjustment (no available stock created)"}: ${input.reason} · Evidence: ${input.evidence}`);
+    s.receipts[s.receipts.length - 1].sourceReceiptId = discrepancy.sourceReceiptId;
   } else if (a === "verifyVendorKit") {
     const data = vendorKitSchema.parse(d);
     const { kit, warehouseId } = vendorKitSource(s, data);
@@ -508,6 +544,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     }
     c.status = "posted"; c.reason = reason; c.lines = input; delete c.draft; receipt(c.id, c.warehouseId, input, reason);
   } else if (a === "reconcileWorkOrder") {
+    assert(!(s.stockDiscrepancies ?? []).some(value => value.workOrderId === Number(d.workOrderId) && value.status === "open"),
+      "Resolve this work order's stock discrepancies before reversing its completed inventory usage.");
     const input = z.object({ workOrderId: workId, reason: z.string().trim().min(1).max(1000),
       restoreUsedStock: z.boolean() }).strict().parse(d);
     const allocation = s.allocations.find(x => x.workOrderId === input.workOrderId);
@@ -578,9 +616,27 @@ export function completeInventoryWorkOrder(original: InventoryState, workOrderId
     const requirements = s.workRequirements?.find(r => r.workOrderId === workOrderId);
     assert(!requirements || requirementsSatisfied(s, requirements, a.used),
       "Resolve missing type-to-item links and record every required item or kit component before completion.");
+    const split = fieldUseSplit(s, a.used, workOrderId);
     const groups = new Map<string, Allocation[]>();
-    for (const l of a.used) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) || []), l]);
+    for (const l of split.debit) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) || []), l]);
     for (const [w, ls] of groups) move(s, w, ls, -1, workOrderId, { to: { kind: "work", id: String(workOrderId) } });
+    const sourceReceiptId = `field-use-${workOrderId}-${a.revision}`;
+    if (split.missing.length) {
+      s.stockDiscrepancies ??= [];
+      s.receipts.push({ id: sourceReceiptId, action: "fieldUseShortage", reference: `work-order-${workOrderId}`,
+        warehouseId: groups.size === 1 ? [...groups.keys()][0] : null,
+        lines: structuredClone(a.used), actor: actor ?? "unavailable", occurredAt: now,
+        reason: "Actual field usage recorded. Only available, unreserved stock was debited; outstanding quantities require warehouse review." });
+    }
+    split.missing.forEach(({ line, recordedAvailable }, index) => {
+      const product = s.items.find(item => item.id === line.itemId)!;
+      s.stockDiscrepancies!.push({ id: `usage-${workOrderId}-${a.revision}-${index + 1}`,
+        workOrderId, warehouseId: line.warehouseId, itemId: line.itemId, sourceReceiptId, quantity: line.quantity, serials: [...line.serials],
+        usedQuantity: a.used.find(value => value.warehouseId === line.warehouseId && value.itemId === line.itemId)!.quantity,
+        recordedAvailable, actor: actor ?? "unavailable", occurredAt: now, status: "open",
+        itemSku: product.sku, itemName: product.name,
+        locationName: s.warehouses.find(value => value.id === line.warehouseId)?.name ?? "Unavailable location" });
+    });
     for (const d of a.dispositions) s.serialOccupancy = s.serialOccupancy!.filter(x =>
       x.serial !== d.serial || s.items.find(i => i.id === x.itemId)?.equipment !== d.equipment);
     occupy(s, a.used, workOrderId);

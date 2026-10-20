@@ -72,7 +72,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "stockDiscrepancies"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;

@@ -7,6 +7,7 @@ import type { KitAssembly, KitHold } from "./inventory-kits";
 import type { InventoryLocationType } from "./inventory-location-types";
 import type { RemovalRule, RemovalPolicy, FieldRemovalChoice } from "./inventory-removal-policy";
 import type { FieldStockSettings } from "./inventory-field-stock";
+import type { StockDiscrepancy } from "./inventory-stock-discrepancies";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -74,7 +75,7 @@ export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
-    "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink"]),
+    "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy"]),
   data: z.record(z.unknown()),
 }).strict();
 export type Warehouse = z.infer<typeof warehouseSchema>;
@@ -112,6 +113,7 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
   locationTypes?: InventoryLocationType[];
   removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[];
   fieldRemovalChoices?: FieldRemovalChoice[];
+  stockDiscrepancies?: StockDiscrepancy[];
   typeLinks?: InventoryTypeLink[]; workRequirements?: WorkRequirements[];
   categories?: string[];
   categoryCatalog?: InventoryCategory[];
@@ -135,6 +137,7 @@ export const commandPermission = (action: InventoryCommand["action"]) =>
    ["receive", "accept", "returnAccept", "verifyVendorKit"].includes(action) ? inventoryPermissions.receive :
   ["assemble", "disassemble"].includes(action) ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :
+  action === "resolveStockDiscrepancy" ? inventoryPermissions.resolveExceptions :
   ["assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;
 
 // Legacy free-text category values remain selectable without a destructive migration.

@@ -16,8 +16,10 @@ export function inventoryReceiptContexts(state: InventoryState): Map<string, Inv
     const handoff = receipt.action === "returnCustomerBatch" ? handoffs.get(receipt.reference) : undefined;
     const workOrderIds = new Set([...removed.map(record => record.workOrderId), ...(handoff?.lines.map(line => line.workOrderId) ?? [])]);
     // This is the documented reference emitted by the reconciliation command.
-    const reconciliation = receipt.action === "reconcileWorkOrder" ? /^work-order-([1-9]\d*)$/.exec(receipt.reference) : null;
+    const reconciliation = ["reconcileWorkOrder", "fieldUseShortage"].includes(receipt.action) ? /^work-order-([1-9]\d*)$/.exec(receipt.reference) : null;
     if (reconciliation && Number.isSafeInteger(Number(reconciliation[1]))) workOrderIds.add(Number(reconciliation[1]));
+    const discrepancy = receipt.action === "resolveStockDiscrepancy" ? state.stockDiscrepancies?.find(value => value.id === receipt.reference) : undefined;
+    if (discrepancy) workOrderIds.add(discrepancy.workOrderId);
     return [receipt.id, { workOrderIds: [...workOrderIds], removed,
       serials: [...new Set([...removed.map(record => record.serial),
         ...(handoff?.lines.map(line => line.serial) ?? []),

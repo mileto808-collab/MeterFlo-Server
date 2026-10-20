@@ -18,7 +18,8 @@ type WizardBasis = Pick<InventoryState, "fieldSettings" | "removalRules" | "remo
 /** Initialization, review and submission must compare exactly the same basis. */
 export function inventoryWizardBasis(snapshot: WizardBasis | undefined): string {
   return JSON.stringify({
-    revision: snapshot?.revision ?? 0,
+    // Project-wide receipts/assemblies/other technicians do not change this
+    // work order's approved basis. Current stock is checked atomically at posting.
     allocation: snapshot?.allocation ?? null,
     requirements: snapshot?.requirements ?? null,
     fieldSettings: snapshot?.fieldSettings ?? [],

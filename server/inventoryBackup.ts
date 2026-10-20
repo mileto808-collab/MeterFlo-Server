@@ -15,6 +15,7 @@ import { normalizeInventoryLocations } from "../shared/inventory-location-types"
 import { fieldStockSettingsSchema } from "../shared/inventory-field-stock";
 import { removalRuleSchema, removalPolicySchema } from "../shared/inventory-removal-policy";
 import { dispositionSchema } from "../shared/inventory";
+import { stockDiscrepancySchema } from "../shared/inventory-stock-discrepancies";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
@@ -27,6 +28,27 @@ export async function exportInventory(client: PoolClient, schema: string): Promi
   return { state, movements: rows, enabled: !!p.inventory_enabled };
 }
 export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: number[]) {
+  const discrepancies = z.array(stockDiscrepancySchema).parse(backup.state.stockDiscrepancies ?? []);
+  const state = backup.state;
+  if (new Set(discrepancies.map(value => value.id)).size !== discrepancies.length)
+    throw new Error("Duplicate stock discrepancy in inventory backup.");
+  for (const value of discrepancies) {
+    const product = state.items.find(item => item.id === value.itemId);
+    const source = state.receipts.find(receipt => receipt.id === value.sourceReceiptId && receipt.action === "fieldUseShortage" &&
+      receipt.reference === `work-order-${value.workOrderId}`);
+    const line = source?.lines.find(line => line.itemId === value.itemId &&
+      ((line as typeof line & { warehouseId?: string }).warehouseId ?? source.warehouseId) === value.warehouseId);
+    if (!workOrderIds.includes(value.workOrderId) || !product || !state.warehouses.some(warehouse => warehouse.id === value.warehouseId) ||
+      !source ||
+      !line || line.quantity !== value.usedQuantity || value.quantity > line.quantity ||
+      (product.tracking === "serialized" ? value.serials.length !== value.quantity : value.serials.length !== 0) ||
+      new Set(value.serials).size !== value.serials.length || value.serials.some(serial => !line.serials.includes(serial)) ||
+      value.receiptIds?.some(id => !state.receipts.some(receipt => receipt.id === id)) ||
+      value.status === "resolved" && (!value.resolvedBy || !value.resolvedAt || !value.reason || !value.evidence || !value.method ||
+        !state.receipts.some(receipt => receipt.action === "resolveStockDiscrepancy" && receipt.reference === value.id &&
+          receipt.sourceReceiptId === value.sourceReceiptId && receipt.actor === value.resolvedBy && receipt.occurredAt === value.resolvedAt)))
+      throw new Error("Inventory backup has invalid stock discrepancy evidence.");
+  }
   const drafts = z.array(savedShipmentDraftSchema).max(100).parse(backup.state.shipmentDrafts ?? []);
   if (new TextEncoder().encode(JSON.stringify(drafts)).length > 32 * 1024 * 1024)
     throw new Error("Saved shipment drafts exceed the project's 32 MiB limit.");

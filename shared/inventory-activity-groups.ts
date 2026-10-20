@@ -15,6 +15,8 @@ export function inventoryActivityActionLabel(action: string): string {
     complete: "Work order completed", returnAccept: "Accepted into quarantine",
     returnDecide: "Warehouse decision", returnCustomerBatch: "Customer handoff",
     returnCorrectDecision: "Warehouse decision corrected",
+    fieldUseShortage: "Field usage · stock discrepancy",
+    resolveStockDiscrepancy: "Stock discrepancy resolved",
   };
   return labels[action] ?? action.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, letter => letter.toUpperCase());
 }

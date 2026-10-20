@@ -8,7 +8,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
-import { inventoryTabs, InventoryMobileMenu, InventoryDesktopTabs } from "@/components/inventory-navigation";
+import { inventoryTabs } from "@/components/inventory-navigation";
 import { StartInventoryButton } from "@/components/start-inventory-button";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { usePageHeader } from "@/contexts/page-header-context";
@@ -33,6 +33,7 @@ import { InventoryShipmentSession } from "@/components/inventory-shipment-sessio
 import { InventoryShipmentDraftsPanel } from "@/components/inventory-shipment-drafts-panel";
 import { refreshShipmentInventory } from "@/components/inventory-shipment-draft-api";
 import { InventoryShipmentExceptions } from "@/components/inventory-shipment-exceptions";
+import { InventoryStockDiscrepancies } from "@/components/inventory-stock-discrepancies";
 import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-transit-dialog";
 import { InventoryStockSerialDialog, InventoryCatalogWorkspace, InventoryKitDialog, InventoryVendorKitDialog } from "@/components/inventory-lazy-tools";
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
@@ -77,6 +78,35 @@ import { inventoryActivityGroups } from "@shared/inventory-activity-groups";
 import { groupedInventoryActivity } from "@/lib/inventory-activity-data";
 import { InventoryActivityEntry } from "@/components/inventory-activity-entry";
 
+// Keep this page's additional section local; do not mutate shared navigation state.
+const projectInventoryTabs = [...inventoryTabs, { value: "stock-discrepancies", label: "Stock discrepancies" }];
+
+function ProjectInventoryMobileMenu({ value, onValueChange, canManageCategories }: {
+  value: string; onValueChange: (value: string) => void; canManageCategories: boolean;
+}) {
+  return <div className="inventory-mobile-menu min-w-0 flex-1 md:hidden">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button type="button" variant="outline" className="h-9 w-full justify-between"
+        aria-label={`Inventory sections, current: ${projectInventoryTabs.find(tab => tab.value === value)?.label ?? "Stock & search"}`}
+        data-testid="inventory-mobile-menu">
+        <span className="flex min-w-0 items-center gap-2"><Menu className="h-4 w-4 shrink-0" /><span className="truncate">{projectInventoryTabs.find(tab => tab.value === value)?.label ?? "Stock & search"}</span></span>
+        <ChevronDown className="h-4 w-4 shrink-0" />
+      </Button></DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-[min(70dvh,30rem)] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
+        {canManageCategories && <DropdownMenuItem onSelect={() => onValueChange("categories")}>Manage categories</DropdownMenuItem>}
+        {projectInventoryTabs.map(tab => <DropdownMenuItem key={tab.value} aria-label={tab.label}
+          data-testid={`inventory-mobile-menu-item-${tab.value}`} onSelect={() => onValueChange(tab.value)}>{tab.label}</DropdownMenuItem>)}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div>;
+}
+
+function ProjectInventoryDesktopTabs() {
+  return <TabsList className="inventory-desktop-tabs hidden h-auto w-full flex-wrap justify-start gap-1 md:flex">
+    {projectInventoryTabs.map(tab => <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>)}
+  </TabsList>;
+}
+
 type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[]; workOrderLabels?: Record<string, string>; workOrderIdentifiers?: import("@shared/inventory-work-order-labels").InventoryWorkOrderIdentifiers };
 type ResourceKind = "warehouse" | "vendor" | "item";
 const blankWarehouse = (): Warehouse => ({ id: "", code: "", name: "", type: "physical", active: true, address: "", city: "", state: "", zip: "", contact: "", phone: "", location: "", vin: "", plate: "", plateState: "", make: "", model: "", year: null, assignedUserId: null, userIds: [] });
@@ -87,7 +117,7 @@ const csv = (value: string) => value.split(/[\n,;]/).map(part => part.trim()).fi
 function savedInventoryTab(key: string) {
   try {
     const saved = window.sessionStorage.getItem(key);
-    return inventoryTabs.some(tab => tab.value === saved) ? saved! : "stock";
+    return projectInventoryTabs.some(tab => tab.value === saved) ? saved! : "stock";
   } catch {
     return "stock"; // Browser storage can be disabled; inventory itself must remain usable.
   }
@@ -132,7 +162,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [inventoryTab, setInventoryTabState] = useState(() => savedInventoryTab(inventoryTabKey));
   useEffect(() => { setInventoryTabState(savedInventoryTab(inventoryTabKey)); }, [inventoryTabKey]);
   const setInventoryTab = (value: string) => {
-    if (!inventoryTabs.some(tab => tab.value === value)) return;
+    if (!projectInventoryTabs.some(tab => tab.value === value)) return;
     setInventoryTabState(value);
     try { window.sessionStorage.setItem(inventoryTabKey, value); }
     catch { console.warn("Browser storage is unavailable; the selected Inventory tab cannot be remembered on refresh."); }
@@ -1363,7 +1393,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
         <StartInventoryButton mobile />
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
-          <InventoryMobileMenu value={inventoryTab} onValueChange={setInventoryTab} canManageCategories={can("inventory.maintain")} />
+          <ProjectInventoryMobileMenu value={inventoryTab} onValueChange={setInventoryTab} canManageCategories={can("inventory.maintain")} />
           <div className="inventory-desktop-heading hidden min-w-0 md:block">
             <p className="mb-0.5 hidden text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:block">Project operations</p>
             <h1 className="text-xl font-semibold tracking-tight sm:text-3xl">Inventory</h1>
@@ -1414,18 +1444,28 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <Metric label="Open orders" value={summary?.orders ?? orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
           <Metric label="Open counts" value={summary?.counts ?? state.counts.filter(count => count.status === "open").length} detail={summary ? "Snapshots awaiting a post" : `Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
         </div>
-        <InventoryDesktopTabs />
+        <ProjectInventoryDesktopTabs />
       </div>
 
     {/* Preserve the existing navigation policy, but let these toolbar surfaces
         scroll into view when that navigation leaves very little desktop height. */}
-    <div className={`min-h-0 flex-1 ${["locations", "returns"].includes(inventoryTab) ? "flex flex-col overflow-y-auto overscroll-contain" : ["orders", "stock", "items", "vendors", "categories", "exceptions", "counts", "activity"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
+    <div className={`min-h-0 flex-1 ${["locations", "returns"].includes(inventoryTab) ? "flex flex-col overflow-y-auto overscroll-contain" : ["orders", "stock", "items", "vendors", "categories", "exceptions", "counts", "activity", "stock-discrepancies"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
     {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors", "categories"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
       <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryStockWorkspace base={base} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           onViewSerials={setSelectedStockRow} canVerifyVendorKit={can("inventory.receive")}
           onVerifyVendorKit={() => { setVendorKitOpen(true); }} />
+      </TabsContent>
+      <TabsContent value="stock-discrepancies" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryStockDiscrepancies state={state} canResolve={can("inventory.resolveExceptions")} busy={command.isPending}
+          timezone={timezone} projectName={data.projectName} actors={data.actors ?? []}
+          workOrderLabels={data.workOrderLabels ?? {}} workOrderIdentifiers={data.workOrderIdentifiers}
+          onNavigate={setInventoryTab}
+          onResolve={async payload => {
+            await command.mutateAsync({ action: "resolveStockDiscrepancy", data: payload });
+            return true;
+          }} />
       </TabsContent>
       <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         {locationTypesManagerOpen ? <LocationTypesManager state={state} pending={command.isPending} authorized={canManageLocationTypes} portalHost={editorHostRef.current}

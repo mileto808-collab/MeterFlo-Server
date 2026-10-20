@@ -16,6 +16,12 @@ first design command-specific read/write sets, versioning and merge rules. Exerc
 cross-warehouse transfers and exact revision/ledger invariants when changing
 this boundary; successful individual posts alone cannot prove correctness.
 
+Record physical field usage separately from any unavailable-stock debit. Carry the undebited quantity as an auditable discrepancy, rather than making physical stock balances negative or inventing a receipt.
+
+**Why:** Technicians already hold the equipment; missing bookkeeping must not prevent completion. Physical stock and serial custody still need consistent quantities, and a later correction must not charge full usage a second time.
+
+**How to apply:** Resolve only the pending debit or record an explicit evidenced off-book adjustment. An already-installed unrecorded serial must never be received again as available stock; retain its installed custody and investigate the supporting accounting evidence. Keep project locks and hard serial-conflict checks.
+
 Paging a physical-count editor must not turn posting into independent per-page
 stock commits.
 

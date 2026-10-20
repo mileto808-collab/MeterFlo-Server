@@ -271,7 +271,7 @@ export function SystemChangeoutWizard({
     fieldSettings?: FieldStockSettings[]; canChangeFieldStock?: boolean;
     locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements;
     removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
-    revision?: number };
+    revision?: number; stockDiscrepancies?: Array<{ id: string; status: string; quantity: number; itemSku: string }> };
   const { data: workInventory, isLoading: workInventoryLoading, isError: workInventoryError, refetch: refetchWorkInventory } = useQuery<WizardInventory>({
     queryKey: inventoryQueryKey,
     enabled: !!inventoryEnabled && isOpen,
@@ -322,6 +322,20 @@ export function SystemChangeoutWizard({
   const accessibleWarehouses = (snapshot: WizardInventory | undefined) => (snapshot?.warehouses ?? [])
     .filter(warehouse => warehouseAccessible({ locationTypes: snapshot?.locationTypes ?? [] }, warehouse, user?.id, user?.role === "admin"));
   const inventoryBasis = inventoryWizardBasis(workInventory);
+  const [inventoryRechecking, setInventoryRechecking] = useState(false);
+  const recheckInventory = async () => {
+    setInventoryRechecking(true);
+    try {
+      const checked = await refetchWorkInventory();
+      if (checked.isError || !checked.data) throw new Error("Current inventory could not load. Your entries have been kept.");
+      actualUseBaseline.current = inventoryWizardBasis(checked.data);
+      actualUseLocationBaseline.current.clear();
+      captureLocationBasis(checked.data, currentLocationIds);
+      setBasisAccepted(true);
+    } catch (error) {
+      toast({ title: "Inventory recheck failed", description: error instanceof Error ? error.message : "Please retry.", variant: "destructive" });
+    } finally { setInventoryRechecking(false); }
+  };
   const reviewApprovedDefaults = async (apply = false) => {
     const session = defaultsSession.current;
     setDefaultsBusy(true);
@@ -1163,9 +1177,13 @@ export function SystemChangeoutWizard({
             };
           }
         }
-        await apiRequest("POST", `/api/projects/${projectId}/inventory/commands`, {
+        const prepared = await apiRequest("POST", `/api/projects/${projectId}/inventory/commands`, {
           operationId: prepareAttempt.current!.operationId, action: "prepareUse", data: commandData,
-        });
+        }).then(response => response.json());
+        const preparedAllocation = prepared.state?.allocations?.find((value: WorkAllocation) => value.workOrderId === workOrderId);
+        // Acknowledge only our own successful preparation, not new settings or
+        // requirements that may have changed in another session meanwhile.
+        if (preparedAllocation) actualUseBaseline.current = inventoryWizardBasis({ ...latest, allocation: preparedAllocation });
         await queryClient.invalidateQueries({ queryKey: inventoryQueryKey });
       }
       // For reading-only mode, set new IDs equal to old IDs (no equipment change)
@@ -1182,6 +1200,19 @@ export function SystemChangeoutWizard({
       
       await onComplete(submitData);
       prepareAttempt.current = null;
+      if (inventoryEnabled && data.canChange && !isReadingOnlyMode) {
+        try {
+          const completed = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
+            .then(response => response.json() as Promise<WizardInventory>);
+          const outstanding = completed.stockDiscrepancies?.filter(value => value.status === "open") ?? [];
+          if (outstanding.length) toast({ title: "Work order completed — stock review needed",
+            description: `${outstanding.length} inventory ${outstanding.length === 1 ? "discrepancy was" : "discrepancies were"} recorded for warehouse review. Your actual usage was saved.` });
+        } catch {
+          // Completion already committed. A follow-up display failure must never
+          // turn it into a failed submission or prompt a second physical usage.
+          toast({ title: "Work order completed", description: "Inventory review status could not refresh. Check Inventory → Stock discrepancies for any outstanding review." });
+        }
+      }
       
       // Save time tracking data on successful submission
       if (sessionStartTime && projectId && workOrderId) {
@@ -1988,14 +2019,7 @@ export function SystemChangeoutWizard({
                   {actualUseConflict && <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" role="alert">
                     <p className="font-medium">Inventory basis changed while you were entering use</p>
                     <p className="mt-1 text-muted-foreground">Your quantities and serials were kept. Recheck before continuing; current stock and access are still validated by the server.</p>
-                    <Button className="mt-2" type="button" size="sm" variant="outline" onClick={async () => {
-                      const checked = await refetchWorkInventory();
-                      if (checked.isError || !checked.data) return;
-                      actualUseBaseline.current = inventoryWizardBasis(checked.data);
-                       actualUseLocationBaseline.current.clear();
-                       captureLocationBasis(checked.data, currentLocationIds);
-                      setBasisAccepted(true);
-                    }}>Recheck and keep my entries</Button>
+                    <Button className="mt-2" type="button" size="sm" variant="outline" disabled={inventoryRechecking} onClick={() => void recheckInventory()}>Recheck and keep my entries</Button>
                   </div>}
                 </div>}
             </div>}
@@ -2688,6 +2712,13 @@ export function SystemChangeoutWizard({
       case "confirm":
         return (
           <div className="space-y-4">
+            {inventoryEnabled && data.canChange && !isReadingOnlyMode && <div className="rounded-md border bg-muted/30 p-3 text-sm" data-testid="wizard-inventory-submit-review">
+              <p>Record the equipment and parts actually used. A recorded quantity shortage will not prevent completion; it creates a stock discrepancy for authorized warehouse review. Serial ownership, required items and access are still checked.</p>
+              {actualUseConflict && <p role="alert" className="mt-2 font-medium text-amber-700 dark:text-amber-400">This work order’s inventory requirements or access changed. Recheck your retained entries here, or go back to edit them.</p>}
+              <Button type="button" size="sm" variant="outline" className="mt-2" disabled={inventoryRechecking || isSubmitting} onClick={() => void recheckInventory()} data-testid="wizard-submit-recheck-inventory">
+                {inventoryRechecking ? "Rechecking…" : "Recheck inventory"}
+              </Button>
+            </div>}
             <h3 className="text-lg font-semibold text-center">
               {isReadingOnlyMode 
                 ? (data.canChange ? "Review Reading Capture" : "Review Trouble Report")
