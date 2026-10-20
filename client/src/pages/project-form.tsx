@@ -112,7 +112,7 @@ export default function ProjectForm() {
   const canManageTroubleCodes = hasPermission("projects.manageTroubleCodes");
   const isMobile = useIsMobile();
   type ProjectSection = "details" | "work-orders" | "inventory" | "schedule" | "people" | "integrations";
-  type WorkOrderSection = "wizard" | "search" | "service-types" | "sub-statuses" | "trouble-codes";
+  type WorkOrderSection = "wizard" | "auto-closing" | "search" | "service-types" | "sub-statuses" | "trouble-codes";
   const requestedSection = new URLSearchParams(useSearch()).get("section");
   const canAccessCustomerApi = hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs");
   const integrationsOnly = isEditing && !permissionsLoading && !hasPermission("nav.projects");
@@ -143,6 +143,7 @@ export default function ProjectForm() {
   ].filter(section => !integrationsOnly || section.id === "integrations");
   const workOrderSections = [
     { id: "wizard" as const, label: "Wizard" },
+    { id: "auto-closing" as const, label: "Auto closing" },
     { id: "search" as const, label: "Search" },
     ...(isEditing ? [
       { id: "service-types" as const, label: "Service types" },
@@ -932,9 +933,13 @@ export default function ProjectForm() {
                 </div>
               )}
 
+              <div id="work-orders-panel-auto-closing" role="tabpanel" aria-label="Auto closing"
+                hidden={activeWorkOrderSection !== "auto-closing"} className="border-t pt-6 mt-6">
+                <WorkOrderClosingSettings projectId={isEditing ? Number(id) : undefined} isEditing={isEditing} />
+              </div>
+
               <div id="work-orders-panel-wizard" role="tabpanel" aria-label="Wizard"
                 hidden={activeWorkOrderSection !== "wizard"} className="border-t pt-6 mt-6">
-                <WorkOrderClosingSettings projectId={isEditing ? Number(id) : undefined} isEditing={isEditing} />
                 <div className="flex items-center gap-2 mb-4">
                   <Wand2 className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-lg font-medium">Wizard Configuration</h3>
