@@ -16,6 +16,7 @@ import os from "os";
 import { promises as fs, existsSync, unlinkSync, readdirSync, statSync, mkdirSync, rmSync, createWriteStream } from "fs";
 import { resetWorkOrderOptionsSchema, WorkOrderResetError } from "../shared/work-order-reset";
 import { stageWorkOrderResetFiles } from "./fileStorage";
+import { getFtpFilesPathSetting, setFtpFilesPath } from "./fileStorage";
 import archiver from "archiver";
 import unzipper from "unzipper";
 import { Readable } from "stream";
@@ -1947,7 +1948,8 @@ export async function registerRoutes(
       
       // If name is changing, rename the project directory
       if (req.body.name && req.body.name !== existingProject.name) {
-        await renameProjectDirectory(existingProject.name, req.body.name, projectId);
+        if (!await renameProjectDirectory(existingProject.name, req.body.name, projectId))
+          return res.status(409).json({ message: "Project folders could not be renamed. Check the Project Files and FTP Files directories before retrying." });
       }
       
       const project = await storage.updateProject(projectId, pushValidation.data);
@@ -5233,6 +5235,25 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating project files path:", error);
       res.status(500).json({ message: "Failed to update project files path" });
+    }
+  });
+
+  app.get("/api/settings/ftp-files-path", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || !await storage.hasPermission(user, "settings.projectFiles"))
+        return res.status(403).json({ message: "Project Files Directory permission required." });
+      res.json(await getFtpFilesPathSetting());
+    } catch { res.status(500).json({ message: "Failed to fetch FTP Files directory." }); }
+  });
+  app.put("/api/settings/ftp-files-path", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || !await storage.hasPermission(user, "settings.projectFiles"))
+        return res.status(403).json({ message: "Project Files Directory permission required." });
+      res.json(await withBackupExclusive(() => setFtpFilesPath(req.body?.path)));
+    } catch (error: any) {
+      res.status(error.status === 400 ? 400 : 500).json({ message: error.status === 400 ? error.message : "Failed to save FTP Files directory." });
     }
   });
 

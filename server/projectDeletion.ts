@@ -78,7 +78,7 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
   if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw new Error("Invalid project ID.");
   const database = dependencies.database ?? pool, files = dependencies.files ?? fs;
   const client = await database.connect();
-  let staged: Cleanup | undefined;
+  const stagedJobs: Cleanup[] = [];
   let committed = false;
   let released = false;
   try {
@@ -110,9 +110,11 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
     // Remaining project, import, API, membership, scheduling and dispatch FKs
     // cascade here. Shared users, equipment types and core statuses are retained.
     await client.query("DELETE FROM public.projects WHERE id=$1", [id]);
-    const root = path.resolve(filesRoot);
+    const { rows: [ftpSetting] } = await client.query("SELECT value FROM public.system_settings WHERE key='ftp_files_path'");
+    const roots = [...new Set([path.resolve(filesRoot), path.resolve(ftpSetting?.value?.trim() || filesRoot)])];
+    for (const root of roots) {
     const folders: string[] = [];
-    for (const folder of projectFolders(id, project.name)) {
+    for (const folder of root === path.resolve(filesRoot) ? projectFolders(id, project.name) : [getProjectDirectoryName(project.name, id)]) {
       const stat = await exists(files, path.join(root, folder));
       if (!stat) continue;
       if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("Project directory is not a regular directory; deletion was cancelled.");
@@ -122,7 +124,8 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
       const parent = await exists(files, path.join(root, trash));
       if (parent && (parent.isSymbolicLink() || !parent.isDirectory()))
         throw new Error("Project cleanup directory is unsafe; deletion was cancelled.");
-      staged = { projectId: id, projectName: project.name, root, token: `${id}-${randomUUID()}`, folders };
+      const staged: Cleanup = { projectId: id, projectName: project.name, root, token: `${id}-${randomUUID()}`, folders };
+      stagedJobs.push(staged);
       const directory = path.join(root, trash, staged.token);
       await files.mkdir(directory, { recursive: true, mode: 0o700 });
       // A journal also permits recovery after process termination before COMMIT.
@@ -131,24 +134,27 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
         await files.rename(path.join(root, folder), path.join(directory, stagedName(index)));
       await putJob(client, staged);
     }
+    }
     await client.query("COMMIT");
     committed = true;
   } catch (error) {
     const rolledBack = await client.query("ROLLBACK").then(() => true, () => false);
     client.release(!rolledBack); released = true;
-    if (staged) {
+    if (stagedJobs.length) {
       // COMMIT can fail after the server committed. Check authoritative state;
       // never restore deleted files into a project whose deletion committed.
       const probe = await database.connect();
       try {
         await probe.query("BEGIN"); await lock(probe, id);
         const { rows } = await probe.query("SELECT id FROM public.projects WHERE id=$1 FOR UPDATE", [id]);
+        for (const staged of stagedJobs) {
         if (rows.length) {
           try { await restoreFiles(files, staged); }
           catch { await putJob(probe, { ...staged, restore: true }); }
         } else {
           await putJob(probe, staged);
           committed = true;
+        }
         }
         await probe.query("COMMIT");
       } catch (recoveryError) {
@@ -158,7 +164,7 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
     }
     if (!committed) throw error;
   } finally { if (!released) client.release(); }
-  if (staged) {
+  for (const staged of stagedJobs) {
     try { await retryProjectFileCleanup(keyFor(staged), dependencies); }
     catch { throw new ProjectDeletionCleanupPending(); }
   }
@@ -193,7 +199,12 @@ export async function retryProjectFileCleanup(key: string, dependencies: Depende
 /** Recover only this application's journal format under the configured root.
  * Row/advisory locks prevent recovery from racing an in-progress deletion. */
 export async function pendingProjectFileCleanups(filesRoot: string, dependencies: Dependencies = {}): Promise<PendingProjectCleanup[]> {
-  const database = dependencies.database ?? pool, files = dependencies.files ?? fs, root = path.resolve(filesRoot);
+  const database = dependencies.database ?? pool, files = dependencies.files ?? fs;
+  const settingsClient = await database.connect();
+  let ftpRoot: string | undefined;
+  try { ftpRoot = (await settingsClient.query("SELECT value FROM public.system_settings WHERE key='ftp_files_path'")).rows[0]?.value; }
+  finally { settingsClient.release(); }
+  for (const root of new Set([path.resolve(filesRoot), path.resolve(ftpRoot?.trim() || filesRoot)])) {
   await safeCleanupDirectory(files, root);
   let entries: string[] = [];
   try { entries = await files.readdir(path.join(root, trash)); }
@@ -219,6 +230,7 @@ export async function pendingProjectFileCleanups(filesRoot: string, dependencies
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
     finally { client.release(); }
+  }
   }
   const client = await database.connect();
   try {

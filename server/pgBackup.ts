@@ -7,7 +7,7 @@ import archiver from "archiver";
 import { finished } from "node:stream/promises";
 import unzipper from "unzipper";
 import { storage } from "./storage";
-import { getProjectFilesPath } from "./fileStorage";
+import { getProjectFilesPath, getFtpFilesPath } from "./fileStorage";
 import { auditedOperation } from "./auditService";
 import { initializeAudit } from "./auditMigration";
 import { pool as applicationPool } from "./db";
@@ -405,7 +405,8 @@ function addWebAppFilesToArchive(
   appDir: string,
   archivePrefix: string,
   skippedFiles: string[],
-  projectFilesPath: string | null
+  projectFilesPath: string | null,
+  ftpFilesPath?: string
 ): void {
   let entries: fs.Dirent[];
   try {
@@ -423,8 +424,9 @@ function addWebAppFilesToArchive(
   }
   // Also exclude the project files directory
   if (projectFilesPath) {
-    excludeDirs.push(projectFilesPath);
+    excludeDirs.push(path.resolve(projectFilesPath));
   }
+  if (ftpFilesPath) excludeDirs.push(path.resolve(ftpFilesPath));
   
   for (const entry of entries) {
     if (entry.name === "meterflo-scheduled-backups") continue;
@@ -439,7 +441,7 @@ function addWebAppFilesToArchive(
     }
     
     // Skip the project files directory
-    if (projectFilesPath && path.normalize(fullPath) === path.normalize(projectFilesPath)) {
+    if ([projectFilesPath, ftpFilesPath].some(root => root && path.resolve(fullPath) === path.resolve(root))) {
       console.log(`[Backup] Excluding project files directory from web app backup: ${entry.name}`);
       continue;
     }
@@ -817,12 +819,13 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   }
   
   const projectFilesPath = await getProjectFilesPath();
+  const ftpFilesPath = await getFtpFilesPath();
   const projectFilesExist = fs.existsSync(projectFilesPath);
   const appDir = process.cwd();
   const skippedFiles: string[] = [];
   
   // For project-only backup, require the directory to exist
-  if (backupType === "project" && !projectFilesExist) {
+  if (backupType === "project" && !projectFilesExist && !fs.existsSync(ftpFilesPath)) {
     throw new Error("No project files directory found to backup");
   }
   
@@ -880,7 +883,8 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
         appDir, 
         "webapp_files", 
         skippedFiles, 
-        projectFilesPath
+        projectFilesPath,
+        ftpFilesPath
       );
       console.log("[Backup] Web app source files added to archive");
     } catch (error: any) {
@@ -893,6 +897,9 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
     }
   }
   
+  if (includeProjectFiles && path.resolve(ftpFilesPath) !== path.resolve(projectFilesPath) && fs.existsSync(ftpFilesPath))
+    addDirectoryToArchiveRecursive(archive, ftpFilesPath, "ftp_files", skippedFiles);
+
   // Add project files (only for full backup)
   if (includeProjectFiles && projectFilesPath && projectFilesExist) {
     console.log(`[Backup] Adding project files from: ${projectFilesPath}`);
@@ -1369,10 +1376,17 @@ async function restoreFilesFromPgArchiveData(
     
     const directory = await unzipper.Open.buffer(zipBuffer);
     
+    const ftpTargetPath = await getFtpFilesPath();
     for (const file of directory.files) {
-      if (file.path.startsWith("project_files/") && file.type === "File") {
-        const relativePath = file.path.replace("project_files/", "");
-        const fullPath = path.join(targetPath, relativePath);
+      const prefix = file.path.startsWith("ftp_files/") ? "ftp_files/" : "project_files/";
+      if (file.path.startsWith(prefix) && file.type === "File") {
+        const relativePath = file.path.slice(prefix.length);
+        const root = path.resolve(prefix === "ftp_files/" ? ftpTargetPath : targetPath);
+        const fullPath = path.resolve(root, relativePath);
+        if (path.relative(root, fullPath).split(path.sep).includes("..") || path.isAbsolute(path.relative(root, fullPath))) {
+          errors.push("Unsafe file path in archive; file was not restored.");
+          continue;
+        }
         const dir = path.dirname(fullPath);
         
         try {

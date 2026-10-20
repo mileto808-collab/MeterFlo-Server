@@ -50,3 +50,11 @@ The user approved the secure HTTPS equivalent on Replit and the same HTTPS optio
 **Why:** The user explicitly approved this design while retaining the additive-method requirement above.
 
 **How to apply:** Keep HTTPS available on all three targets without claiming it supplies contractual SSH/SFTP support.
+
+## Storage-root changes
+
+Changing the FTP Files root is configuration, not an automatic file migration; leaving it unset preserves the existing Project Files-based layout.
+
+**Why:** A path-setting change must not silently move or overwrite existing customer files, and existing manual workflows must keep working until the administrator deliberately switches roots.
+
+**How to apply:** Explain the folder layout and copy-before-switch procedure. Any future migration tool must be a separate, explicit operation rather than a side effect of saving a path.

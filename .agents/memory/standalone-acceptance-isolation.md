@@ -26,3 +26,9 @@ In-schema restore fixtures must redirect every relational dependency, including 
 **Why:** A newly added relational category table exposed a backup fixture whose unqualified inserts were isolated but whose public-table queries still reached the development schema. A temporary search path alone does not isolate qualified SQL.
 
 **How to apply:** Update the cloned-table set and qualified-query redirection together when extending restore dependencies. Prefer an owned disposable database for acceptance; a missing dependency must fail rather than fall through to unrelated data.
+
+Filesystem acceptance helpers must use the owned application's working directory before resolving relative storage paths.
+
+**Why:** An owned database alone does not isolate file backups: a relative Project Files root otherwise resolves against the real workspace when a helper runs there.
+
+**How to apply:** Establish both database ownership and filesystem working-directory ownership before importing or invoking backup/file-storage code; keep module/configuration paths explicit.

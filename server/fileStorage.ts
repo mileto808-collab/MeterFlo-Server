@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import { randomUUID } from "node:crypto";
 import { storage } from "./storage";
 import { writeAuditedFile,deleteAuditedFile,auditFileIdentifier } from "./auditFiles";
 import { getProjectDirectoryName, workOrderFolderName, attachmentChild } from "./attachmentPaths";
@@ -21,6 +22,36 @@ export async function setProjectFilesPath(newPath: string): Promise<void> {
     newPath,
     "Root directory path for project files storage"
   );
+}
+
+// An empty override keeps the original Project Files/<project>/Project FTP Files layout.
+export async function getFtpFilesPathSetting() {
+  const configured = await storage.getSetting("ftp_files_path");
+  const root = configured?.trim() || "";
+  return { path: root, effectivePath: root || await getProjectFilesPath(), usesProjectFilesPath: !root };
+}
+
+export async function getFtpFilesPath(): Promise<string> {
+  return (await getFtpFilesPathSetting()).effectivePath;
+}
+
+export async function setFtpFilesPath(value: unknown) {
+  if (typeof value !== "string" || value.length > 2048 || /[\x00-\x1f]/.test(value))
+    throw Object.assign(new Error("Enter a valid server directory path, or leave it empty to use Project Files."), { status: 400 });
+  const root = value.trim();
+  if (process.platform !== "win32" && (/^[a-z]:[\\/]/i.test(root) || root.startsWith("\\\\")))
+    throw Object.assign(new Error("Windows drive and UNC paths can only be used on a Windows server."), { status: 400 });
+  const effective = root || await getProjectFilesPath();
+  const probe = path.join(effective, `.meterflo-write-check-${randomUUID()}`);
+  try {
+    await fs.mkdir(effective, { recursive: true });
+    await fs.writeFile(probe, "", { flag: "wx" });
+    await fs.unlink(probe);
+  } catch {
+    throw Object.assign(new Error("The server cannot write to this directory. Check the path and service-account permissions."), { status: 400 });
+  }
+  await storage.setSetting("ftp_files_path", root, "Optional FTP Files root; empty inherits Project Files. Existing files are not moved.");
+  return getFtpFilesPathSetting();
 }
 
 // Get the directory path for a project
@@ -48,7 +79,7 @@ export async function renameProjectDirectory(
   newProjectName: string,
   projectId: number
 ): Promise<boolean> {
-  const rootPath = await ensureProjectFilesRoot();
+  const roots = [...new Set([path.resolve(await ensureProjectFilesRoot()), path.resolve(await getFtpFilesPath())])];
   const oldDirName = getProjectDirectoryName(oldProjectName, projectId);
   const newDirName = getProjectDirectoryName(newProjectName, projectId);
   
@@ -57,24 +88,23 @@ export async function renameProjectDirectory(
     return true;
   }
   
-  const oldPath = path.join(rootPath, oldDirName);
-  const newPath = path.join(rootPath, newDirName);
-  
+  const moved: [string, string][] = [];
   try {
-    // Check if old directory exists
-    await fs.access(oldPath);
-    // Rename the directory
-    await fs.rename(oldPath, newPath);
-    return true;
-  } catch (error) {
-    // Old directory doesn't exist or rename failed
-    // Try to ensure the new directory exists instead
-    try {
-      await fs.mkdir(newPath, { recursive: true });
-      return true;
-    } catch {
-      return false;
+    for (const root of roots) {
+      const oldPath = path.join(root, oldDirName), newPath = path.join(root, newDirName);
+      try { await fs.lstat(oldPath); }
+      catch (error: any) {
+        if (error.code !== "ENOENT") throw error;
+        await fs.mkdir(newPath, { recursive: true });
+        continue;
+      }
+      await fs.rename(oldPath, newPath);
+      moved.push([oldPath, newPath]);
     }
+    return true;
+  } catch {
+    for (const [oldPath, newPath] of moved.reverse()) await fs.rename(newPath, oldPath);
+    return false;
   }
 }
 
@@ -248,14 +278,9 @@ export async function getFilePath(
 
 // Ensure project FTP files folder exists (for scheduled file imports)
 export async function ensureProjectFtpDirectory(projectName: string, projectId: number): Promise<string> {
-  const projectPath = await ensureProjectDirectory(projectName, projectId);
+  const projectPath = path.join(await getFtpFilesPath(), getProjectDirectoryName(projectName, projectId));
   const ftpDir = path.join(projectPath, "Project FTP Files");
-  
-  try {
-    await fs.mkdir(ftpDir, { recursive: true });
-  } catch (error) {
-    // Directory might already exist
-  }
+  await fs.mkdir(ftpDir, { recursive: true });
   
   return ftpDir;
 }

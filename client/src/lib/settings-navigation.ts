@@ -3,7 +3,7 @@ export type SettingsSectionKey =
   | "user-groups" | "access-levels"
   | "statuses" | "trouble-codes" | "service-types" | "routing"
   | "system-types" | "module-types"
-  | "project-files" | "upload-settings" | "file-import-history" | "external-import-history"
+  | "project-files" | "ftp-files" | "upload-settings" | "file-import-history" | "external-import-history"
   | "contact-support" | "customer-api-logs"
   | "security-settings" | "access-locks"
   | "mobile-updates" | "web-updates"
@@ -44,6 +44,7 @@ export const settingsGroups: SettingsGroup[] = [
   ] },
   { key: "files", label: "Files & Imports", sections: [
     { key: "project-files", label: "Project Files Directory", permission: "settings.projectFiles" },
+    { key: "ftp-files", label: "FTP Files Directory", permission: "settings.projectFiles" },
     { key: "upload-settings", label: "Upload Settings", permission: "settings.fileUpload" },
     { key: "file-import-history", label: "File Import History", permission: "settings.importHistory" },
     { key: "external-import-history", label: "External DB Import History", permission: "settings.dbImportHistory" },

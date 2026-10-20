@@ -110,6 +110,7 @@ export default function Settings() {
   const { toast } = useToast();
   const { formatDateTime } = useTimezone();
   const [projectFilesPath, setProjectFilesPath] = useState("");
+  const [ftpFilesPath, setFtpFilesPath] = useState("");
   const [maxFileSizeMB, setMaxFileSizeMB] = useState("100");
   const [allowedExtensions, setAllowedExtensions] = useState("");
   const [selectedTimezone, setSelectedTimezone] = useState("America/Denver");
@@ -332,6 +333,16 @@ export default function Settings() {
     queryKey: ["/api/settings/project-files-path"],
     enabled: isAdmin || hasPermission("settings.projectFiles"),
   });
+
+  const ftpFilesPathQuery = useQuery<{
+    path: string;
+    effectivePath: string;
+    usesProjectFilesPath: boolean;
+  }>({
+    queryKey: ["/api/settings/ftp-files-path"],
+    enabled: isAdmin || hasPermission("settings.projectFiles"),
+  });
+  const ftpFilesPathData = ftpFilesPathQuery.data;
 
   const { data: fileSettingsData } = useQuery<FileSettings>({
     queryKey: ["/api/settings/file-settings"],
@@ -650,6 +661,12 @@ export default function Settings() {
       setProjectFilesPath(pathData.path);
     }
   }, [pathData]);
+
+  useEffect(() => {
+    if (ftpFilesPathData) {
+      setFtpFilesPath(ftpFilesPathData.path || "");
+    }
+  }, [ftpFilesPathData]);
 
   useEffect(() => {
     if (fileSettingsData) {
@@ -1504,6 +1521,19 @@ export default function Settings() {
     },
   });
 
+  const updateFtpFilesPathMutation = useMutation({
+    mutationFn: async (path: string) => {
+      return apiRequest("PUT", "/api/settings/ftp-files-path", { path });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/ftp-files-path"] });
+      toast({ title: "FTP files directory updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message || "Failed to update FTP files directory", variant: "destructive" });
+    },
+  });
+
   const updateFileSettingsMutation = useMutation({
     mutationFn: async (data: { maxFileSizeMB: number; allowedExtensions: string }) => {
       return apiRequest("PUT", "/api/settings/file-settings", data);
@@ -1925,6 +1955,103 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+        )}
+
+        {hasPermission("settings.projectFiles") && (
+          <Card data-settings-group="files" data-settings-section="ftp-files" data-testid="settings-section-ftp-files" hidden={effectiveSettingsSection !== "ftp-files"}>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>FTP Files Directory</CardTitle>
+              </div>
+              <CardDescription>Configure the server-side root used for each project’s FTP Files folder</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="ftp-files-path">Configured Path Override</Label>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="ftp-files-path"
+                    value={ftpFilesPath}
+                    onChange={(event) => setFtpFilesPath(event.target.value)}
+                    placeholder="Blank uses the Project Files directory"
+                    className="min-w-0 flex-1"
+                    disabled={ftpFilesPathQuery.isLoading || ftpFilesPathQuery.isError}
+                    data-testid="input-ftp-files-path"
+                  />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      onClick={() => updateFtpFilesPathMutation.mutate("")}
+                      disabled={ftpFilesPathQuery.isLoading || ftpFilesPathQuery.isError || updateFtpFilesPathMutation.isPending || !ftpFilesPath.trim()}
+                      className="w-full sm:w-auto"
+                      data-testid="button-reset-ftp-files-path"
+                    >
+                      Use Project Files directory
+                    </Button>
+                    <Button
+                      onClick={() => updateFtpFilesPathMutation.mutate(ftpFilesPath)}
+                      disabled={ftpFilesPathQuery.isLoading || ftpFilesPathQuery.isError || updateFtpFilesPathMutation.isPending || ftpFilesPath === ftpFilesPathData?.path}
+                      className="w-full sm:w-auto"
+                      data-testid="button-save-ftp-files-path"
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      {updateFtpFilesPathMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+                {updateFtpFilesPathMutation.isError && (
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" role="alert">
+                    <p className="text-sm text-destructive">
+                      {updateFtpFilesPathMutation.error instanceof Error ? updateFtpFilesPathMutation.error.message : "FTP directory could not be saved."}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => updateFtpFilesPathMutation.mutate(ftpFilesPath)}
+                      disabled={updateFtpFilesPathMutation.isPending}
+                      data-testid="button-retry-save-ftp-files-path"
+                    >
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Retry save
+                    </Button>
+                  </div>
+                )}
+                <div className="mt-3 rounded-md border bg-muted/40 p-3">
+                  {ftpFilesPathQuery.isLoading ? (
+                    <div className="space-y-2" aria-label="Loading FTP directory settings">
+                      <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                      <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+                    </div>
+                  ) : ftpFilesPathQuery.isError ? (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-destructive">FTP directory settings could not be loaded. Your other settings and drafts are unchanged.</p>
+                      <Button variant="outline" size="sm" onClick={() => ftpFilesPathQuery.refetch()} data-testid="button-retry-ftp-files-path">
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Retry
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium">
+                        Effective root{ftpFilesPathData?.usesProjectFilesPath ? " · using Project Files directory" : ""}
+                      </p>
+                      <code className="mt-1 block break-all text-sm text-muted-foreground" data-testid="text-ftp-files-effective-path">
+                        {ftpFilesPathData?.effectivePath || "—"}
+                      </code>
+                    </>
+                  )}
+                </div>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  FTP Files are stored at <code className="break-all rounded bg-muted px-1">effectiveRoot/[project_name]_[id]/Project FTP Files/</code>.
+                  This server-side path may be relative to the server’s working directory or absolute; the service account must have access to read and write it.
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Used by FTP Files uploads and downloads, and manual and scheduled import/export. Changing the path does not move existing files. To migrate them, copy each project’s existing <code className="break-all rounded bg-muted px-1">Project FTP Files</code> folder into its matching project folder beneath the new root. Files are never moved automatically.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {hasPermission("settings.fileUpload") && (

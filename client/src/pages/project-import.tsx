@@ -1355,7 +1355,9 @@ function LegacyImport() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>How Scheduled Imports Work</CardTitle></CardHeader>
+            <CardHeader><CardTitle>How Scheduled Imports Work</CardTitle>
+              <CardDescription>Local input files use Settings → Files &amp; Imports → FTP Files Directory. By default this inherits Project Files. A custom server root also applies to FTP Files uploads/downloads and local exports; changing it does not move existing files.</CardDescription>
+            </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
               <div className="space-y-2">
                 <p><strong className="text-foreground">Local:</strong> Upload the file manually to Project FTP Files; the next run uses the newest matching file.</p>
