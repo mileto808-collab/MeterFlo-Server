@@ -49,7 +49,7 @@ export const settingsGroups: SettingsGroup[] = [
     { key: "file-import-history", label: "File Import History", permission: "settings.importHistory" },
     { key: "external-import-history", label: "External DB Import History", permission: "settings.dbImportHistory" },
   ] },
-  { key: "api", label: "API & Messaging", sections: [
+  { key: "api", label: "Contact & Support", sections: [
     { key: "contact-support", label: "Contact & Support Forms", permission: "settings.contactSupport" },
   ] },
   { key: "security", label: "Security", sections: [

@@ -21,9 +21,9 @@ const categoryLabels: Record<LogCategory, string> = {
   errorArchives: "Archived error reports",
   activeError: "Active error reports",
   customerApi: "Customer API attempt history",
-  apiImports: "API imports",
-  databaseImports: "Database imports",
-  fileImports: "File imports",
+  apiImports: "API import history",
+  databaseImports: "External database import history",
+  fileImports: "File import history (manual & scheduled)",
 };
 const globalFileCategories: LogCategory[] = ["errorArchives", "activeError"];
 const defaultPolicy: LogPolicy = { automatic: false, rotationMiB: 10, archiveDays: 30, archiveBudgetMiB: 200, historyDays: 90 };
@@ -239,7 +239,7 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5" />Retention policy</CardTitle>
-                <CardDescription>Automatic cleanup is off by default. Saving policy settings never deletes records.</CardDescription>
+                <CardDescription>Automatic cleanup is off by default and runs hourly when enabled. Saving policy settings never deletes records. Error-log rotation operates independently of automatic deletion.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="flex items-center justify-between gap-4 rounded-md border p-3">
@@ -251,11 +251,11 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   {([
-                    ["rotationMiB", "Rotation size (MiB)", 1, 100],
-                    ["archiveDays", "Archive retention (days)", 1, 3650],
-                    ["archiveBudgetMiB", "Archive budget (MiB)", 10, 10000],
-                    ["historyDays", "History retention (days)", 1, 3650],
-                  ] as const).map(([key, label, min, max]) => (
+                    ["rotationMiB", "Error-log rotation threshold (MiB)", 1, 100, "When error.log exceeds this size, the next write archives it and starts a new file. A large entry can exceed the threshold. Rotation does not delete archives."],
+                    ["archiveDays", "Error-log archive retention (days)", 1, 3650, "With automatic cleanup enabled, archived error-log files older than this are eligible for deletion. The active error.log is not automatically cleared."],
+                    ["archiveBudgetMiB", "Error-log archive budget (MiB)", 10, 10000, "Target combined size of archived error-log files only—not database histories, backups, or total disk usage. Automatic cleanup removes oldest archives first, in capped hourly batches; this is not a hard disk quota."],
+                    ["historyDays", "Database history retention (days)", 1, 3650, "Applies to eligible Customer API attempts, API imports, external database imports, and manual/scheduled file imports. Failed/partial histories, active/retryable records and latest scheduled-import diagnostics remain protected."],
+                  ] as const).map(([key, label, min, max, help]) => (
                     <div key={key} className="space-y-2">
                       <Label htmlFor={`policy-${key}`}>{label}</Label>
                       <Input
@@ -268,6 +268,7 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
                         onChange={(event) => setPolicy((current) => ({ ...current, [key]: Number(event.target.value) }))}
                       />
                       <p className="text-xs text-muted-foreground">Allowed: {min.toLocaleString()}–{max.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">{help}</p>
                     </div>
                   ))}
                 </div>
@@ -284,7 +285,7 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5" />Manual cleanup</CardTitle>
-                <CardDescription>Preview a precise, capped batch before any records are removed.</CardDescription>
+                <CardDescription>Includes import histories. Select categories and a cutoff, preview a precise capped batch, then confirm permanent removal. Protected records are excluded.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <fieldset className="space-y-3">

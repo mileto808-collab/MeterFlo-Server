@@ -92,13 +92,13 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
     await page.goto("/maintenance");
     await page.getByRole("button",{name:"Save policy",exact:true}).waitFor();
     assert.equal(await page.getByRole("switch").isChecked(),false);
-    await page.getByLabel("History retention (days)",{exact:true}).fill("180");
+    await page.getByLabel("Database history retention (days)",{exact:true}).fill("180");
     const saveResponse=page.waitForResponse(r => r.url().endsWith("/api/maintenance/logs/policy") && r.request().method()==="PUT");
     await page.getByRole("button",{name:"Save policy",exact:true}).click();
     assert.equal((await saveResponse).status(),200);
     await page.reload();
     await page.getByRole("button",{name:"Save policy",exact:true}).waitFor();
-    assert.equal(await page.getByLabel("History retention (days)",{exact:true}).inputValue(),"180");
+    assert.equal(await page.getByLabel("Database history retention (days)",{exact:true}).inputValue(),"180");
     assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}customer_api_logs`)).rows[0].c,11,"Save/reload is non-destructive");
     await page.getByText("Customer API attempt history",{exact:true}).last().click();
     await page.getByLabel("Delete records older than",{exact:true}).fill("2001-01-01T00:00");
