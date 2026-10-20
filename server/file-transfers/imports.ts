@@ -27,7 +27,7 @@ export async function importCandidate(config: any, project: any): Promise<Import
       minimatch(file.name, pattern, { nocase: true, dot: false }) && /\.(csv|xlsx?|json)$/i.test(file.name))
       .sort((a, b) => remote ? a.modified - b.modified : b.modified - a.modified);
     for (const file of matches) {
-      const identity = JSON.stringify([remote ? config.remoteDirectory : "local", file.name, file.size, file.modified]);
+      const identity = JSON.stringify([remote ? config.remoteDirectory : "local", file.relativeName || file.name, file.size, file.modified]);
       // Recheck the newest file even with unchanged metadata to catch a replaced file.
       if (seen.has(identity) && file !== matches[remote ? matches.length - 1 : 0]) continue;
       if (file.size > 25 * 1024 * 1024) throw new TransferError("A matching import file exceeds 25 MB.");
@@ -47,14 +47,16 @@ export async function importCandidate(config: any, project: any): Promise<Import
           if (digest(await fs.readFile(target)) !== hash) throw new TransferError("A different staged import file already exists.");
         }
       }
-      return { name, size: bytes.length, modifiedAt: new Date(file.modified), filePath: path.join(folder, name), hash, identity,
+      return { name, size: bytes.length, modifiedAt: new Date(file.modified), filePath: path.join(folder, remote ? name : file.relativeName || name), hash, identity,
         metadata: { originalName: file.name, source: remote ? "sftp" : "local" } };
     }
     return null;
   };
   if (!remote) {
-    const files = (await getProjectFtpFiles(project.name, project.id)).map(file => ({ ...file, modified: new Date(file.modifiedAt).getTime() }));
-    return discover(files, file => fs.readFile(path.join(folder, file.name)));
+    const files = (await getProjectFtpFiles(project.name, project.id))
+      .filter(file => !file.name.startsWith("outgoing/"))
+      .map(file => ({ ...file, relativeName: file.name, name: path.posix.basename(file.name), modified: new Date(file.modifiedAt).getTime() }));
+    return discover(files, file => fs.readFile(path.join(folder, file.relativeName)));
   }
   const directory = remoteDirectory(config.remoteDirectory);
   return withSftp(project.id, async client => {

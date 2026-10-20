@@ -1,6 +1,7 @@
 import { TransferError } from "./sftp";
 
 const filename = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,179}\.(csv|xlsx?|json)$/i;
+export const sftpFinalUploadName = (name: string) => name.replace(/\.(?:filepart|part|tmp)$/i, "");
 
 /** POSIX paths inside a virtual root; never an operating-system path resolver. */
 export function sftpVirtualPath(value: string): string {
@@ -21,7 +22,7 @@ export function sftpVirtualPath(value: string): string {
     if (!parts.length) {
       if (segment !== "incoming" && segment !== "outgoing")
         throw new TransferError("Only the project inbox and outbox are available.", 403);
-    } else if (parts.length !== 1 || !filename.test(segment)) {
+    } else if (parts.length !== 1 || !filename.test(parts[0] === "incoming" ? sftpFinalUploadName(segment) : segment)) {
       throw new TransferError("Only CSV, XLS, XLSX and JSON files in the project inbox/outbox are available.", 403);
     }
     parts.push(segment);

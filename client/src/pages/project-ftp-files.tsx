@@ -37,6 +37,7 @@ export default function ProjectFtpFiles() {
   const [, navigate] = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadDirectory, setUploadDirectory] = useState("");
   const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
   const accessDenied = accessDeniedForProject === projectId;
   const [uploadProgress, setUploadProgress] = useState<ChunkedUploadProgress | null>(null);
@@ -78,7 +79,7 @@ export default function ProjectFtpFiles() {
     try {
       const response = await uploadFileWithChunking({
         file,
-        url: `/api/projects/${projectId}/ftp-files`,
+        url: `/api/projects/${projectId}/ftp-files${uploadDirectory ? `?directory=${uploadDirectory}` : ""}`,
         onProgress: setUploadProgress,
       });
       
@@ -94,7 +95,10 @@ export default function ProjectFtpFiles() {
         return;
       }
       
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/ftp-files`] });
+      // A listing begun before this upload may otherwise finish afterwards
+      // with an old snapshot, particularly during a fast upload on page load.
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/ftp-files`] });
+      await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/ftp-files`] });
       toast({ title: "File uploaded successfully" });
     } catch (error) {
       toast({ title: error instanceof Error ? error.message : "Failed to upload file", variant: "destructive" });
@@ -193,7 +197,7 @@ export default function ProjectFtpFiles() {
             FTP Files - {project?.name || "Loading..."}
           </h1>
           <p className="text-muted-foreground">
-            Files in this directory can be automatically processed by scheduled file imports
+            Shared project files for incoming imports and outgoing customer downloads
           </p>
         </div>
       </div>
@@ -206,6 +210,18 @@ export default function ProjectFtpFiles() {
               <CardTitle>Project FTP Files</CardTitle>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <select
+                aria-label="Upload directory"
+                data-testid="select-ftp-upload-directory"
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={uploadDirectory}
+                disabled={uploading}
+                onChange={event => setUploadDirectory(event.target.value)}
+              >
+                <option value="">FTP root (existing imports)</option>
+                <option value="incoming">incoming — import files</option>
+                {user?.role === "admin" && <option value="outgoing">outgoing — customer downloads</option>}
+              </select>
               <Button
                 variant="outline"
                 size="sm"
@@ -240,7 +256,7 @@ export default function ProjectFtpFiles() {
             </div>
           )}
           <CardDescription>
-            Upload CSV or Excel files here for scheduled import processing. The latest file in this directory will be picked up by the file import scheduler.
+            LOCAL import schedules match filenames in the FTP root and incoming. Outgoing is for customer downloads and is never imported. File type and size restrictions still apply.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -252,7 +268,7 @@ export default function ProjectFtpFiles() {
             <div className="text-center py-8 text-muted-foreground">
               <FolderSync className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No files in FTP directory</p>
-              <p className="text-sm">Upload CSV or Excel files to be processed by scheduled imports</p>
+              <p className="text-sm">Choose an upload directory for import files or administrator-published customer downloads.</p>
             </div>
           ) : (
             <Table>
@@ -312,9 +328,10 @@ export default function ProjectFtpFiles() {
           <CardTitle>How FTP File Import Works</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>1. Upload CSV or Excel files to this directory manually or via external FTP/SFTP tools.</p>
+          <p>1. Upload files to the FTP root or incoming using this page. On standalone Windows/Linux, incoming and outgoing are real subfolders under this project's configured Project FTP Files directory, also accessible to local administrators in Explorer.</p>
           <p>2. Configure a scheduled file import in the File Import page with column mapping and schedule.</p>
-          <p>3. The scheduler will automatically pick up the latest file in this directory and process it to create work orders.</p>
+          <p>3. LOCAL imports check the root and incoming using the configured filename pattern, never outgoing. Check the live required/optional column guide in File Import/Export before uploading.</p>
+          <p>SFTP uploads use /incoming and remain hidden until complete. The SFTP inbox remains upload-only. Place supported CSV, XLS, XLSX or JSON files in outgoing for customer downloads; new local exports are written there too. Existing generated root-level exports remain downloadable. Finish local copies before import schedules run; copy outgoing files with a .part suffix and rename when complete.</p>
           <p>4. After processing, the import history will show the results and any errors.</p>
         </CardContent>
       </Card>

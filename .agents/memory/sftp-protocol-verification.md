@@ -32,3 +32,9 @@ Use ssh2's default CommonJS import for runtime values under the project's tsx/ES
 **Why:** Named runtime imports passed TypeScript and the compiled CommonJS build, but development startup failed because the package did not expose a named utils export to native ESM.
 
 **How to apply:** Verify both development startup and the built standalone server after changes to this package boundary.
+
+When validating SFTP metadata, inspect defined attribute values rather than the presence of object keys.
+
+**Why:** ssh2 supplies a Stats instance with its own undefined mode/uid/gid/extended properties even when a client sent only upload timestamps. Treating those keys as requested changes incorrectly rejects timestamp preservation.
+
+**How to apply:** Exercise SETSTAT and FSETSTAT over the real protocol, preserving timestamp support while still rejecting actual ownership, permission or resizing requests.

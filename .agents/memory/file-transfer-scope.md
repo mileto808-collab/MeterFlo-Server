@@ -64,3 +64,11 @@ Changing the FTP Files root is configuration, not an automatic file migration; l
 **Why:** A path-setting change must not silently move or overwrite existing customer files, and existing manual workflows must keep working until the administrator deliberately switches roots.
 
 **How to apply:** Explain the folder layout and copy-before-switch procedure. Any future migration tool must be a separate, explicit operation rather than a side effect of saving a path.
+
+## Shared local and SFTP folders
+
+The user requires incoming/outgoing to be real folders that local Windows administrators can see and use in Explorer, shared with MeterFlo and project-scoped SFTP clients—not SFTP-only virtual directory entries.
+
+**Why:** The user could see folders in FileZilla but not Explorer and explicitly required both local and remote upload/retrieval methods.
+
+**How to apply:** Keep legacy root-level import files working without silently moving them. Treat outgoing as an explicit customer-publication boundary: supported files deliberately placed there by administrators may be downloaded by authorized project transfer accounts; incoming remains upload-only remotely. Never scan outgoing as an import source. Web publishing of arbitrary outgoing files is administrator-only, so existing project file-upload access does not silently gain customer-publication authority.

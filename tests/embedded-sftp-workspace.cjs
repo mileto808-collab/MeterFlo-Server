@@ -26,6 +26,10 @@ const { Client, utils } = require("ssh2");
     const result = spawnSync(process.execPath, ["--import", "tsx", "tests/sftp-restore-data.ts", mode], { env: process.env, encoding: "utf8", timeout: 120000 });
     assert.equal(result.status, 0, `Owned ${mode} check failed: ${result.stderr?.slice(-1500)}`);
   }
+  function sharedData(...args) {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "tests/sftp-shared-folders-data.ts", ...args], { env: process.env, encoding: "utf8", timeout: 30000 });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  }
   const key = utils.generateKeyPairSync("ed25519"), password = randomUUID() + randomUUID();
   const accountBody = extra => ({ username: `sx_${randomUUID().replaceAll("-", "").slice(0, 20)}`, label: "Owned test",
     authType: "publicKey", publicKey: key.public, canUpload: true, canDownload: true,
@@ -137,6 +141,20 @@ const { Client, utils } = require("ssh2");
     const aliasHandle = await call(raw, "open", "/./incoming//./" + filename, "w");
     await call(raw, "write", aliasHandle, csv, 0, csv.length, 0);
     await call(raw, "close", aliasHandle);
+    sharedData("upload", filename);
+    // FileZilla timestamp preservation and WinSCP-style completed temporary
+    // rename both succeed without allowing arbitrary chmod/rename or overwrite.
+    await call(raw, "setstat", "/incoming/" + filename, { atime: 1792410000, mtime: 1792410000 });
+    assert.equal((await call(raw, "stat", "/incoming/" + filename)).mtime, 1792410000);
+    await assert.rejects(call(raw, "setstat", "/incoming/" + filename, { mode: 0o777 }));
+    const temp = await call(raw, "open", "/incoming/temporary.csv.filepart", "w");
+    await call(raw, "write", temp, csv, 0, csv.length, 0);
+    await call(raw, "fsetstat", temp, { atime: 1792410000, mtime: 1792410000 });
+    await call(raw, "close", temp);
+    assert.equal((await api.get(`/api/projects/${fixture.projectId}/ftp-files`)).status(), 200);
+    assert.ok(!(await (await api.get(`/api/projects/${fixture.projectId}/ftp-files`)).json()).some(f => f.name.includes("temporary.csv")));
+    await call(raw, "rename", "/incoming/temporary.csv.filepart", "/incoming/temporary.csv");
+    sharedData("upload", "temporary.csv");
     await assert.rejects(sftp.put(Buffer.from("replacement"), "/incoming/" + filename), "Never overwrite a prior upload");
     await assert.rejects(sftp.get("/incoming/" + filename), "Inbox is upload-only");
     await assert.rejects(sftp.rename("/incoming/" + filename, "/incoming/renamed.csv"));
@@ -156,12 +174,55 @@ const { Client, utils } = require("ssh2");
     const imported = await json("POST", `/api/file-import-configs/${local.id}/run`);
     assert.equal(imported.imported, 1, JSON.stringify(imported)); assert.equal(imported.failed, 0);
     assert.equal((await json("POST", `/api/file-import-configs/${local.id}/run`)).imported, 0);
+    sharedData("prepare");
+    assert.match((await sftp.get("/outgoing/manual_customer.csv")).toString(), /customer download/);
+    assert.ok(!(await sftp.list("/outgoing")).some(file => file.name === "link.csv"));
+    await assert.rejects(sftp.get("/outgoing/link.csv"));
+    const projectFiles = await (await api.get(`/api/projects/${fixture.projectId}/ftp-files`)).json();
+    assert.ok(projectFiles.some(file => file.name === "incoming/local_admin.csv"));
+    assert.ok(projectFiles.some(file => file.name === "outgoing/manual_customer.csv"));
+    assert.ok(!projectFiles.some(file => file.name === "outgoing/link.csv"));
+    const localConfig = await json("POST", `/api/projects/${fixture.projectId}/file-import-configs`, {
+      name: "Explorer incoming discovery", source: "local", processedFilePattern: "local_admin.csv",
+      scheduleFrequency: "manual", isEnabled: true, delimiter: ",", hasHeader: true,
+      columnMapping: { customerWoId: "wo", customerId: "customer", customerName: "name", address: "address", serviceType: "service" },
+    }, 201);
+    assert.equal((await json("POST", `/api/file-import-configs/${localConfig.id}/run`)).imported, 1);
+    const legacyConfig = await json("POST", `/api/projects/${fixture.projectId}/file-import-configs`, {
+      ...localConfig, name: "Legacy root discovery", processedFilePattern: "legacy_admin.csv", id: undefined,
+    }, 201);
+    assert.equal((await json("POST", `/api/file-import-configs/${legacyConfig.id}/run`)).imported, 1);
+    const outgoingConfig = await json("POST", `/api/projects/${fixture.projectId}/file-import-configs`, {
+      ...localConfig, name: "Never import outbox", processedFilePattern: "not_an_import.csv", id: undefined,
+    }, 201);
+    assert.equal((await json("POST", `/api/file-import-configs/${outgoingConfig.id}/run`)).imported, 0);
+    // The web page can place and retrieve files in the same physical outbox.
+    const uploaded = await api.post(`/api/projects/${fixture.projectId}/ftp-files?directory=outgoing`, {
+      multipart: { file: { name: "web_customer.csv", mimeType: "text/csv", buffer: Buffer.from("web download\n") } },
+    });
+    assert.equal(uploaded.status(), 200, await uploaded.text());
+    assert.equal((await sftp.get("/outgoing/web_customer.csv")).toString(), "web download\n");
+    const webDownload = await api.get(`/api/projects/${fixture.projectId}/ftp-files/${encodeURIComponent("outgoing/web_customer.csv")}/download`);
+    assert.equal(await webDownload.text(), "web download\n");
+    const chunked = await json("POST", "/api/files/chunked/init", {
+      fileName: "chunk_customer.csv", totalChunks: 1,
+      targetUrl: `/api/projects/${fixture.projectId}/ftp-files?directory=outgoing`,
+    });
+    const chunkResponse = await api.post("/api/files/chunked/chunk", { multipart: {
+      uploadId: chunked.uploadId, chunkIndex: "0",
+      chunk: { name: "chunk", mimeType: "application/octet-stream", buffer: Buffer.from("chunk download\n") },
+    } });
+    assert.equal(chunkResponse.status(), 200);
+    await json("POST", "/api/files/chunked/finalize", { uploadId: chunked.uploadId }, 201);
+    assert.equal((await sftp.get("/outgoing/chunk_customer.csv")).toString(), "chunk download\n");
     const config = await json("POST", base + "/exports", { name: "Inbound SFTP download", format: "csv", mode: "full",
       allStatuses: true, statusIds: [], subStatusIds: [], columns: ["customerWoId", "customerName", "address"],
       filenameTemplate: "download_{runId}", destination: "local", remoteDirectory: "", scheduleFrequency: "manual", isEnabled: false }, 201);
     const run = await json("POST", base + `/exports/${config.id}/run`, {}, 202), exported = await finished(run.id);
     assert.ok((await sftp.list("/outgoing")).some(r => r.name === exported.fileName));
     assert.match((await sftp.get("/outgoing/" + exported.fileName)).toString(), /INBOUND-SFTP-1/);
+    sharedData("legacy-export", exported.fileName);
+    assert.match((await sftp.get("/outgoing/" + exported.fileName)).toString(), /INBOUND-SFTP-1/, "Legacy generated root exports remain readable");
     const readAlias = await call(raw, "open", "./outgoing//./" + exported.fileName, "r");
     const downloadBytes = Buffer.alloc(4096);
     const bytesRead = await new Promise((resolve, reject) => raw.read(readAlias, downloadBytes, 0, downloadBytes.length, 0,
@@ -251,6 +312,20 @@ const { Client, utils } = require("ssh2");
       args: ["--no-sandbox", "--disable-dev-shm-usage"] });
     const browserContext = await browser.newContext({ storageState: await api.storageState(), viewport: { width: 1280, height: 900 } });
     const page = await browserContext.newPage();
+    await page.goto(owner.baseURL + `/projects/${fixture.projectId}/ftp-files`);
+    await page.getByTestId("select-ftp-upload-directory").selectOption("outgoing");
+    await page.getByTestId("input-file-upload").setInputFiles({
+      name: "browser_customer.csv", mimeType: "text/csv", buffer: Buffer.from("browser download\n"),
+    });
+    await page.getByText("outgoing/browser_customer.csv", { exact: true }).waitFor({ timeout: 10000 }).catch(async error => {
+      await page.screenshot({ path: "generated-artifacts/project-workspace/sftp-web-upload-diagnostic.jpg", fullPage: true });
+      console.error("Web upload state:", await page.locator("body").innerText());
+      throw error;
+    });
+    const webClient = await connect(full);
+    assert.equal((await webClient.get("/outgoing/browser_customer.csv")).toString(), "browser download\n");
+    await webClient.end();
+    await page.screenshot({ path: "generated-artifacts/project-workspace/sftp-shared-folders-desktop.jpg", fullPage: true });
     await page.goto(owner.baseURL + `/projects/${fixture.projectId}/import`);
     await page.getByRole("tab", { name: "SFTP Server", exact: true }).click();
     await page.getByText(full.username, { exact: true }).first().waitFor();
@@ -289,6 +364,10 @@ const { Client, utils } = require("ssh2");
     assert.equal((await viewer.get(root + "/events/delete-preview?includeShared=true")).status(), 403);
     const viewerPreview = await (await viewer.get(root + "/events/delete-preview")).json();
     assert.equal((await viewer.delete(root + "/events", { data: { ...viewerPreview, confirmed: true, filters: { ...viewerPreview.filters, includeShared: true } } })).status(), 403);
+    if (process.env.SFTP_TRANSFER_ONLY === "1") {
+      console.log("PASS transfer-only: physical folders, Explorer-style copies, web/chunked uploads, temporary finalization, timestamps, OpenSSH, imports/exports, permissions and responsive UI. Backup/restore checks not run.");
+      return;
+    }
     ownedData("restore");
     const reviewed = await json("GET", root);
     assert.ok(reviewed.restoreReview.requiresReview);

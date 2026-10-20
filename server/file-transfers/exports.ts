@@ -224,7 +224,9 @@ async function executeRun(run: any) {
     run = (await pool.query("SELECT * FROM public.file_export_runs WHERE id=$1", [run.id])).rows[0];
     const bytes = await runBytes(run), project = await storage.getProject(run.project_id);
     if (!project || project.isActive === false) throw new TransferError("The project is unavailable or inactive.");
-    const folder = await ensureProjectFtpDirectory(project.name, project.id), target = path.join(folder, run.file_name);
+    const root = await ensureProjectFtpDirectory(project.name, project.id);
+    const folder = run.snapshot.destination === "local" ? path.join(root, "outgoing") : root;
+    const target = path.join(folder, run.file_name);
     try {
       const current = await fs.readFile(target);
       if (digest(current) !== digest(bytes)) throw new TransferError("A different local file already exists; it was not overwritten.", 409);

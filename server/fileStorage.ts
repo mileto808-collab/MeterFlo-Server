@@ -281,8 +281,33 @@ export async function ensureProjectFtpDirectory(projectName: string, projectId: 
   const projectPath = path.join(await getFtpFilesPath(), getProjectDirectoryName(projectName, projectId));
   const ftpDir = path.join(projectPath, "Project FTP Files");
   await fs.mkdir(ftpDir, { recursive: true });
-  
+  // These are real directories shared by the web workspace, SFTP and local admins.
+  // Never traverse a link/junction supplied through local filesystem access.
+  for (const directory of [ftpDir, path.join(ftpDir, "incoming"), path.join(ftpDir, "outgoing")]) {
+    if (directory !== ftpDir) await fs.mkdir(directory, { recursive: true });
+    const info = await fs.lstat(directory), actual = await fs.realpath(directory);
+    const expected = path.resolve(directory);
+    if (!info.isDirectory() || info.isSymbolicLink() ||
+      (process.platform === "win32" ? actual.toLowerCase() !== expected.toLowerCase() : actual !== expected))
+      throw new Error("Project FTP storage must use real directories, not links or junctions.");
+  }
   return ftpDir;
+}
+
+// Only the legacy root or one of our two known folders is addressable. Never
+// accept arbitrary filesystem paths from a web route or import configuration.
+export async function resolveProjectFtpFile(projectName: string, projectId: number, filename: string): Promise<string> {
+  const parts = filename.split("/");
+  if (parts.length > 2 || (parts.length === 2 && !["incoming", "outgoing"].includes(parts[0])) ||
+    parts.some(part => !part || part.startsWith(".") || /[\\\x00-\x1f\x7f:]/.test(part)) ||
+    (parts.length === 1 && ["incoming", "outgoing"].includes(parts[0])))
+    throw new Error("Invalid project FTP filename.");
+  const file = path.join(await ensureProjectFtpDirectory(projectName, projectId), ...parts);
+  try {
+    const info = await fs.lstat(file);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error("Not a regular project FTP file.");
+  } catch (error: any) { if (error.code !== "ENOENT") throw error; }
+  return file;
 }
 
 // Get list of files in project FTP directory
@@ -293,13 +318,17 @@ export async function getProjectFtpFiles(
   const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
   
   try {
-    const files = await fs.readdir(ftpDir);
+    const files = (await Promise.all(["", "incoming", "outgoing"].map(async directory =>
+      (await fs.readdir(path.join(ftpDir, directory))).map(name => directory ? `${directory}/${name}` : name)
+    ))).flat();
     const fileDetails = await Promise.all(
       files.map(async (file) => {
         const filePath = path.join(ftpDir, file);
-        const stats = await fs.stat(filePath);
+        let stats;
+        try { stats = await fs.lstat(filePath); }
+        catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
         // Only include files, not directories
-        if (stats.isFile()) {
+        if (stats.isFile() && !stats.isSymbolicLink() && !path.basename(file).startsWith(".")) {
           return {
             name: file,
             size: stats.size,
@@ -310,9 +339,7 @@ export async function getProjectFtpFiles(
       })
     );
     return fileDetails.filter((f): f is { name: string; size: number; modifiedAt: Date } => f !== null);
-  } catch (error) {
-    return [];
-  }
+  } catch (error) { throw error; }
 }
 
 // Get the latest file in project FTP directory (by modification time)
@@ -321,7 +348,7 @@ export async function getLatestProjectFtpFile(
   projectId: number
 ): Promise<{ name: string; path: string; size: number; modifiedAt: Date } | null> {
   const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
-  const files = await getProjectFtpFiles(projectName, projectId);
+  const files = (await getProjectFtpFiles(projectName, projectId)).filter(file => !file.name.startsWith("outgoing/"));
   
   if (files.length === 0) return null;
   
@@ -343,8 +370,7 @@ export async function readProjectFtpFile(
   projectId: number,
   filename: string
 ): Promise<Buffer | null> {
-  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
-  const filePath = path.join(ftpDir, filename);
+  const filePath = await resolveProjectFtpFile(projectName, projectId, filename);
   
   try {
     const content = await fs.readFile(filePath);
@@ -360,8 +386,7 @@ export async function deleteProjectFtpFile(
   projectId: number,
   filename: string
 ): Promise<boolean> {
-  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
-  const filePath = path.join(ftpDir, filename);
+  const filePath = await resolveProjectFtpFile(projectName, projectId, filename);
   
   return deleteAuditedFile(filePath,"projectFtpDelete",projectId,projectName,auditFileIdentifier(filename));
 }
@@ -372,8 +397,7 @@ export async function getProjectFtpFilePath(
   projectId: number,
   filename: string
 ): Promise<string | null> {
-  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
-  const filePath = path.join(ftpDir, filename);
+  const filePath = await resolveProjectFtpFile(projectName, projectId, filename);
   
   try {
     await fs.access(filePath);
@@ -388,11 +412,11 @@ export async function saveProjectFtpFile(
   projectName: string,
   projectId: number,
   filename: string,
-  buffer: Buffer
+  buffer: Buffer,
+  directory: "" | "incoming" | "outgoing" = ""
 ): Promise<string> {
-  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const filePath = path.join(ftpDir, sanitizedFilename);
+  const filePath = await resolveProjectFtpFile(projectName, projectId, directory ? `${directory}/${sanitizedFilename}` : sanitizedFilename);
   
   await writeAuditedFile(filePath,buffer,"projectFtpUpload",projectId,projectName,auditFileIdentifier(sanitizedFilename));
   

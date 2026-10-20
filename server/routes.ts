@@ -4692,11 +4692,15 @@ export async function registerRoutes(
         return res.status(400).json({ message: `File type ${fileExtension} not allowed. Allowed: ${allowedExtensions.join(", ")}` });
       }
       
+      const directory = req.body?.directory || req.query.directory || "";
+      if (!["", "incoming", "outgoing"].includes(directory)) return res.status(400).json({ message: "Choose the FTP root, incoming or outgoing directory." });
+      if (directory === "outgoing" && currentUser?.role !== "admin") return res.status(403).json({ message: "Admin access required to publish customer-download files." });
       const savedPath = await saveProjectFtpFile(
         project.name,
         project.id,
         req.file.originalname,
-        req.file.buffer
+        req.file.buffer,
+        directory
       );
       
       // Emit SSE event for real-time updates
@@ -8452,7 +8456,7 @@ export async function registerRoutes(
 
       const projectFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/files$/);
       const woFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/work-orders\/(\d+)\/files$/);
-      const ftpFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/ftp-files$/);
+      const ftpFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/ftp-files(?:\?directory=(incoming|outgoing))?$/);
 
       if (!projectFileMatch && !woFileMatch && !ftpFileMatch) {
         return res.status(400).json({ message: "Invalid target URL" });
@@ -8632,7 +8636,7 @@ export async function registerRoutes(
 
       const projectFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/files$/);
       const woFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/work-orders\/(\d+)\/files$/);
-      const ftpFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/ftp-files$/);
+      const ftpFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/ftp-files(?:\?directory=(incoming|outgoing))?$/);
 
       if (projectFileMatch) {
         const projectId = parseInt(projectFileMatch[1]);
@@ -8699,6 +8703,8 @@ export async function registerRoutes(
 
       } else if (ftpFileMatch) {
         const projectId = parseInt(ftpFileMatch[1]);
+        if (ftpFileMatch[2] === "outgoing" && currentUser.role !== "admin")
+          return res.status(403).json({ message: "Admin access required to publish customer-download files." });
 
         if (currentUser.role === "customer") {
           return res.status(403).json({ message: "Customers cannot upload files" });
@@ -8723,7 +8729,8 @@ export async function registerRoutes(
           return res.status(400).json({ message: `File type ${fileExtension} not allowed. Allowed: ${allowedExtensions.join(", ")}` });
         }
 
-        const savedPath = await saveProjectFtpFile(project.name, project.id, session.fileName, fileBuffer);
+        const folder = ftpFileMatch[2] === "incoming" ? "incoming" : ftpFileMatch[2] === "outgoing" ? "outgoing" : "";
+        const savedPath = await saveProjectFtpFile(project.name, project.id, session.fileName, fileBuffer, folder);
         emitFileAdded(projectId, undefined, currentUser?.id);
         return res.status(201).json({ message: "File uploaded", path: savedPath });
 
