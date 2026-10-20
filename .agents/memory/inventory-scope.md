@@ -92,3 +92,9 @@ Keep serialized-unit capture in a dedicated, bounded sub-modal while receiving a
 **Why:** The user said the inline serial list “could easily fill up the screen” and requested a scanning sub-modal.
 
 **How to apply:** Do not reintroduce full identity lists into the parent entry or review screen. Closing a scanning window returns to the movement draft rather than posting stock or abandoning that draft.
+
+Field technicians go to the job with the systems/modules, parts and other required equipment physically in hand.
+
+**Why:** The user explicitly clarified this operating assumption when discussing stock checks interrupting work-order submission.
+
+**How to apply:** Distinguish recording actual installed/used equipment from checking warehouse availability to issue equipment. This assumption alone does not authorize invented stock, duplicate serial consumption or ignoring accounting discrepancies.
