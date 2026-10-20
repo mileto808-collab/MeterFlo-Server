@@ -13,6 +13,7 @@
 - [Reading capture entry policy](reading-capture-entry-policy.md) — reject excess fractional digits during typing/paste; retain the previous reading without truncation or a precision error.
 - [Exact reading compatibility](exact-reading-compatibility.md) — preserve original text without breaking legacy numeric consumers; coordinate native changes and never invent historical padding.
 - [Audit backup boundary](audit-backup-boundary.md) — business restores must preserve newer local audit history and authenticated initiation, while remaining portable to fresh standalone servers.
+- [Backup output completion](backup-output-completion.md) — database-tool exit can precede its file writer; wait for both before filtering, archiving or reporting success.
 - [Audit capability metadata](audit-capability-metadata.md) — supported choices are capabilities, not proof of activity; historical custom values still require authorized history.
 - [Portable npm lockfiles](portable-npm-lockfiles.md) — internal tarball URLs can break standalone installs despite a public registry setting; inspect locked addresses before changing Node/npm.
 - [Customer instance updates](customer-instance-updates.md) — customer-owned Replit or Windows/Linux instances need core updates that preserve custom work.

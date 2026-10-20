@@ -1,4 +1,4 @@
-import { spawn, execSync } from "child_process";
+import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -13,6 +13,7 @@ import { initializeAudit } from "./auditMigration";
 import { pool as applicationPool } from "./db";
 import { auditingEnabled } from "./auditContext";
 import { relationalTableNames } from "./inventoryRelationalModel";
+import { runPgProcess } from "./backups/pg-process";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 function stripApplicationAuditHooks(file:string) {
@@ -131,11 +132,9 @@ async function runPgCommand(
   env: Record<string, string>,
   outputFile?: string
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
+  try {
     const toolPath = getPgToolPath(command);
     const isWindows = process.platform === "win32";
-    let stdout = "";
-    let stderr = "";
     
     console.log(`[Backup] Running ${command} from: ${toolPath}`);
     
@@ -150,48 +149,10 @@ async function runPgCommand(
     // On Windows with shell mode, quote paths that contain spaces
     const execPath = isWindows && toolPath.includes(" ") ? `"${toolPath}"` : toolPath;
     
-    const proc = spawn(execPath, args, options);
-    
-    let outputStream: fs.WriteStream | null = null;
-    if (outputFile) {
-      outputStream = fs.createWriteStream(outputFile, { mode: 0o600 });
-      proc.stdout.pipe(outputStream);
-    } else {
-      proc.stdout.on("data", (data) => {
-        stdout += data.toString();
-      });
-    }
-    
-    proc.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-    
-    proc.on("close", (code) => {
-      if (outputStream) {
-        outputStream.close();
-      }
-      resolve({
-        success: code === 0,
-        stdout,
-        stderr,
-      });
-    });
-    
-    proc.on("error", (err: any) => {
-      if (outputStream) {
-        outputStream.close();
-      }
-      const errorDetail = err.code === "ENOENT" 
-        ? `PostgreSQL tool '${command}' could not be executed. Path tried: ${toolPath}. Ensure PostgreSQL client tools are installed and accessible.`
-        : err.message;
-      console.error(`[Backup] Process spawn error for ${command}:`, errorDetail);
-      resolve({
-        success: false,
-        stdout,
-        stderr: stderr + "\n" + errorDetail,
-      });
-    });
-  });
+    return await runPgProcess(execPath, args, options, outputFile);
+  } catch (error: any) {
+    return { success: false, stdout: "", stderr: `PostgreSQL tool '${command}' failed: ${error.message}` };
+  }
 }
 
 export async function pgDump(

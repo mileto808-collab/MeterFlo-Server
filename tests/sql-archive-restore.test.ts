@@ -40,6 +40,11 @@ visit(routes);
 assert.equal(endpointSources.size, endpointNames.length, "all real restore endpoints located");
 
 const pgSource = sourceFile("server/pgBackup.ts");
+const sftpRestoreSource = sourceFile("server/file-transfers/restore-local-sftp.ts");
+const restoreModeSource = sftpRestoreSource.statements.filter(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === "chooseSftpRestoreMode"
+).map(node => node.getText(sftpRestoreSource).replace(/^export\s+/, "")).join("\n");
+assert.ok(restoreModeSource, "real restore-mode validation located without importing database modules");
 const helperNames = ["extractBackupFromArchive", "restoreFilesFromPgArchiveData"];
 const helperSource = pgSource.statements.filter(node =>
   ts.isFunctionDeclaration(node) && helperNames.includes(node.name?.text || "")
@@ -81,6 +86,9 @@ async function fixture(mode: Mode) {
   const quietConsole = { log() {}, error() {}, warn() {} };
   const helpers = vm.createContext({
     fs, path, os: { tmpdir: () => sqlRoot }, unzipper, console: quietConsole,
+    // File restore also resolves the independently configured FTP root. Keep
+    // that dependency owned by this fixture, never the application's storage.
+    getFtpFilesPath: async () => path.join(root, "ftp-files"),
   });
   vm.runInContext(compile(helperSource), helpers);
   const app = express();
@@ -100,6 +108,8 @@ async function fixture(mode: Mode) {
       async hasPermission() { return true; },
     },
     permissionKeys: { MAINTENANCE_SYSTEM_RESTORE: "fixture-restore" },
+    auditContext: { getStore: () => undefined },
+    TransferError: class extends Error {},
     SystemRestoreError: class extends Error {},
     extractBackupFromArchive: helpers.extractBackupFromArchive,
     async restorePgBackup(sqlFile: string, options: any) {
@@ -125,7 +135,7 @@ async function fixture(mode: Mode) {
       return helpers.restoreFilesFromPgArchiveData(buffer, target);
     },
   });
-  vm.runInContext(compile([...endpointSources.values()].join("\n")), context);
+  vm.runInContext(compile(restoreModeSource + "\n" + [...endpointSources.values()].join("\n")), context);
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>(resolve => server.once("listening", resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
