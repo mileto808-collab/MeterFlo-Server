@@ -283,6 +283,7 @@ export interface IStorage {
 
   // Support submission operations
   createSupportSubmission(data: InsertSupportSubmission): Promise<SupportSubmission>;
+  updateSupportSubmissionDelivery(id: number, emailSent: boolean, emailError: string | null): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1932,6 +1933,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Support submission operations
+  async updateSupportSubmissionDelivery(id: number, emailSent: boolean, emailError: string | null): Promise<void> {
+    await db.update(supportSubmissions).set({ emailSent, emailError }).where(eq(supportSubmissions.id, id));
+  }
+
   async createSupportSubmission(data: InsertSupportSubmission): Promise<SupportSubmission> {
     const [record] = await db
       .insert(supportSubmissions)

@@ -98,6 +98,7 @@ export function AppSidebar() {
   };
 
   return (
+    <>
     <Sidebar>
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
@@ -435,12 +436,13 @@ export function AppSidebar() {
             Log Out
           </Button>
         </a>
-        <SupportFormDialog 
-          open={supportDialogOpen} 
-          onOpenChange={setSupportDialogOpen}
-          user={user}
-        />
       </SidebarFooter>
     </Sidebar>
+    <SupportFormDialog
+      open={supportDialogOpen}
+      onOpenChange={setSupportDialogOpen}
+      user={user}
+    />
+    </>
   );
 }

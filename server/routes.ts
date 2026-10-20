@@ -1,6 +1,7 @@
 import type { Express, RequestHandler } from "express";
 import { gpsSubmissionProblem, gpsFixDto } from "../shared/gps-capture";
 import { registerBackupRoutes } from "./backups/routes";
+import { registerSupportRoutes } from "./supportRequests";
 import { registerRoutingRoutes } from "./routing/routes";
 import { technicianAssignmentScope, visibleAssignedOrders } from "./workOrderVisibility";
 import { accessLockMiddleware, loginAccessLock, registerAccessLockRoutes, sendAccessLocked } from "./accessLocks";
@@ -5677,138 +5678,7 @@ export async function registerRoutes(
     }
   });
 
-  // Support form submission endpoint
-  app.post("/api/support", isAuthenticated, async (req: any, res) => {
-    try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      // Validate with Zod schema
-      const validationResult = insertSupportSubmissionSchema.safeParse({
-        ...req.body,
-        userId: currentUser.id,
-      });
-      
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          message: "Invalid form data", 
-          errors: validationResult.error.flatten().fieldErrors 
-        });
-      }
-      
-      const { name, email, subject, priority, message } = validationResult.data;
-      
-      // Get configured support email and SMTP settings
-      const supportFormEmail = await storage.getSetting("support_form_email");
-      const smtpHost = await storage.getSetting("smtp_host");
-      const smtpPort = await storage.getSetting("smtp_port");
-      const smtpUser = await storage.getSetting("smtp_user");
-      const smtpPass = process.env.SMTP_PASSWORD;
-      const smtpFrom = await storage.getSetting("smtp_from_email");
-      const smtpSecure = await storage.getSetting("smtp_secure");
-      const smtpRejectUnauthorized = await storage.getSetting("smtp_reject_unauthorized");
-      
-      let emailSent = false;
-      let emailError: string | null = null;
-      
-      // Attempt to send email if SMTP is configured and support email is set
-      if (supportFormEmail && smtpHost && smtpPort && smtpUser && smtpPass) {
-        try {
-          const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: parseInt(smtpPort, 10),
-            secure: smtpSecure === "true",
-            auth: {
-              user: smtpUser,
-              pass: smtpPass,
-            },
-            tls: {
-              rejectUnauthorized: smtpRejectUnauthorized !== "false",
-            },
-          });
-          
-          const priorityLabels: Record<string, string> = {
-            low: "Low",
-            medium: "Medium",
-            high: "High"
-          };
-          
-          await transporter.sendMail({
-            from: smtpFrom || smtpUser,
-            to: supportFormEmail,
-            replyTo: email,
-            subject: `[Support Request - ${priorityLabels[priority] || "Medium"}] ${subject}`,
-            text: (() => {
-              const displayName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ");
-              const userDisplay = displayName ? `${currentUser.username || "(unknown)"} - ${displayName}` : (currentUser.username || "(unknown)");
-              return `Support Request from MeterFlo\n\n` +
-                `From: ${name}\n` +
-                `Email: ${email}\n` +
-                `Priority: ${priorityLabels[priority] || "Medium"}\n` +
-                `Subject: ${subject}\n\n` +
-                `Message:\n${message}\n\n` +
-                `---\nSubmitted at: ${new Date().toLocaleString()}\n` +
-                `User: ${userDisplay}`;
-            })(),
-            html: (() => {
-              const displayName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ");
-              const userDisplay = displayName ? `${currentUser.username || "(unknown)"} - ${displayName}` : (currentUser.username || "(unknown)");
-              return `
-              <h2>Support Request from MeterFlo</h2>
-              <table style="border-collapse: collapse; margin-bottom: 16px;">
-                <tr><td style="padding: 4px 8px; font-weight: bold;">From:</td><td style="padding: 4px 8px;">${name}</td></tr>
-                <tr><td style="padding: 4px 8px; font-weight: bold;">Email:</td><td style="padding: 4px 8px;"><a href="mailto:${email}">${email}</a></td></tr>
-                <tr><td style="padding: 4px 8px; font-weight: bold;">Priority:</td><td style="padding: 4px 8px;">${priorityLabels[priority] || "Medium"}</td></tr>
-                <tr><td style="padding: 4px 8px; font-weight: bold;">Subject:</td><td style="padding: 4px 8px;">${subject}</td></tr>
-              </table>
-              <h3>Message:</h3>
-              <p style="white-space: pre-wrap;">${message}</p>
-              <hr>
-              <p style="color: #666; font-size: 12px;">Submitted at: ${new Date().toLocaleString()}<br>User: ${userDisplay}</p>
-            `;
-            })(),
-          });
-          
-          emailSent = true;
-          console.log(`[Support Request] Email sent to ${supportFormEmail}`);
-        } catch (err: any) {
-          emailError = err.message || "Unknown email error";
-          console.error("[Support Request] Failed to send email:", err);
-        }
-      } else if (supportFormEmail && (!smtpHost || !smtpPort || !smtpUser || !smtpPass)) {
-        emailError = "SMTP not configured";
-        console.warn("[Support Request] Support email configured but SMTP settings incomplete");
-      } else if (!supportFormEmail) {
-        emailError = "No support email configured";
-        console.warn("[Support Request] No support email configured in settings");
-      }
-      
-      // Always persist the submission to database
-      await storage.createSupportSubmission({
-        userId: currentUser.id,
-        name,
-        email,
-        subject,
-        priority,
-        message,
-        emailSent,
-        emailError,
-      });
-      
-      console.log(`[Support Request] Saved submission from: ${name} <${email}>, Subject: ${subject}, Priority: ${priority}`);
-      
-      res.json({ 
-        message: "Support request submitted successfully",
-        emailSent,
-        supportEmailConfigured: !!supportFormEmail,
-      });
-    } catch (error) {
-      console.error("Error submitting support request:", error);
-      res.status(500).json({ message: "Failed to submit support request" });
-    }
-  });
+  registerSupportRoutes(app);
 
   // Contact & Support Forms Settings endpoints
   app.get("/api/settings/contact-support", isAuthenticated, async (req: any, res) => {
