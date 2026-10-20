@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Archive, CalendarClock, Check, Clock3, FileWarning, HardDrive, Loader2, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import type { CleanupFilter, CleanupPreview, CleanupResult, LogCategory, LogPolicy, LogSummary } from "@shared/log-maintenance";
-import { logCategories } from "@shared/log-maintenance";
+import { logCategories, databaseLogCategories, defaultLogPolicy, importHistoryCategories, logCategoryLabels as categoryLabels, logCategoryDescriptions } from "@shared/log-maintenance";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,16 +17,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Link } from "wouter";
 
-const categoryLabels: Record<LogCategory, string> = {
-  errorArchives: "Archived error reports",
-  activeError: "Active error reports",
-  customerApi: "Customer API attempt history",
-  apiImports: "API import history",
-  databaseImports: "External database import history",
-  fileImports: "File import history (manual & scheduled)",
-};
 const globalFileCategories: LogCategory[] = ["errorArchives", "activeError"];
-const defaultPolicy: LogPolicy = { automatic: false, rotationMiB: 10, archiveDays: 30, archiveBudgetMiB: 200, historyDays: 90 };
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 bytes";
@@ -61,11 +52,12 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
     queryFn: () => fetchJson<LogSummary>("/api/maintenance/logs"),
     enabled: active && allowed,
   });
-  const [policy, setPolicy] = useState<LogPolicy>(defaultPolicy);
+  const [policy, setPolicy] = useState<LogPolicy>(defaultLogPolicy);
   const [policyInitialized, setPolicyInitialized] = useState(false);
   const [categories, setCategories] = useState<LogCategory[]>([]);
   const [projectId, setProjectId] = useState("");
   const [before, setBefore] = useState("");
+  const [includeFailedImports, setIncludeFailedImports] = useState(false);
   const [preview, setPreview] = useState<CleanupPreview | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -116,8 +108,14 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
       setCategories([]);
       setProjectId("");
       setBefore("");
+      setIncludeFailedImports(false);
       setActionError("");
-      await queryClient.invalidateQueries({ queryKey: ["/api/maintenance/logs"] });
+      await queryClient.invalidateQueries({ predicate: query => {
+        const first = query.queryKey[0];
+        return ["/api/maintenance/logs", "/api/customer-api-logs", "/api/file-import-history", "/api/import-history"].includes(String(first))
+          || (first === "/api/import-configs" && query.queryKey.includes("history"))
+          || (typeof first === "string" && /^\/api\/projects\/\d+\/(?:api-import\/runs|file-transfers)(?:\/|$)/.test(first));
+      } });
     },
     onError: (err: Error) => setActionError(err.message || "Cleanup failed."),
   });
@@ -136,6 +134,8 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
       categories,
       ...(projectId ? { projectId: Number(projectId) } : {}),
       before: cutoff.toISOString(),
+      ...(includeFailedImports && categories.some(category => (importHistoryCategories as readonly string[]).includes(category))
+        ? { includeFailedImports: true } : {}),
     };
   };
 
@@ -191,7 +191,9 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
         <FileWarning className="h-4 w-4" />
         <AlertTitle>Managed log records only</AlertTitle>
         <AlertDescription>
-          Externally managed stdout and PM2 files are unsupported and protected. Protected payloads account for {formatBytes(summary?.protectedBytes ?? 0)}; they are not eligible for cleanup.
+          These controls manage MeterFlo operational logs, not imported work orders, transfer files, backup files or audit records.
+          Customer API delivery payloads account for {formatBytes(summary?.protectedBytes ?? 0)} and are retained separately, as are export/replay recovery records.
+          Database sizes estimate live row data: deletion makes space reusable in PostgreSQL but may not immediately shrink disk allocation.
         </AlertDescription>
       </Alert>
 
@@ -226,6 +228,8 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
                     </Badge>
                   </CardContent>
                   <div className="px-4 pb-4 text-xs text-muted-foreground">
+                    <p className="mb-2">{logCategoryDescriptions[category]}</p>
+                    {!!item?.manualOnlyCount && <p className="mb-2">{item.manualOnlyCount.toLocaleString()} completed failed/partial records eligible only with confirmed manual cleanup.</p>}
                     <span>Oldest: {formatDate(item?.oldest)}</span>
                     <span className="mx-2">·</span>
                     <span>Newest: {formatDate(item?.newest)}</span>
@@ -254,7 +258,7 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
                     ["rotationMiB", "Error-log rotation threshold (MiB)", 1, 100, "When error.log exceeds this size, the next write archives it and starts a new file. A large entry can exceed the threshold. Rotation does not delete archives."],
                     ["archiveDays", "Error-log archive retention (days)", 1, 3650, "With automatic cleanup enabled, archived error-log files older than this are eligible for deletion. The active error.log is not automatically cleared."],
                     ["archiveBudgetMiB", "Error-log archive budget (MiB)", 10, 10000, "Target combined size of archived error-log files only—not database histories, backups, or total disk usage. Automatic cleanup removes oldest archives first, in capped hourly batches; this is not a hard disk quota."],
-                    ["historyDays", "Database history retention (days)", 1, 3650, "Applies to eligible Customer API attempts, API imports, external database imports, and manual/scheduled file imports. Failed/partial histories, active/retryable records and latest scheduled-import diagnostics remain protected."],
+                    ["historyDays", "Database history retention (days)", 1, 3650, "Applies only to the categories selected below. Completed failed/partial import histories are manual-only. Active/retryable work and latest completed import/export diagnostics remain protected."],
                   ] as const).map(([key, label, min, max, help]) => (
                     <div key={key} className="space-y-2">
                       <Label htmlFor={`policy-${key}`}>{label}</Label>
@@ -272,6 +276,23 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
                     </div>
                   ))}
                 </div>
+                <fieldset className="space-y-3">
+                  <legend className="text-sm font-medium">Database histories included in automatic retention</legend>
+                  <p className="text-xs text-muted-foreground">New transfer-log categories are not automatically added to older policies. Select them explicitly and save. Selecting no histories leaves only error-log archive cleanup enabled.</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {databaseLogCategories.map(category => <label key={category} className="flex cursor-pointer items-start gap-2 rounded-md border p-2.5 text-sm">
+                      <Checkbox
+                        aria-label={`Automatic retention: ${categoryLabels[category]}`}
+                        checked={(policy.historyCategories ?? defaultLogPolicy.historyCategories).includes(category)}
+                        onCheckedChange={checked => setPolicy(current => {
+                          const selected = current.historyCategories ?? defaultLogPolicy.historyCategories;
+                          return { ...current, historyCategories: checked === true ? [...selected, category] : selected.filter(value => value !== category) };
+                        })}
+                      />
+                      <span>{categoryLabels[category]}</span>
+                    </label>)}
+                  </div>
+                </fieldset>
                 <Button
                   onClick={() => savePolicy.mutate(policy)}
                   disabled={savePolicy.isPending || !summary}
@@ -308,6 +329,18 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
                   </div>
                   <p className="text-xs text-muted-foreground">Error-report file categories are global and cannot be combined with a project filter.</p>
                 </fieldset>
+                <div className="space-y-2 rounded-md border p-3">
+                  <label className="flex cursor-pointer items-start gap-2 text-sm">
+                    <Checkbox
+                      aria-label="Include completed failed or partial import histories"
+                      checked={includeFailedImports}
+                      disabled={!categories.some(category => (importHistoryCategories as readonly string[]).includes(category))}
+                      onCheckedChange={checked => { setIncludeFailedImports(checked === true); setPreview(null); setActionError(""); }}
+                    />
+                    <span>Include completed failed or partial import histories</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground">Manual only, with a new preview and permanent-deletion confirmation. Active, queued, retryable/interrupted work and latest completed scheduled-import diagnostics are still excluded. This does not change automatic retention.</p>
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="cleanup-project">Project (optional)</Label>
@@ -390,6 +423,7 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
                           <Badge variant={entry.errors.length ? "destructive" : "secondary"}>{entry.errors.length ? `${entry.errors.length} error${entry.errors.length === 1 ? "" : "s"}` : "Complete"}</Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">{formatDate(entry.at)}</p>
+                        {entry.categories && <p className="mt-1 text-xs text-muted-foreground">{entry.categories.map(category => categoryLabels[category]).join(", ")}{entry.includeFailedImports ? " · Included completed failed/partial import histories" : ""}</p>}
                         {entry.errors.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-destructive">{entry.errors.map((message, errorIndex) => <li key={`${errorIndex}-${message}`}>{message}</li>)}</ul>}
                       </div>
                       <div className="shrink-0 text-sm sm:text-right">
@@ -421,6 +455,7 @@ export function LogMaintenance({ active = true }: { active?: boolean }) {
               This will permanently remove {preview?.count.toLocaleString() ?? 0} selected log records (about {formatBytes(preview?.bytes ?? 0)}). This action cannot be undone. Backup and recovery data are not part of this cleanup and will be preserved. The preview token expires 10 minutes after creation.
             </DialogDescription>
           </DialogHeader>
+          {preview?.filter.includeFailedImports && <Alert variant="destructive"><AlertDescription>This confirmed manual batch includes eligible completed failed/partial import histories. Their diagnostic details will be permanently removed; imported work orders and retry/replay state are not removed.</AlertDescription></Alert>}
           {preview?.limited && <Alert><AlertDescription>This batch is limited to 500 records. Remaining records are not included and require a new preview.</AlertDescription></Alert>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={cleanup.isPending}>Cancel</Button>

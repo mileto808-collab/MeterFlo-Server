@@ -25,6 +25,14 @@ export async function fixture() {
       CREATE TABLE ${n}import_configs(id int PRIMARY KEY,external_db_config_id int);
       CREATE TABLE ${n}import_history(id int PRIMARY KEY,import_config_id int,status text,records_failed int,started_at timestamp,completed_at timestamp);
       CREATE TABLE ${n}file_import_history(id int PRIMARY KEY,project_id int,file_import_config_id int,status text,records_failed int,started_at timestamp,completed_at timestamp);
+      CREATE TABLE ${n}file_export_runs(id text PRIMARY KEY,config_id text,project_id int,status text,created_at timestamptz,completed_at timestamptz);
+      CREATE TABLE ${n}file_export_attempts(id text PRIMARY KEY,run_id text REFERENCES ${n}file_export_runs(id) ON DELETE CASCADE,status text,started_at timestamptz,completed_at timestamptz);
+      CREATE TABLE ${n}file_export_run_items(run_id text REFERENCES ${n}file_export_runs(id) ON DELETE CASCADE,payload jsonb);
+      CREATE TABLE ${n}file_export_checkpoints(config_id text,work_order_id int,content_hash text);
+      CREATE TABLE ${n}file_import_receipts(config_id int,content_hash text);
+      CREATE TABLE ${n}https_transfer_files(id text PRIMARY KEY,status text,storage_key text);
+      CREATE TABLE ${n}sftp_server_events(id text PRIMARY KEY,project_id int,status text,created_at timestamptz);
+      CREATE TABLE ${n}https_transfer_events(id text PRIMARY KEY,project_id int,created_at timestamptz);
       INSERT INTO ${n}external_database_configs VALUES(1,1);
       INSERT INTO ${n}import_configs VALUES(1,1);
       INSERT INTO ${n}customer_api_deliveries VALUES
@@ -68,4 +76,29 @@ export async function fixture() {
   } catch (e) {
     await pool.query(`DROP SCHEMA "${ns}" CASCADE`); await fs.rm(dir,{recursive:true,force:true}); throw e;
   }
+}
+
+export async function seedTransferHistory(f: Awaited<ReturnType<typeof fixture>>) {
+  await pool.query(`
+    INSERT INTO ${f.n}file_export_runs VALUES
+      ('old','config-a',1,'success','2000-01-01','2000-01-01'),
+      ('latest','config-a',1,'success','2000-02-01','2000-02-01'),
+      ('retry','config-b',1,'failed','2000-01-01','2000-01-01'),
+      ('active','config-c',1,'running','2000-01-01',NULL);
+    INSERT INTO ${f.n}file_export_attempts VALUES
+      ('old-success','old','success','2000-01-01','2000-01-01'),
+      ('old-resolved-failure','old','failed','2000-01-01','2000-01-01'),
+      ('latest-success','latest','success','2000-02-01','2000-02-01'),
+      ('retry-failure','retry','failed','2000-01-01','2000-01-01'),
+      ('active-attempt','active','running','2000-01-01',NULL);
+    INSERT INTO ${f.n}file_export_run_items VALUES('old','{"fixture":"preserve"}'),('latest','{"fixture":"preserve"}');
+    INSERT INTO ${f.n}file_export_checkpoints VALUES('config-a',1,'fixture-hash');
+    INSERT INTO ${f.n}file_import_receipts VALUES(1,'fixture-hash');
+    INSERT INTO ${f.n}https_transfer_files VALUES('stored-file','available','fixture-storage');
+    INSERT INTO ${f.n}sftp_server_events VALUES
+      ('sftp-one',1,'failed','2000-01-01'),('sftp-two',2,'success','2000-01-01'),
+      ('sftp-global',NULL,'success','2000-01-01'),('sftp-recent',1,'success',now());
+    INSERT INTO ${f.n}https_transfer_events VALUES
+      ('https-one',1,'2000-01-01'),('https-two',2,'2000-01-01'),('https-recent',1,now());
+  `);
 }

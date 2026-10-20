@@ -50,7 +50,7 @@ export class LogFiles {
     return (["errorArchives", "activeError"] as const).map(category => {
       const rows = files.filter(f => f.category === category);
       const dates = rows.map(f => f.mtime).sort((a,b) => a-b);
-      return { category, count: rows.length, bytes: rows.reduce((n,f) => n+f.bytes,0), protectedCount: category === "activeError" ? rows.length : 0,
+      return { category, count: rows.length, bytes: rows.reduce((n,f) => n+f.bytes,0), protectedCount: 0,
         oldest: dates.length ? new Date(dates[0]).toISOString() : null, newest: dates.length ? new Date(dates[dates.length-1]).toISOString() : null };
     });
   }

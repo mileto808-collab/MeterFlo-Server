@@ -102,7 +102,7 @@
     "test:customer-api": "tsx --test tests/customer-api.test.ts",
     "test:api-import": "tsx --test tests/api-import.test.ts",
     "test:api-import-docs": "tsx --test tests/api-import-docs.test.ts",
-    "test:log-maintenance": "tsx --test tests/log-maintenance.test.ts",
+    "test:log-maintenance": "npm run build && node tests/support/project-workspace-sandbox.mjs tests/log-maintenance-workspace.cjs",
     "test:mobile-releases": "tsx --test tests/mobile-releases.test.ts",
     "test:mobile-releases:browser": "tsx tests/mobile-releases.test.ts --browser",
     "test:settings:browser": "node tests/settings-workspace-ui.cjs",

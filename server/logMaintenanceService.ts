@@ -54,7 +54,8 @@ export class LogMaintenanceService {
   async summary(): Promise<LogSummary> {
     const warnings = [
       "PM2/stdout, reverse-proxy, operating-system and other applications' logs are externally managed; these controls do not clear them.",
-      "Protected delivery payloads, failed/retryable history and latest import diagnostics are not deleted. If these grow, resolve delivery/import failures and monitor database capacity.",
+      "Delivery/export payloads, files, receipts, checkpoints, active/retryable work and latest completed import/export diagnostics are preserved. Audit and backup retention are separate.",
+      "Completed failed/partial import histories require an explicit manual-cleanup selection and confirmation; automatic retention never removes them.",
     ];
     let fileInventory: ReturnType<LogFiles["inventory"]> = [];
     try { fileInventory = this.files.inventory(this.files.list()); } catch { warnings.push("File inventory unavailable: check LOG_DIR, directory limits and filesystem permissions. Symlinks are not supported."); }
@@ -93,7 +94,9 @@ export class LogMaintenanceService {
     });
   }
   private async execute(client: PoolClient, preview: Pick<PreviewState,"filter"|"files"|"rows">, actor: string): Promise<CleanupResult> {
-    const result: CleanupResult = { at:new Date().toISOString(),actor,removed:0,skipped:0,bytes:0,errors:[] };
+    const result: CleanupResult = { at:new Date().toISOString(),actor,removed:0,skipped:0,bytes:0,errors:[],
+      categories:[...new Set([...preview.filter.categories,...preview.files.map(file => file.category)])],includeFailedImports:preview.filter.includeFailedImports === true,
+      projectId:preview.filter.projectId,before:preview.filter.before };
     // Audit intent first. A crash leaves an interrupted operation visible.
     const history = await this.history();
     const intent = { ...result, errors:["Cleanup started; completion has not yet been recorded."] };
@@ -134,8 +137,14 @@ export class LogMaintenanceService {
       const current = await this.policy();
       if (!current.automatic) return;
       const now = Date.now();
-      const filter: CleanupFilter = { categories:["customerApi","apiImports","databaseImports","fileImports"],before:new Date(now-current.historyDays*86400000).toISOString() };
-      const rows = await this.repository.candidates(filter,500);
+      const filter: CleanupFilter = { categories:current.historyCategories,before:new Date(now-current.historyDays*86400000).toISOString() };
+      // Give each selected history a bounded share, leaving space for archives.
+      // A busy API log must not starve other histories or file-budget cleanup.
+      const share = Math.floor(400 / Math.max(1, current.historyCategories.length));
+      const rows: RowCandidate[] = [];
+      for (const category of current.historyCategories) {
+        rows.push(...await this.repository.candidates({ ...filter, categories:[category] },share));
+      }
       const archives = this.files.list().filter(f => f.category === "errorArchives").sort((a,b) => a.mtime-b.mtime);
       let total = archives.reduce((n,f) => n+f.bytes,0);
       const files = archives.filter(f => {

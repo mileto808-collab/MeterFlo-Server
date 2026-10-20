@@ -5,13 +5,96 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pool } from "../server/db";
-import { fixture } from "./log-maintenance-fixture";
-import { defaultLogPolicy } from "../shared/log-maintenance";
+import { fixture, seedTransferHistory } from "./log-maintenance-fixture";
+import { defaultLogPolicy, databaseLogCategories, logPolicySchema } from "../shared/log-maintenance";
 import { LogFiles } from "../server/logMaintenanceFiles";
 import { LogMaintenanceService } from "../server/logMaintenanceService";
 
 after(() => pool.end());
 const before = "2001-01-01T00:00:00.000Z";
+test("completed failures require an explicit manual preview; latest, active and interrupted imports stay protected",async () => {
+  const f = await fixture();
+  try {
+    await pool.query(`
+      INSERT INTO ${f.n}api_import_runs VALUES
+        ('c-new',1,2,'succeeded','2000-03-01','2000-03-01'),
+        ('d-new',1,3,'succeeded','2000-03-01','2000-03-01'),
+        ('manual-failed',1,NULL,'failed','2000-01-01','2000-01-01');
+      INSERT INTO ${f.n}file_import_history VALUES
+        (5,1,NULL,'failed',1,'2000-01-01','2000-01-01'),
+        (6,1,NULL,'failed',1,'2000-01-01',NULL),
+        (7,1,NULL,'running',1,'2000-01-01','2000-01-01'),
+        (8,1,1,'failed',1,'2000-04-01','2000-04-01'),
+        (9,1,1,'running',0,'2000-05-01',NULL);
+    `);
+    const filter = { categories:["apiImports","databaseImports","fileImports"],projectId:1,before };
+    const normal = await f.service.preview(filter,"operator");
+    const manual = await f.service.preview({ ...filter,includeFailedImports:true },"operator");
+    assert.equal(manual.count-normal.count,4);
+    const inventory = (await f.service.summary()).inventory;
+    assert.equal(inventory.find(item => item.category === "fileImports")?.manualOnlyCount,2);
+    const changed = await f.service.preview({categories:["fileImports"],before,includeFailedImports:true},"operator");
+    await pool.query(`UPDATE ${f.n}file_import_history SET status='retrying' WHERE id=5`);
+    const result = await f.service.cleanup(manual.token,"operator");
+    assert.equal(result.skipped,1,"Manual eligibility is rechecked when a completed failure becomes retryable");
+    assert.equal(result.includeFailedImports,true);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}api_import_runs WHERE id='manual-failed'`)).rows[0].c,0);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}api_import_runs WHERE id IN ('c','d')`)).rows[0].c,2,"Configured failures/partials retain their manual-retry checkpoints even when newer runs exist");
+    assert.deepEqual((await pool.query(`SELECT id FROM ${f.n}file_import_history ORDER BY id`)).rows.map(row => row.id),[5,6,7,8,9]);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}api_import_runs WHERE id IN ('e','f','g','h','i')`)).rows[0].c,5);
+    assert.ok(changed.token);
+  } finally { await f.dispose(); }
+});
+test("transfer cleanup respects project/cutoff, rechecks export parents and never removes files, payloads or replay state",async () => {
+  const f = await fixture();
+  try {
+    await seedTransferHistory(f);
+    const filter = {categories:["fileExports","sftpActivity","httpsActivity"],projectId:1,before};
+    const preview = await f.service.preview(filter,"operator");
+    assert.equal(preview.count,4);
+    await pool.query(`UPDATE ${f.n}file_export_runs SET status='failed' WHERE id='old'`);
+    const changed = await f.service.cleanup(preview.token,"operator");
+    assert.equal(changed.removed,2); assert.equal(changed.skipped,2);
+    await pool.query(`UPDATE ${f.n}file_export_runs SET status='success' WHERE id='old'`);
+    const next = await f.service.preview(filter,"operator");
+    assert.equal((await f.service.cleanup(next.token,"operator")).removed,2);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}file_export_runs`)).rows[0].c,4);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}file_export_attempts`)).rows[0].c,3);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}file_export_run_items`)).rows[0].c,2);
+    for (const table of ["file_export_checkpoints","file_import_receipts","https_transfer_files"]) {
+      assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}${table}`)).rows[0].c,1);
+    }
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}sftp_server_events`)).rows[0].c,3);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}https_transfer_events`)).rows[0].c,2);
+  } finally { await f.dispose(); }
+});
+test("legacy policies do not expand retention; explicit new-category retention is fair and never removes failed imports",async () => {
+  const f = await fixture();
+  try {
+    await seedTransferHistory(f);
+    const { historyCategories: _categories,...legacy } = defaultLogPolicy;
+    await pool.query(`INSERT INTO ${f.n}system_settings(key,value) VALUES('logMaintenance.policy',$1)`,[JSON.stringify({...legacy,automatic:true})]);
+    assert.deepEqual((await f.service.policy()).historyCategories,defaultLogPolicy.historyCategories);
+    await f.service.automatic();
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}sftp_server_events`)).rows[0].c,4);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}https_transfer_events`)).rows[0].c,3);
+    await pool.query(`INSERT INTO ${f.n}customer_api_logs SELECT i,1,NULL,true,'2000-01-01' FROM generate_series(100,1000) i`);
+    const archive = path.join(f.dir,"error-2000-02-01T00-00-00-000Z.log");
+    await fs.writeFile(archive,"fixture archive"); await fs.utimes(archive,new Date("2000-01-01"),new Date("2000-01-01"));
+    await f.service.savePolicy({...defaultLogPolicy,automatic:true,historyCategories:[...databaseLogCategories]},"operator");
+    await f.service.automatic();
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}sftp_server_events`)).rows[0].c,1);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}https_transfer_events`)).rows[0].c,1);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}file_export_attempts`)).rows[0].c,3);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}file_import_history WHERE id=3`)).rows[0].c,1);
+    await assert.rejects(fs.stat(archive),{code:"ENOENT"});
+    assert.ok((await pool.query(`SELECT count(*)::int c FROM ${f.n}customer_api_logs WHERE id>=100`)).rows[0].c>0,"Other categories and archives progress while API history exceeds the batch");
+    assert.equal((await fs.readFile(path.join(f.dir,"error.log"),"utf8")),"fixture-only log\n");
+    assert.equal(logPolicySchema.safeParse({...defaultLogPolicy,includeFailedImports:true}).success,false,"Failed imports cannot be enabled in automatic policy");
+    await f.service.savePolicy({...defaultLogPolicy,automatic:true,historyCategories:[]},"operator");
+    await f.service.automatic();
+  } finally { await f.dispose(); }
+});
 test("disabled defaults, non-destructive previews, confirmation ownership and protected recovery history",async () => {
   const f = await fixture();
   try {

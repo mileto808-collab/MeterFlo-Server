@@ -8,6 +8,8 @@ const fs = require("node:fs/promises");
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright");
 
 (async () => {
+  if (!process.env.WORKSPACE_UI_SANDBOX_CONFIG)
+    throw new Error("Run through tests/support/project-workspace-sandbox.mjs tests/log-maintenance-workspace.cjs.");
   await import("dotenv/config");
   const { default: express } = await import("express");
   const { default: bcrypt } = await import("bcryptjs");
@@ -15,14 +17,15 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
   const { storage } = await import("../server/storage.ts");
   const { setupAuth } = await import("../server/replitAuth.ts");
   const { registerLogMaintenanceRoutes } = await import("../server/logMaintenanceRoutes.ts");
-  const { fixture } = await import("./log-maintenance-fixture.ts");
+  const { fixture, seedTransferHistory } = await import("./log-maintenance-fixture.ts");
   const { LogMaintenanceService } = await import("../server/logMaintenanceService.ts");
-  const realURL = `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  const realURL = require("./support/workspace-ui-base.cjs")();
   const tag = randomUUID().slice(0,8);
   const users = [], roles = [];
   let browser, server, sessionStore, f;
   try {
     f = await fixture();
+    await seedTransferHistory(f);
     browser = await chromium.launch({ executablePath:process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium",headless:true,args:["--no-sandbox","--disable-dev-shm-usage"] });
     const adminRole = await storage.getAdministratorSubrole();
     const password = `Fixture-${randomUUID()}!`;
@@ -77,19 +80,16 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
       ["get","/api/maintenance/logs"],["put","/api/maintenance/logs/policy",{}],
       ["post","/api/maintenance/logs/preview",{}],["post","/api/maintenance/logs/cleanup",{}],
     ]) assert.equal((await operator.request[method](url,{data})).status(),403);
-    const denied=await operator.newPage();
-    await denied.goto("/maintenance");
-    await denied.getByTestId("text-page-title").waitFor();
-    assert.equal(await denied.getByRole("heading",{name:"Log maintenance",exact:true}).count(),0);
     assert.equal((await grant(["nav.maintenance","nav.dashboard","maintenance.logManagement"])).status(),200);
-    await denied.reload();
+    const denied=await operator.newPage();
+    await denied.goto("/settings?section=log-maintenance");
     await denied.getByRole("heading",{name:"Log maintenance",exact:true}).waitFor();
     const adminContext=await authenticated(adminReal);
     assert.equal((await adminContext.request.get("/api/maintenance/logs")).status(),200);
     const page=await operator.newPage(), errors=[], failed=[];
     page.on("pageerror",e => errors.push(e.message));
     page.on("response",r => { if (r.status()>=400 && r.url().includes("/api/")) failed.push([r.status(),r.url()]); });
-    await page.goto("/maintenance");
+    await page.goto("/settings?section=log-maintenance");
     await page.getByRole("button",{name:"Save policy",exact:true}).waitFor();
     assert.equal(await page.getByRole("switch").isChecked(),false);
     await page.getByLabel("Database history retention (days)",{exact:true}).fill("180");
@@ -118,6 +118,52 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
     assert.equal((await restarted.policy()).historyDays,180);
     assert.equal((await restarted.policy()).automatic,false);
     assert.equal((await restarted.history())[0].actor,user.id);
+    for (const label of ["File export attempt history","SFTP activity","HTTPS transfer activity"]) {
+      const checkbox = page.getByRole("checkbox",{name:`Automatic retention: ${label}`,exact:true});
+      assert.equal(await checkbox.isChecked(),false,"Existing policies do not opt into new categories");
+      await checkbox.check();
+    }
+    const savedNewCategories = page.waitForResponse(r => r.url().endsWith("/api/maintenance/logs/policy") && r.request().method()==="PUT");
+    await page.getByRole("button",{name:"Save policy",exact:true}).click();
+    assert.equal((await savedNewCategories).status(),200);
+    assert.equal((await restarted.policy()).automatic,false,"Selecting categories does not enable automatic cleanup");
+    assert.ok((await restarted.policy()).historyCategories.includes("sftpActivity"));
+
+    const fileImports = page.getByRole("checkbox",{name:"File import history (manual & scheduled)",exact:true});
+    await fileImports.check();
+    await page.getByLabel("Delete records older than",{exact:true}).fill("2001-01-01T00:00");
+    const basicPreview = page.waitForResponse(r => r.url().endsWith("/api/maintenance/logs/preview"));
+    await page.getByRole("button",{name:"Preview cleanup",exact:true}).click();
+    assert.equal((await (await basicPreview).json()).count,2);
+    await page.getByRole("checkbox",{name:"Include completed failed or partial import histories",exact:true}).check();
+    await page.getByRole("button",{name:"Review irreversible cleanup",exact:true}).waitFor({state:"detached"});
+    const failurePreview = page.waitForResponse(r => r.url().endsWith("/api/maintenance/logs/preview"));
+    await page.getByRole("button",{name:"Preview cleanup",exact:true}).click();
+    const failedBatch = await (await failurePreview).json();
+    assert.equal(failedBatch.count,3); assert.equal(failedBatch.filter.includeFailedImports,true);
+    await page.getByRole("button",{name:"Review irreversible cleanup",exact:true}).click();
+    await page.getByText(/includes eligible completed failed\/partial import histories/).waitFor();
+    const failureCleanup = page.waitForResponse(r => r.url().endsWith("/api/maintenance/logs/cleanup"));
+    await page.getByRole("button",{name:"Permanently clean selected logs",exact:true}).click();
+    const failedResult = await (await failureCleanup).json();
+    assert.equal(failedResult.removed,3); assert.equal(failedResult.includeFailedImports,true);
+    await page.getByRole("dialog").waitFor({state:"hidden"});
+    assert.deepEqual((await pool.query(`SELECT id FROM ${f.n}file_import_history`)).rows.map(row => row.id),[2]);
+
+    for (const label of ["File export attempt history","SFTP activity","HTTPS transfer activity"])
+      await page.getByRole("checkbox",{name:label,exact:true}).check();
+    await page.getByLabel("Project (optional)",{exact:true}).selectOption("1");
+    await page.getByLabel("Delete records older than",{exact:true}).fill("2001-01-01T00:00");
+    const transferPreview = page.waitForResponse(r => r.url().endsWith("/api/maintenance/logs/preview"));
+    await page.getByRole("button",{name:"Preview cleanup",exact:true}).click();
+    assert.equal((await (await transferPreview).json()).count,4);
+    await page.getByRole("button",{name:"Review irreversible cleanup",exact:true}).click();
+    const transferCleanup = page.waitForResponse(r => r.url().endsWith("/api/maintenance/logs/cleanup"));
+    await page.getByRole("button",{name:"Permanently clean selected logs",exact:true}).click();
+    assert.equal((await (await transferCleanup).json()).removed,4);
+    await page.getByRole("dialog").waitFor({state:"hidden"});
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}file_export_runs`)).rows[0].c,4);
+    assert.equal((await pool.query(`SELECT count(*)::int c FROM ${f.n}sftp_server_events`)).rows[0].c,3);
     await fs.mkdir("/tmp/log-maintenance-checks",{recursive:true});
     await page.locator("#log-maintenance").scrollIntoViewIfNeeded();
     await page.screenshot({path:"/tmp/log-maintenance-checks/desktop.png"});
@@ -126,11 +172,22 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
     assert.ok(await page.locator("#log-maintenance").evaluate(el => el.scrollWidth <= el.clientWidth+1));
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth+1));
     await page.screenshot({path:"/tmp/log-maintenance-checks/mobile.png"});
+    await page.getByRole("button",{name:"Save policy",exact:true}).scrollIntoViewIfNeeded();
+    await page.screenshot({path:"/tmp/log-maintenance-checks/mobile-retention.png"});
+    await page.setViewportSize({width:874,height:402});
+    await page.waitForTimeout(250);
+    assert.ok(await page.locator("#log-maintenance").evaluate(el => el.scrollWidth <= el.clientWidth+1));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth+1));
+    const contactPage = await adminContext.newPage();
+    await contactPage.goto("/settings?section=contact-support");
+    await contactPage.getByText("Contact & Support",{exact:true}).waitFor();
+    assert.equal(await contactPage.getByText("API & Messaging",{exact:true}).count(),0);
     assert.deepEqual(errors,[]);
-    // The existing global timezone hook fetches an admin-only setting for all
-    // accounts. Keep that known unrelated 403 visible, but require clean log and
-    // backup APIs for the delegated log-only role.
-    assert.deepEqual(failed.filter(([,url]) => !url.endsWith("/api/settings/timezone")),[]);
+    // Global application providers can request restricted timezone/routing
+    // settings for a delegated log-only account. Permit only their expected
+    // 403s; every log/backup failure, other status or browser exception fails.
+    assert.deepEqual(failed.filter(([status,url]) => !(status===403 &&
+      ["/api/settings/timezone","/api/routing/settings"].some(route => url.endsWith(route)))),[]);
     assert.equal((await operator.request.post("/api/maintenance/logs/cleanup",{data:{token:randomUUID(),confirm:false}})).status(),400);
     assert.equal((await operator.request.post("/api/maintenance/logs/cleanup",{data:{token:randomUUID(),confirm:true}})).status(),409);
     assert.equal((await operator.request.put("/api/maintenance/logs/policy",{data:{automatic:false,rotationMiB:0,archiveDays:30,archiveBudgetMiB:200,historyDays:90}})).status(),400);
