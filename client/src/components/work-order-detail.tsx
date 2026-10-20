@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { UseFormReturn, useWatch } from "react-hook-form";
 import { Link } from "wouter";
@@ -86,6 +86,8 @@ import { InventoryWorkOrderPanel } from "@/components/inventory/inventory-work-o
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
 import { WorkOrderPlanningFields, WorkOrderPlanningSummary } from "@/components/work-order-routing/work-order-planning-fields";
+import { WorkOrderHistory } from "@/components/work-orders/work-order-history";
+import { usePermissions } from "@/hooks/usePermissions";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -137,6 +139,7 @@ interface WorkOrderDetailProps {
   };
   equipmentVisibility?: EquipmentVisibility;
   inventoryEnabled?: boolean;
+  onReopened?: (workOrder: any) => void;
 }
 
 export function WorkOrderDetail({
@@ -178,7 +181,12 @@ export function WorkOrderDetail({
   searchMethodSettings,
   equipmentVisibility = { showSystem: true, showModule: true },
   inventoryEnabled = false,
+  onReopened,
 }: WorkOrderDetailProps) {
+  const rawStatus = workOrder.statusCode ?? workOrder.status_code ?? workOrder.status;
+  const matchedStatus = workOrderStatuses.find(status => status.code === rawStatus || status.label === rawStatus);
+  const isClosed = String(workOrder.statusCode ?? workOrder.status_code ?? matchedStatus?.code ?? rawStatus ?? "").toLowerCase() === "closed";
+  canEdit = canEdit && !isClosed;
   const planningDefaults = { defaultServiceMinutes, defaultAppointmentToleranceMinutes };
   const planningSummary = <section className="space-y-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
     <h3 className="text-sm font-semibold">Route planning details</h3>
@@ -188,7 +196,32 @@ export function WorkOrderDetail({
   const equipmentDetailsLabel = equipmentVisibility.showSystem && equipmentVisibility.showModule
     ? "System | Module Details" : equipmentVisibility.showSystem ? "System Details" : "Module Details";
   const { setHeaderContent } = usePageHeader();
+  const { hasPermission } = usePermissions();
+  const queryClient = useQueryClient();
   const [openSections, setOpenSections] = useState<string[]>([]);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+  const canReopen = hasPermission("workOrders.reopenClosed") && hasPermission("workOrders.edit");
+  const reopenMutation = useMutation({
+    mutationFn: async () => {
+      const reason = reopenReason.trim();
+      if (!reason) throw new Error("A reason is required to reopen this work order.");
+      const response = await apiRequest("POST", `/api/projects/${projectId}/work-orders/${workOrder.id}/reopen`, { reason });
+      return response.json();
+    },
+    onSuccess: async (reopened) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "work-order-history"] }),
+      ]);
+      setReopenDialogOpen(false);
+      setReopenReason("");
+      onReopened?.(reopened);
+      toast({ title: "Work order reopened", description: "Evidence was preserved and a fresh review interval has started." });
+    },
+    onError: (error: Error) => toast({ title: "Unable to reopen work order", description: error.message, variant: "destructive" }),
+  });
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
@@ -319,6 +352,7 @@ export function WorkOrderDetail({
 
   // Start system changeout - claim and open wizard directly (scope is auto-determined)
   const handleStartSystemChangeout = useCallback(async () => {
+    if (isClosed) return;
     setIsClaiming(true);
     try {
       // Call claim endpoint - this will assign the work order to the current user
@@ -341,7 +375,7 @@ export function WorkOrderDetail({
     } finally {
       setIsClaiming(false);
     }
-  }, [projectId, workOrder.id, toast]);
+  }, [projectId, workOrder.id, toast, isClosed]);
 
   // Scroll to top when component mounts (triggered by key prop change)
   useEffect(() => {
@@ -351,13 +385,13 @@ export function WorkOrderDetail({
   // Auto-launch system changeout wizard if requested
   // When coming from scan workflow, work order is already claimed
   useEffect(() => {
-    if (autoLaunchSystemChangeout && canSystemChangeout && !autoLaunchTriggered.current) {
+    if (autoLaunchSystemChangeout && canSystemChangeout && !isClosed && !autoLaunchTriggered.current) {
       autoLaunchTriggered.current = true;
       // Scope is now auto-determined based on work order data
       // Since coming from scan, work order is already claimed, just open wizard
       setShowSystemChangeoutWizard(true);
     }
-  }, [autoLaunchSystemChangeout, canSystemChangeout]);
+  }, [autoLaunchSystemChangeout, canSystemChangeout, isClosed]);
 
   const getWorkOrderSubStatus = () => {
     const assignedId = (workOrder as any).subStatusId ?? (workOrder as any).sub_status_id;
@@ -480,7 +514,7 @@ export function WorkOrderDetail({
         
         {/* Action buttons */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          {canSystemChangeout && workOrder.status !== 'Completed' && (
+          {canSystemChangeout && workOrder.status !== 'Completed' && !isClosed && (
             <Button 
               size="sm" 
               onClick={handleStartSystemChangeout}
@@ -505,12 +539,12 @@ export function WorkOrderDetail({
               )}
             </Button>
           )}
-          <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
+          {!isClosed && <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
             <Button variant="outline" size="sm" data-testid="header-button-quick-attachments">
               <Paperclip className="h-3.5 w-3.5 mr-1" />
               <span className="hidden sm:inline">Attachments</span> ({workOrderFiles.length})
             </Button>
-          </Link>
+          </Link>}
           {canPrint && (
             <WorkOrderPdf
               workOrder={workOrder}
@@ -546,9 +580,11 @@ export function WorkOrderDetail({
     <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">
       {/* Read-Only Banner */}
       {!canEdit && (
-        <div className="flex items-center gap-2 p-3 bg-muted border rounded-md" data-testid="banner-read-only">
-          <Eye className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">You are viewing this work order in read-only mode.</span>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted p-3" data-testid="banner-read-only">
+          <div className="flex items-center gap-2"><Eye className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{isClosed ? "This work order is Closed. Its captured evidence is protected from changes." : "You are viewing this work order in read-only mode."}</span>
+          </div>
+          {isClosed && canReopen && <Button type="button" size="sm" onClick={() => setReopenDialogOpen(true)} data-testid="button-reopen-work-order">Reopen work order</Button>}
         </div>
       )}
 
@@ -2394,9 +2430,9 @@ export function WorkOrderDetail({
                 {(!mobileSchedulingEditMode || !canEdit) && (
                   <div className="md:hidden space-y-3">
                     {/* Action buttons for authorized users */}
-                    {(canEdit || (canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed")) && (
+                    {(canEdit || (canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && !isClosed)) && (
                       <div className="flex justify-end gap-2 mb-2 flex-wrap">
-                        {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed" && (
+                        {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && !isClosed && (
                           <Button
                             type="button"
                             size="sm"
@@ -2712,9 +2748,9 @@ export function WorkOrderDetail({
                 {(!desktopSchedulingEditMode || !canEdit) && (
                   <div className="hidden md:block space-y-4">
                     {/* Action buttons for authorized users */}
-                    {(canEdit || (canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed")) && (
+                    {(canEdit || (canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && !isClosed)) && (
                       <div className="flex justify-end gap-2 mb-2 flex-wrap">
-                        {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed" && (
+                        {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && !isClosed && (
                           <Button
                             type="button"
                             size="sm"
@@ -2888,7 +2924,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <div className="flex items-center justify-between gap-2">
                           <FormLabel>Scheduled At</FormLabel>
-                          {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed" && (
+                          {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && !isClosed && (
                             <Button
                               type="button"
                               size="sm"
@@ -3217,15 +3253,24 @@ export function WorkOrderDetail({
                   </div>
                 )}
                 <div className="mt-3">
-                  <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
+                  {!isClosed && <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
                     <Button type="button" variant="outline" size="sm" data-testid="button-manage-attachments">
                       <Upload className="h-4 w-4 mr-2" />
                       Manage Attachments
                     </Button>
-                  </Link>
+                  </Link>}
                 </div>
               </AccordionContent>
             </AccordionItem>
+
+            {hasPermission("audit.view") && <AccordionItem value="history" className="border rounded-lg px-4">
+              <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-work-order-history">
+                <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /><span className="font-medium">Lifecycle history</span></div>
+              </AccordionTrigger>
+              <AccordionContent className="pb-4">
+                <WorkOrderHistory projectId={projectId} projectTimezone={projectTimezone} workOrderId={workOrder.id} workOrderLabel={workOrder.customerWoId?.trim()} projectName={projectName} />
+              </AccordionContent>
+            </AccordionItem>}
 
             {/* Audit History */}
             <AccordionItem value="audit" className="border rounded-lg px-4">
@@ -3427,6 +3472,22 @@ export function WorkOrderDetail({
           </div>
         </form>
       </Form>
+      <Dialog open={reopenDialogOpen} onOpenChange={open => { if (!reopenMutation.isPending) setReopenDialogOpen(open); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Reopen this work order?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Evidence will remain attached. The work order returns to Completed and starts a new review interval.</p>
+          <div className="space-y-2">
+            <FormLabel htmlFor="reopen-reason">Reason <span className="text-destructive">*</span></FormLabel>
+          <Textarea id="reopen-reason" value={reopenReason} onChange={event => setReopenReason(event.target.value)} placeholder="Describe why this work order needs another review." maxLength={500} className="min-h-24" />
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setReopenDialogOpen(false)} disabled={reopenMutation.isPending}>Cancel</Button>
+            <Button type="button" onClick={() => reopenMutation.mutate()} disabled={!reopenReason.trim() || reopenMutation.isPending} data-testid="button-confirm-reopen">
+              {reopenMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Reopening…</> : "Reopen"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* System Changeout Wizard */}
       <SystemChangeoutWizard

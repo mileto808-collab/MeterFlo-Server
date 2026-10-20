@@ -12,7 +12,7 @@ const csv = new Set(["customerWoId", "customerId", "customerName", "address", "c
 const json = new Set([...csv, "newSystemId", "newSystemReading", "newGps", "attachments",
   "oldSystemReadingText", "newSystemReadingText", "oldModuleReadText", "newModuleReadText"]);
 const scheduled = new Set([...Object.keys(insertProjectWorkOrderSchema.shape), "completedAt"]);
-const managed = new Set(["id", "createdAt", "updatedAt", "createdBy", "updatedBy"]);
+const managed = new Set(["id", "createdAt", "updatedAt", "createdBy", "updatedBy", "closedAt", "closedBy", "reviewStartedAt"]);
 const required = new Set(["customerId", "customerName", "address"]);
 export async function workOrderColumnGuide(projectId: number): Promise<WorkOrderColumnGuide> {
   const project = await storage.getProject(projectId);
@@ -28,7 +28,8 @@ export async function workOrderColumnGuide(projectId: number): Promise<WorkOrder
     availableServiceTypes: globalServices.map(row => ({ code: row.code, label: row.label })),
     columns: columns.map((row): WorkOrderColumnGuide["columns"][number] => {
       const field = camel(row.column_name), system = managed.has(field);
-      const note = field === "customerWoId" ? "Recommended customer identity. Generated when omitted; remote-file retries retain stable generated identities."
+      const note = field === "status" ? "Use a configured core status. Files cannot create Closed orders, close an order, or modify an existing Closed order. Use authorized Close/Reopen actions. Only Completed orders can be closed."
+        : field === "customerWoId" ? "Recommended customer identity. Generated when omitted; remote-file retries retain stable generated identities. Existing Closed work orders must be reopened by an authorized user before importing corrections."
         : field === "serviceType" ? "Use a configured service code. A sole project service type can default; supply a value when more than one is configured."
         : required.has(field) ? "Required by import validation even where the legacy database column permits NULL."
         : field === "createdBy" ? "Set to the authenticated importer or file-import service identity; file values do not override audit attribution."

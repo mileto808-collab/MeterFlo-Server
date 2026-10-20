@@ -1334,7 +1334,7 @@ export class DatabaseStorage implements IStorage {
 
   async seedDefaultWorkOrderStatuses(): Promise<void> {
     const existing = await this.getWorkOrderStatuses();
-    if (existing.length === 0) {
+    if (defaultWorkOrderStatuses.some(code => !existing.some(s => s.code === code))) {
       const statusColors: Record<string, string> = {
         Open: "blue",
         Completed: "green",
@@ -1344,13 +1344,14 @@ export class DatabaseStorage implements IStorage {
       };
       for (let i = 0; i < defaultWorkOrderStatuses.length; i++) {
         const code = defaultWorkOrderStatuses[i];
+        if (existing.some(s => s.code === code)) continue;
         await db.insert(workOrderStatuses).values({
           code,
           label: code,
           color: statusColors[code] || "gray",
-          isDefault: code === "Open",
+          isDefault: code === "Open" && !existing.some(s => s.isDefault),
           sortOrder: i,
-        });
+        }).onConflictDoNothing();
       }
       console.log("[Storage] Seeded default work order statuses");
     }

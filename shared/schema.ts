@@ -523,7 +523,7 @@ export const workOrderStatuses = pgTable("work_order_statuses", {
 });
 
 // Default work order status values (for seeding)
-export const defaultWorkOrderStatuses = ["Open", "Completed", "Scheduled", "Skipped", "Trouble"] as const;
+export const defaultWorkOrderStatuses = ["Open", "Completed", "Scheduled", "Skipped", "Trouble", "Closed"] as const;
 export type DefaultWorkOrderStatus = (typeof defaultWorkOrderStatuses)[number];
 
 export const workOrderSubStatuses = pgTable("work_order_sub_statuses", {
@@ -631,6 +631,14 @@ export const workOrderTimeTracking = pgTable("work_order_time_tracking", {
 export const usersRelations = relations(users, ({ many }) => ({
   userProjects: many(userProjects),
 }));
+
+export const workOrderClosingPolicy = pgTable("work_order_closing_policy", {
+  projectId: integer("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  afterHours: integer("after_hours").notNull().default(168),
+  enabledAt: timestamp("enabled_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [check("work_order_closing_policy_after_hours_check", sql`${t.afterHours} BETWEEN 1 AND 87600`)]);
 
 export const projectsRelations = relations(projects, ({ many }) => ({
   userProjects: many(userProjects),

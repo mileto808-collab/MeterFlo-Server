@@ -40,3 +40,15 @@ Work orders need comprehensive audit recording of appropriate actions throughout
 **Why:** The user approved reopening before editing and Completed-only manual closing, and explicitly clarified that automatic closing must not replace manual closing and that comprehensive work-order audit logs are required.
 
 **How to apply:** Enforce the protection consistently in server-side mutations and UI controls, including bulk actions and imports. Keep closing distinct from undoing completed work or reversing inventory.
+
+Closing clears active user/group assignments while preserving the original completion attribution and prior assignments in audit history. Authorized reopening returns the order to Completed, requires a reason, and preserves completion evidence and inventory usage.
+
+**Why:** The user proceeded with the recommended separation between administrative review/corrections and physically undoing completed work.
+
+**How to apply:** Do not run the Completed-to-Open capture-reset workflow, change original completion timestamps, or repeat/reverse inventory deductions merely to close or reopen for corrections.
+
+Automatic closing grants a full review interval after enabling/changing a policy and after an authorized reopen. Missing completion timestamps are not fabricated. Restored automatic-closing policies remain disabled until reviewed and re-enabled.
+
+**Why:** Avoid unexpectedly mass-closing older completed work, immediately reclosing a correction, or resuming automation after a portable restore without review.
+
+**How to apply:** Keep the review clock separate from the original completion evidence; show the timing and restore behavior in project settings.

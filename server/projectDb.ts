@@ -19,6 +19,8 @@ import { exportProjectRouting, restoreProjectRouting } from "./routing/configura
 import { installVisitScheduling, writeVisitScheduling } from "./visitScheduling";
 import { schedulingDto, validateVisitScheduling, schedulingDefaultsSchema } from "../shared/visitScheduling";
 import { installGpsColumns } from "./gpsSchema";
+import { installWorkOrderLifecycle } from "./work-order-lifecycle/schema";
+import { closingPolicySchema } from "./work-order-lifecycle/service";
 import { gpsFixDto, gpsMetadataUpdate, completionGpsFix, validateGpsFix, gpsAccuracyError, type GpsFix } from "../shared/gps-capture";
 
 async function requireGpsAccuracy(client: Pick<PoolClient, "query">, schema: string, fix: GpsFix | null) {
@@ -57,6 +59,9 @@ export const projectWorkOrders = pgTable("work_orders", {
   subStatusId: uuid("sub_status_id"),
   createdBy: varchar("created_by", { length: 100 }),
   completedAt: timestamp("completed_at"),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  closedBy: varchar("closed_by", { length: 100 }),
+  reviewStartedAt: timestamp("review_started_at", { withTimezone: true }),
   notes: text("notes"),
   attachments: text("attachments").array(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -223,6 +228,7 @@ export async function createProjectSchema(projectName: string, projectId: number
     await migrateProjectTroubleCodeReferences(schemaName,connectionPool);
     await installVisitScheduling(client,schemaName);
     await installGpsColumns(client,schemaName);
+    await installWorkOrderLifecycle(client,schemaName);
     if (auditingEnabled) {
       await client.query(`INSERT INTO meterflo_audit.project_scopes(schema_name,project_id,project_label) VALUES($1,$2,$3)
         ON CONFLICT(schema_name) DO UPDATE SET project_id=EXCLUDED.project_id,project_label=EXCLUDED.project_label`,[schemaName,projectId,projectName]);
@@ -413,6 +419,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     await migrateProjectTroubleCodeReferences(schemaName,connectionPool);
     await installVisitScheduling(client,schemaName);
     await installGpsColumns(client,schemaName);
+    await installWorkOrderLifecycle(client,schemaName);
     if (auditingEnabled) await installProjectAudit(client,schemaName);
 
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
@@ -1593,6 +1600,12 @@ export class ProjectWorkOrderStorage {
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");
+        if ((error as any)?.code === "P0001" && /Closed|authorized close/.test((error as Error).message)) {
+          const { rows: [project] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1", [this.schemaName]);
+          if (project) await insertAuditEvent(client, { action: "workOrder.changeBlocked", entityType: "work_orders",
+            entityId: String(id), projectId: project.id, outcome: "failed",
+            metadata: { reason: "Closed work requires authorized Close/Reopen actions before corrections." } });
+        }
         throw error;
       }
       
@@ -1735,6 +1748,9 @@ export class ProjectWorkOrderStorage {
       subStatusId: row.sub_status_id ?? null,
       createdBy: row.created_by,
       completedAt: row.completed_at,
+      closedAt: row.closed_at,
+      closedBy: row.closed_by,
+      reviewStartedAt: row.review_started_at,
       notes: row.notes,
       attachments: row.attachments,
       createdAt: row.created_at,
@@ -1821,6 +1837,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
   troubleCodes?: unknown[];
   routingConfiguration?: unknown;
   schedulingDefaults?: unknown;
+  closingPolicy?: { enabled: boolean; afterHours: number };
 }> {
   await migrateProjectSchema(schemaName);
   const client = await pool.connect();
@@ -1838,6 +1855,9 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       subStatusId: row.sub_status_id ?? null,
       createdBy: row.created_by,
       completedAt: row.completed_at,
+      closedAt: row.closed_at,
+      closedBy: row.closed_by,
+      reviewStartedAt: row.review_started_at,
       notes: row.notes,
       attachments: row.attachments,
       createdAt: row.created_at,
@@ -1886,6 +1906,9 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
     const subStatuses = await listSubStatuses(scope?.id,client);
     const troubleCodeDefinitions = scope?.id ? await exportTroubleCodes(client, scope.id) : [];
     const routingConfiguration = scope?.id ? await exportProjectRouting(client,scope.id) : null;
+    const { rows: [closing] } = scope?.id
+      ? await client.query("SELECT enabled,after_hours FROM public.work_order_closing_policy WHERE project_id=$1", [scope.id])
+      : { rows: [] };
     await client.query("COMMIT");
     return {
       schemaName,
@@ -1896,6 +1919,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       subStatuses,
       troubleCodes: troubleCodeDefinitions,
       routingConfiguration,
+      closingPolicy: closing ? { enabled: closing.enabled, afterHours: closing.after_hours } : undefined,
       schedulingDefaults: scope ? { defaultServiceMinutes: scope.defaultServiceMinutes,
         defaultAppointmentToleranceMinutes: scope.defaultAppointmentToleranceMinutes } : undefined,
     };
@@ -1906,7 +1930,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
 
 // Restore project database from backup JSON
 export async function restoreProjectDatabase(
-  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[];troubleCodes?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown},options:{clearExisting?:boolean}={}
+  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[];troubleCodes?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown;closingPolicy?:unknown},options:{clearExisting?:boolean}={}
 ) {
   if (!auditingEnabled) return restoreProjectDatabaseData(schemaName,backup,options);
   const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
@@ -1924,16 +1948,17 @@ export async function restoreProjectDatabaseInTransaction(
 
 async function restoreProjectDatabaseData(
   schemaName: string,
-  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[];troubleCodes?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown },
+  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[];troubleCodes?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown;closingPolicy?:unknown },
   options: { clearExisting?: boolean } = {},
   transactionClient?: PoolClient
 ): Promise<{ restored: number; errors: string[] }> {
   backup.workOrders.forEach(validateVisitScheduling);
   const schedulingDefaults = backup.schedulingDefaults === undefined ? undefined : schedulingDefaultsSchema.parse(backup.schedulingDefaults);
+  const restoredClosing = backup.closingPolicy === undefined ? undefined : closingPolicySchema.parse(backup.closingPolicy);
   if (!transactionClient) await migrateProjectSchema(schemaName);
   const client = transactionClient ?? await pool.connect();
   const errors: string[] = [];
-  const atomic = !!backup.inventory || !!backup.subStatuses || backup.routingConfiguration !== undefined || schedulingDefaults !== undefined;
+  const atomic = !!backup.inventory || !!backup.subStatuses || backup.routingConfiguration !== undefined || schedulingDefaults !== undefined || restoredClosing !== undefined;
   let restored = 0;
   
   try {
@@ -1960,6 +1985,10 @@ async function restoreProjectDatabaseData(
     if (options.clearExisting) {
       await client.query(`DELETE FROM "${schemaName}".work_orders`);
     }
+    if (restoredClosing) await client.query(`INSERT INTO public.work_order_closing_policy(project_id,enabled,after_hours)
+      SELECT id,false,$2 FROM public.projects WHERE database_name=$1 ON CONFLICT(project_id)
+      DO UPDATE SET enabled=false,after_hours=excluded.after_hours,enabled_at=now(),updated_at=now()`,
+    [schemaName, restoredClosing.afterHours]);
     
     for (let i = 0; i < backup.workOrders.length; i++) {
       const wo = withExactReadings(backup.workOrders[i]) as any;
@@ -2018,6 +2047,8 @@ async function restoreProjectDatabaseData(
           [subStatusMapping.get(wo.subStatusId) ?? wo.subStatusId,restoredOrder.rows[0].id]);
         await writeVisitScheduling(client, schemaName, restoredOrder.rows[0].id, wo);
         await writeGpsCapture(client, schemaName, restoredOrder.rows[0].id, wo.gpsCapture, wo.newGps);
+        await client.query(`UPDATE "${schemaName}".work_orders SET closed_at=$2,closed_by=$3,review_started_at=$4 WHERE id=$1`,
+          [restoredOrder.rows[0].id, wo.closedAt ?? null, wo.closedBy ?? null, wo.reviewStartedAt ?? null]);
         restored++;
       } catch (error) {
         if (atomic || transactionClient) throw error;

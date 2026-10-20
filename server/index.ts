@@ -38,6 +38,8 @@ import { initializeBackupSchema } from "./backups/schema";
 import { startBackupWorker } from "./backups/service";
 import { initializeFileTransfers } from "./file-transfers/schema";
 import { startFileExportWorker } from "./file-transfers/exports";
+import { initializeWorkOrderLifecycle } from "./work-order-lifecycle/schema";
+import { startAutomaticClosing } from "./work-order-lifecycle/service";
 
 const app = express();
 
@@ -111,6 +113,7 @@ app.use(requestLogging(log));
   await initializeRouting();
   await initializeVisitScheduling();
   await initializeGpsSchema(pool);
+  await initializeWorkOrderLifecycle(pool);
   await initializeBackupSchema(pool);
   await initializeFileTransfers(pool);
   await initializeReadingPrecision(pool);
@@ -176,6 +179,7 @@ app.use(requestLogging(log));
       startAuditRetention();
       startBackupWorker();
       startFileExportWorker();
+      startAutomaticClosing();
       // Ensure administrator subrole exists with all permissions
       storage.ensureAdministratorSubrole().then(() => {
         log("Administrator subrole initialized");

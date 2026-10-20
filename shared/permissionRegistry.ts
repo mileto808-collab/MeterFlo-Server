@@ -24,6 +24,9 @@ export interface PermissionDefinition {
 }
 
 export const permissionRegistry: PermissionDefinition[] = [
+  { key: "workOrders.reopenClosed", label: "Reopen Closed Work Orders", category: "Work Order Actions",
+    description: "Explicitly reopen Closed work orders to Completed with a required reason before corrections. Also requires Edit Work Orders and project access; does not reverse inventory or grant direct Closed editing.",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false } },
   { key: "security.manageSiteAccessLocks", label: "Manage Sitewide Access Locks", category: "Settings",
     description: "Lock/unlock sitewide user access and bypass site and project access locks for recovery. Does not grant project membership or other business permissions.",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false } },
@@ -406,7 +409,7 @@ export const permissionRegistry: PermissionDefinition[] = [
     key: "workOrders.close",
     label: "Close Work Orders",
     category: "Work Order Actions",
-    description: "Set work order status to Closed via bulk operations",
+    description: "Close Completed work orders individually or in bulk. Also required with Edit Projects to configure automatic closing. Does not grant reopening or direct Closed editing.",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
   {

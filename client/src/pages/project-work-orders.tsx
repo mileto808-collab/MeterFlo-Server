@@ -88,6 +88,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import SignaturePad, { SignaturePadRef } from "@/components/signature-pad";
 import { WorkOrderDetail } from "@/components/work-order-detail";
+import { WorkOrderHistory } from "@/components/work-orders/work-order-history";
 import { ScannerInput } from "@/components/scanner-input";
 import { GPSCapture } from "@/components/gps-capture";
 import { StartSystemChangeoutDialog } from "@/components/start-system-changeout-dialog";
@@ -296,6 +297,7 @@ export default function ProjectWorkOrders() {
     scheduledCount: number;
     completedCount: number;
     troubleCount: number;
+    closedCount: number;
     canClose: boolean;
   } | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "calendar">("table");
@@ -528,6 +530,16 @@ export default function ProjectWorkOrders() {
   const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
   });
+  const getCoreWorkOrderStatus = (workOrder: any): string => {
+    const rawStatus = workOrder?.statusCode ?? workOrder?.status_code ?? workOrder?.status;
+    const matchedStatus = workOrderStatuses.find(status => status.code === rawStatus || status.label === rawStatus);
+    return String(workOrder?.statusCode ?? workOrder?.status_code ?? matchedStatus?.code ?? rawStatus ?? "");
+  };
+  const hasCoreWorkOrderStatus = (workOrder: any, label: string): boolean => {
+    const expectedCode = workOrderStatuses.find(status => status.label.toLowerCase() === label.toLowerCase())?.code ?? label;
+    return getCoreWorkOrderStatus(workOrder).toLowerCase() === String(expectedCode).toLowerCase();
+  };
+  const isClosedWorkOrder = (workOrder: any) => hasCoreWorkOrderStatus(workOrder, "Closed");
   const { data: workOrderSubStatuses = [] } = useQuery<WorkOrderSubStatus[]>({
     queryKey: ["/api/projects", projectId, "work-order-sub-statuses"],
     queryFn: async () => {
@@ -1227,7 +1239,9 @@ export default function ProjectWorkOrders() {
       setBulkStatusCheckResult(null);
       toast({ 
         title: `${result.updatedCount} work order(s) updated`,
-        description: result.skipped > 0 ? `${result.skipped} work order(s) were skipped (Scheduled/Completed/Trouble status)` : undefined,
+        description: result.skipped > 0
+          ? `${result.skipped} work order(s) were skipped because they were not eligible for this status change.`
+          : undefined,
       });
     },
     onError: (error: any) => {
@@ -1268,10 +1282,19 @@ export default function ProjectWorkOrders() {
   };
 
   const handleBulkStatusSubmit = () => {
-    const workOrderIds = filteredAndSortedWorkOrders.map(wo => wo.id);
+    const isClosingSelected = bulkStatusValue.toLowerCase() === "closed";
+    const workOrderIds = filteredAndSortedWorkOrders
+      .filter(wo => isClosingSelected
+        ? hasCoreWorkOrderStatus(wo, "Completed") && bulkStatusCheckResult?.canClose
+        : !isClosedWorkOrder(wo))
+      .map(wo => wo.id);
     
     if (!bulkStatusValue) {
       toast({ title: "Please select a status", variant: "destructive" });
+      return;
+    }
+    if (workOrderIds.length === 0) {
+      toast({ title: "No eligible work orders", description: isClosingSelected ? "Only Completed work orders can be closed." : "Closed work orders must be reopened before updating.", variant: "destructive" });
       return;
     }
     
@@ -1395,6 +1418,10 @@ export default function ProjectWorkOrders() {
   };
 
   const onEditSubmit = (data: WorkOrderFormData) => {
+    if (editingWorkOrder && isClosedWorkOrder(editingWorkOrder)) {
+      toast({ title: "Work order is closed", description: "Reopen this work order before making changes.", variant: "destructive" });
+      return;
+    }
     if (!hasPermission('workOrders.edit')) {
       toast({ title: "Permission denied", description: "You do not have permission to edit work orders.", variant: "destructive" });
       return;
@@ -2630,7 +2657,12 @@ export default function ProjectWorkOrders() {
           signaturePadRef={editSignaturePadRef}
           openCreateSystemTypeDialog={openCreateSystemTypeDialog}
           toast={toast}
-          canEdit={hasPermission('workOrders.edit')}
+          canEdit={hasPermission('workOrders.edit') && !isClosedWorkOrder(editingWorkOrder)}
+          onReopened={(reopened) => {
+            const updated = snakeToCamelCase(reopened) as ProjectWorkOrder;
+            setEditingWorkOrder(updated);
+            setEditingWorkOrderVersion(version => version + 1);
+          }}
           canSystemChangeout={hasPermission('workOrders.meterChangeout')}
           autoLaunchSystemChangeout={autoLaunchSystemChangeout}
           autoLaunchChangeoutScope={autoLaunchChangeoutScope}
@@ -3986,6 +4018,7 @@ export default function ProjectWorkOrders() {
               {/* Right-aligned: Assign Work Orders, View Toggle */}
               <div className="flex-1" />
               <div className="flex items-center gap-2 flex-wrap">
+                <WorkOrderHistory projectId={projectId!} projectTimezone={effectiveTimezone} projectName={project?.name} />
                 {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
                   <Button variant="outline" size="sm" onClick={handleOpenBulkAssign} data-testid="button-assign-work-orders">
                     <UserPlus className="h-3.5 w-3.5 mr-1" />
@@ -4476,16 +4509,12 @@ export default function ProjectWorkOrders() {
               <span className="ml-2 text-muted-foreground">Checking work orders...</span>
             </div>
           ) : bulkStatusCheckResult ? (() => {
-            // Calculate effective eligible count based on selected status
             const isClosingSelected = (bulkStatusValue || "").toLowerCase() === "closed";
-            const canCloseCompletedTrouble = isClosingSelected && bulkStatusCheckResult.canClose;
-            const effectiveEligibleCount = canCloseCompletedTrouble 
-              ? bulkStatusCheckResult.eligibleCount + bulkStatusCheckResult.completedCount + bulkStatusCheckResult.troubleCount
+            const effectiveEligibleCount = isClosingSelected
+              ? (bulkStatusCheckResult.canClose ? bulkStatusCheckResult.completedCount : 0)
               : bulkStatusCheckResult.eligibleCount;
-            const completedSkipCount = canCloseCompletedTrouble ? 0 : bulkStatusCheckResult.completedCount;
-            const troubleSkipCount = canCloseCompletedTrouble ? 0 : bulkStatusCheckResult.troubleCount;
-            const hasAnyEligible = bulkStatusCheckResult.eligibleCount > 0 || 
-              (bulkStatusCheckResult.canClose && (bulkStatusCheckResult.completedCount > 0 || bulkStatusCheckResult.troubleCount > 0));
+            const hasAnyEligible = effectiveEligibleCount > 0 ||
+              (!isClosingSelected && bulkStatusCheckResult.canClose && bulkStatusCheckResult.completedCount > 0);
             
             return (
             <div className="space-y-4">
@@ -4494,16 +4523,20 @@ export default function ProjectWorkOrders() {
                 {bulkStatusCheckResult.scheduledCount > 0 && (
                   <p className="text-muted-foreground">{bulkStatusCheckResult.scheduledCount} Scheduled (will be skipped)</p>
                 )}
-                {completedSkipCount > 0 && (
-                  <p className="text-muted-foreground">{completedSkipCount} Completed (will be skipped)</p>
+                {!isClosingSelected && bulkStatusCheckResult.completedCount > 0 && (
+                  <p className="text-muted-foreground">{bulkStatusCheckResult.completedCount} Completed (will be skipped)</p>
                 )}
-                {troubleSkipCount > 0 && (
-                  <p className="text-muted-foreground">{troubleSkipCount} Trouble (will be skipped)</p>
+                {!isClosingSelected && bulkStatusCheckResult.troubleCount > 0 && (
+                  <p className="text-muted-foreground">{bulkStatusCheckResult.troubleCount} Trouble (will be skipped)</p>
                 )}
-                {isClosingSelected && canCloseCompletedTrouble && (bulkStatusCheckResult.completedCount > 0 || bulkStatusCheckResult.troubleCount > 0) && (
-                  <p className="text-green-600 dark:text-green-400">
-                    {bulkStatusCheckResult.completedCount + bulkStatusCheckResult.troubleCount} Completed/Trouble will be closed
-                  </p>
+                {bulkStatusCheckResult.closedCount > 0 && (
+                  <p className="text-muted-foreground">{bulkStatusCheckResult.closedCount} Closed (must be reopened before updates)</p>
+                )}
+                {isClosingSelected && !bulkStatusCheckResult.canClose && (
+                  <p className="text-muted-foreground">You do not have permission to close work orders.</p>
+                )}
+                {isClosingSelected && effectiveEligibleCount > 0 && (
+                  <p className="text-primary">{effectiveEligibleCount} Completed work orders eligible to close</p>
                 )}
               </div>
               
@@ -4516,13 +4549,16 @@ export default function ProjectWorkOrders() {
                     </SelectTrigger>
                     <SelectContent>
                       {workOrderStatuses
-                        .filter(s => !["Scheduled", "Completed", "Trouble"].includes(s.label))
+                        .filter(s => !["scheduled", "completed", "trouble", "closed"].includes(s.code.toLowerCase()))
                         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
                         .map(status => (
                           <SelectItem key={status.id} value={status.label} data-testid={`option-status-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
                             {status.label}
                           </SelectItem>
                         ))}
+                      {bulkStatusCheckResult.canClose && workOrderStatuses.filter(s => s.code.toLowerCase() === "closed").map(status => (
+                        <SelectItem key={status.id} value="Closed" data-testid="option-status-closed">{status.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

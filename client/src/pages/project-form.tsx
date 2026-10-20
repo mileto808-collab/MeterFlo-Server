@@ -29,6 +29,7 @@ import { getProjectEquipmentVisibility } from "@shared/project-equipment-scope";
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { ProjectTroubleCodeManager } from "@/components/project-trouble-code-manager";
 import { ProjectFieldStockSettings } from "@/components/inventory/project-field-stock-settings";
+import { WorkOrderClosingSettings } from "@/components/work-orders/work-order-closing-settings";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -930,6 +931,7 @@ export default function ProjectForm() {
 
               <div id="work-orders-panel-wizard" role="tabpanel" aria-label="Wizard"
                 hidden={activeWorkOrderSection !== "wizard"} className="border-t pt-6 mt-6">
+                <WorkOrderClosingSettings projectId={isEditing ? Number(id) : undefined} isEditing={isEditing} />
                 <div className="flex items-center gap-2 mb-4">
                   <Wand2 className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-lg font-medium">Wizard Configuration</h3>

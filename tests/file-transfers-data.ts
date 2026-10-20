@@ -12,9 +12,14 @@ async function main() {
     await withAuditContext(serviceAuditContext("file-transfer-acceptance"), async () => {
       if (mode === "seed") {
         await pool.query("INSERT INTO public.work_order_statuses(code,label) VALUES('Closed','Closed') ON CONFLICT(code) DO NOTHING");
-        for (const status of ["Closed", "Trouble", "Open"])
-          await pool.query(`INSERT INTO ${schema}.work_orders(customer_wo_id,customer_id,customer_name,address,service_type,status,created_by,updated_by)
-            VALUES($1,$2,$3,'100 Main St','workspace-fixture',$4,$5,$5)`, ["TRANSFER-" + status.toUpperCase(), "customer-" + status, "Test " + status, status, fixture.username]);
+        for (const status of ["Closed", "Trouble", "Open"]) {
+          const { rows: [row] } = await pool.query(`INSERT INTO ${schema}.work_orders(customer_wo_id,customer_id,customer_name,address,service_type,status,created_by,updated_by)
+            VALUES($1,$2,$3,'100 Main St','workspace-fixture',$4,$5,$5) RETURNING id`, ["TRANSFER-" + status.toUpperCase(), "customer-" + status, "Test " + status, status === "Closed" ? "Completed" : status, fixture.username]);
+          if (status === "Closed") {
+            const { lifecycleBatch } = await import("../server/work-order-lifecycle/service");
+            assert.equal((await lifecycleBatch(fixture.projectId, [row.id], "close")).updatedCount, 1);
+          }
+        }
         const { encodeExport, exportFilename, nextTransferTime } = await import("../server/file-transfers/exports");
         assert.equal(exportFilename("orders_{YYYY}{MM}{DD}_{HH}{mm}{ss}", "csv", "id", "America/New_York", new Date("2026-01-01T01:02:03Z")), "orders_20251231_200203_id.csv");
         assert.throws(() => exportFilename("../orders", "csv", "id", "UTC"));

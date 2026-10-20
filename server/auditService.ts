@@ -70,6 +70,9 @@ export async function auditedOperation<T>(type:string,target:string,fn:()=>Promi
         await migrateBackupSchema(pool);
         const { migrateFileTransfers } = await import("./file-transfers/schema");
         await migrateFileTransfers(pool);
+        const { migrateWorkOrderLifecycle } = await import("./work-order-lifecycle/schema");
+        await migrateWorkOrderLifecycle(pool);
+        await pool.query("UPDATE public.work_order_closing_policy SET enabled=false,updated_at=now()");
         await pool.query("UPDATE public.file_exports SET is_enabled=false,next_run_at=null,updated_at=now()");
         await pool.query("UPDATE public.https_transfer_settings SET enabled=false,updated_at=now()");
         await pool.query("UPDATE public.https_transfer_credentials SET revoked_at=coalesce(revoked_at,now())");

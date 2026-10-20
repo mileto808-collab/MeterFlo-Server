@@ -86,12 +86,12 @@ export async function initializeAudit(pool:Pool) {
           'customer_api_enabled','customer_api_auth_type','customer_api_send_photos','webhook_enabled',
           'operational_hours_enabled','operational_hours_start','operational_hours_end','operational_hours_days',
           'date','holiday_date','type','code','color','sort_order','display_order','requires_note','is_completed',
-          'started_at','completed_at','start_time','end_time','duration','duration_seconds',
+          'started_at','completed_at','closed_at','closed_by','review_started_at','start_time','end_time','duration','duration_seconds',
           'created_count','updated_count','skipped_count','failed_count','records_imported','records_failed',
           'created','updated','skipped','failed','version','version_name','version_code','size_bytes',
           'release_id','published','is_latest','method','schedule','schedule_minutes','schedule_enabled',
           'schedule_frequency','custom_cron_expression','is_enabled','ssl_enabled','database_type','port','delimiter','has_header',
-          'import_type','backup_type','source','config_name','system_type_id','module_type_id','work_order_id'
+          'import_type','backup_type','source','config_name','system_type_id','module_type_id','work_order_id','system_work_order_id'
         ]) AND jsonb_typeof(v) NOT IN ('object','array') THEN
           -- Even nominal labels cannot be used to smuggle URLs, bearer values,
           -- signatures or arbitrarily large text into this trail.

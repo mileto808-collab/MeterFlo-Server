@@ -231,6 +231,9 @@ async function initializeAdminUser() {
 }
 
 import { registerFileTransferRoutes } from "./file-transfers/routes";
+import { registerWorkOrderLifecycleRoutes } from "./work-order-lifecycle/routes";
+import { lifecycleBatch, isClosingStatus } from "./work-order-lifecycle/service";
+import { withBackupExclusive } from "./backups/lock";
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -241,6 +244,7 @@ export async function registerRoutes(
   registerAccessLockRoutes(app);
   registerAuditRoutes(app);
   registerFileTransferRoutes(app, isAuthenticated);
+  registerWorkOrderLifecycleRoutes(app);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
   await initializeWorkOrderSubStatuses();
@@ -3371,10 +3375,12 @@ export async function registerRoutes(
       let scheduledCount = 0;
       let completedCount = 0;
       let troubleCount = 0;
+      let closedCount = 0;
       
       for (const woId of workOrderIds) {
         const workOrder = await workOrderStorage.getWorkOrder(woId);
         if (!workOrder) continue;
+        if (workOrder.status.toLowerCase() === "closed") { closedCount++; continue; }
         
         // Scheduled is always skipped
         if (workOrder.status === "Scheduled") {
@@ -3403,6 +3409,7 @@ export async function registerRoutes(
         scheduledCount,
         completedCount,
         troubleCount,
+        closedCount,
         canClose  // User has permission to close work orders
       });
     } catch (error) {
@@ -3449,7 +3456,7 @@ export async function registerRoutes(
       }
       
       // If setting status to Closed, require the Close Work Orders permission
-      const isClosingToStatus = status.toLowerCase() === "closed";
+      const isClosingToStatus = await isClosingStatus(status);
       let canClose = false;
       
       if (isClosingToStatus) {
@@ -3457,6 +3464,10 @@ export async function registerRoutes(
         if (!canClose) {
           return res.status(403).json({ message: "Forbidden: You don't have permission to close work orders" });
         }
+        const ids = workOrderIds.map(Number);
+        if (ids.some((id: number) => !Number.isSafeInteger(id) || id <= 0) || ids.length > 5000)
+          return res.status(400).json({ message: "Choose between 1 and 5,000 valid work orders." });
+        return res.json(await withBackupExclusive(() => lifecycleBatch(projectId, ids, "close")));
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
@@ -3472,6 +3483,11 @@ export async function registerRoutes(
         const workOrder = await workOrderStorage.getWorkOrder(woId);
         if (!workOrder) {
           skipped++;
+          continue;
+        }
+        if (workOrder.status.toLowerCase() === "closed") {
+          skipped++;
+          if (skippedReasons.length < 10) skippedReasons.push(`${workOrder.customerWoId || woId}: Reopen Closed work before corrections.`);
           continue;
         }
         
@@ -10462,6 +10478,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
+      if (!await storage.hasPermission(currentUser, "workOrders.edit"))
+        return res.status(403).json({ message: "Edit Work Orders permission required." });
       
       // Must be assigned to project
       if (currentUser.role !== "admin") {
@@ -10484,6 +10502,17 @@ export async function registerRoutes(
       
       if (!status) {
         return res.status(400).json({ message: "status is required" });
+      }
+      if (typeof status === "string" && await isClosingStatus(status)) {
+        if (!await storage.hasPermission(currentUser, "workOrders.close"))
+          return res.status(403).json({ message: "Close Work Orders permission required." });
+        const ids = workOrderIds.map(Number);
+        if (ids.length > 5000 || ids.some((id: number) => !Number.isSafeInteger(id) || id <= 0))
+          return res.status(400).json({ message: "Choose between 1 and 5,000 valid work orders." });
+        const result = await withBackupExclusive(() => lifecycleBatch(projectId, ids, "close"));
+        return res.json({ ...result, results: ids.map((id: number) => ({ id, updated: result.updatedIds.includes(id),
+          ...(!result.updatedIds.includes(id) ? { message: "Only Completed work orders can be closed." } : {}) })),
+          summary: { total: ids.length, updated: result.updatedCount, failed: result.skipped + result.failed } });
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
