@@ -67,6 +67,7 @@ import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getW
 import { ExternalDatabaseService } from "./externalDbService";
 import { restoreFullSystem, restoreFilesFromArchive, SystemRestoreError } from "./systemBackup";
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, restoreWebAppFilesFromArchive, BackupType } from "./pgBackup";
+import { chooseSftpRestoreMode } from "./file-transfers/restore-local-sftp";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { retryCustomerDelivery } from "./customerApiService";
 import { registerApiImportRoutes } from "./apiImportRoutes";
@@ -92,6 +93,7 @@ interface ChunkedUploadSession {
   totalChunks: number;
   receivedChunks: Map<number, Buffer>;
   clearExisting: boolean;
+  sftpRestoreMode?: "retain" | "replace";
   createdAt: Date;
   targetUrl?: string;
 }
@@ -8224,6 +8226,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No backup file provided" });
       }
       
+      chooseSftpRestoreMode(req.body.sftpRestoreMode);
       const restoreFiles = req.body.restoreFiles !== "false";
       const fileName = req.file.originalname || "";
       const isPlainSql = fileName.toLowerCase().endsWith(".sql");
@@ -8751,6 +8754,7 @@ export async function registerRoutes(
       }
 
       const { fileName, totalChunks, clearExisting } = req.body;
+      const sftpRestoreMode = chooseSftpRestoreMode(req.body.sftpRestoreMode);
       
       if (!fileName || !totalChunks || totalChunks < 1) {
         return res.status(400).json({ message: "Missing required fields: fileName, totalChunks" });
@@ -8764,6 +8768,7 @@ export async function registerRoutes(
         totalChunks: parseInt(totalChunks),
         receivedChunks: new Map(),
         clearExisting: clearExisting === true || clearExisting === "true",
+        sftpRestoreMode,
         createdAt: new Date(),
       });
 
@@ -8866,6 +8871,7 @@ export async function registerRoutes(
         });
       }
 
+      chooseSftpRestoreMode(session.sftpRestoreMode);
       console.log(`[ChunkedUpload] Finalizing session ${uploadId}: assembling ${session.totalChunks} chunks`);
 
       // Assemble all chunks in order

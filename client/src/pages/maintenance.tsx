@@ -91,6 +91,7 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
   const [selectedProject, setSelectedProject] = useState<ProjectWithStats | null>(null);
   const [clearExisting, setClearExisting] = useState(false);
   const [systemClearExisting, setSystemClearExisting] = useState(false);
+  const [retainLocalSftp, setRetainLocalSftp] = useState(true);
   const [filesClearExisting, setFilesClearExisting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isSystemBackup, setIsSystemBackup] = useState(false);
@@ -349,6 +350,7 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
             fileName: file.name,
             totalChunks,
             clearExisting: systemClearExisting,
+            sftpRestoreMode: retainLocalSftp ? "retain" : "replace",
           }),
         });
         
@@ -442,6 +444,7 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
         const formData = new FormData();
         formData.append("backup", file);
         formData.append("clearExisting", String(systemClearExisting));
+        formData.append("sftpRestoreMode", retainLocalSftp ? "retain" : "replace");
 
         setUploadProgress({ stage: "processing", percent: 50,
           message: "Uploading backup and waiting for the server to restore it…" });
@@ -1171,6 +1174,12 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            <label className="flex items-start gap-3 rounded-md border p-3">
+              <Checkbox checked={retainLocalSftp} onCheckedChange={value => setRetainLocalSftp(value === true)} />
+              <span className="text-sm"><span className="block font-medium">Retain this instance's SFTP setup</span>
+                <span className="text-muted-foreground">Recommended when restoring a Replit backup onto Windows/Linux. Keep local connection settings and accounts whose original projects still match. Uncheck to replace them with the backup's setup. SFTP remains paused until an administrator reviews and enables it; existing revocations and expiry still apply. The local SSH host key is never replaced.</span>
+              </span>
+            </label>
             <div className="flex items-center gap-2 p-4 rounded-md bg-destructive/10 text-destructive">
               <AlertTriangle className="h-5 w-5 flex-shrink-0" />
               <p className="text-sm">

@@ -65,7 +65,14 @@ export async function auditedOperation<T>(type:string,target:string,fn:()=>Promi
     }
     const { withBackupExclusive } = await import("./backups/lock");
     return withBackupExclusive(async () => {
-      const result = await auditedOperationData(type,target,fn,projectId,projectLabel);
+      const localSftp = type === "systemRestore"
+        ? await (await import("./file-transfers/restore-local-sftp")).captureLocalSftp(pool) : null;
+      let result: T;
+      try { result = await auditedOperationData(type,target,fn,projectId,projectLabel); }
+      catch (error) {
+        if (type === "systemRestore") await pool.query("UPDATE public.sftp_server_settings SET enabled=false").catch(() => {});
+        throw error;
+      }
       if (type === "systemRestore") {
         // Restored schedules may contain another server's paths and queued work.
         // Recreate the CURRENT operational schema during the explicit restore,
@@ -81,7 +88,14 @@ export async function auditedOperation<T>(type:string,target:string,fn:()=>Promi
         await pool.query("UPDATE public.https_transfer_settings SET enabled=false,updated_at=now()");
         await pool.query("UPDATE public.https_transfer_credentials SET revoked_at=coalesce(revoked_at,now())");
         await pool.query("UPDATE public.sftp_server_settings SET enabled=false,updated_at=now()");
-        await pool.query("UPDATE public.sftp_server_accounts SET revoked_at=coalesce(revoked_at,now())");
+        if (localSftp && (result as any)?.success !== false) {
+          const report = await (await import("./file-transfers/restore-local-sftp")).restoreLocalSftp(pool, localSftp);
+          if (result && typeof result === "object") {
+            const response = result as any;
+            response.sftpRestore = report;
+            response.warnings = [...(response.warnings || []), `SFTP paused after restore: ${report.mode}; ${report.retained} local accounts retained; ${report.blocked.length} blocked. Review SFTP Server settings before enabling.`];
+          }
+        }
         await pool.query("UPDATE public.https_transfer_files SET status='received',message='Processing interrupted by restore; review before enabling.' WHERE status='processing'");
         await pool.query("UPDATE public.file_import_configs SET is_enabled=false WHERE source='sftp'");
         await pool.query(`UPDATE public.file_export_runs SET status='cancelled',completed_at=now(),

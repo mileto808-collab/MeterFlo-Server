@@ -22,6 +22,10 @@ const { Client, utils } = require("ssh2");
     assert.equal(response.status(), status, `${method} ${url}: ${text.slice(0, 800)}`);
     return text ? JSON.parse(text) : null;
   }
+  function ownedData(mode) {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "tests/sftp-restore-data.ts", mode], { env: process.env, encoding: "utf8", timeout: 120000 });
+    assert.equal(result.status, 0, `Owned ${mode} check failed: ${result.stderr?.slice(-1500)}`);
+  }
   const key = utils.generateKeyPairSync("ed25519"), password = randomUUID() + randomUUID();
   const accountBody = extra => ({ username: `sx_${randomUUID().replaceAll("-", "").slice(0, 20)}`, label: "Owned test",
     authType: "publicKey", publicKey: key.public, canUpload: true, canDownload: true,
@@ -44,6 +48,12 @@ const { Client, utils } = require("ssh2");
           throw error;
         }
         if (batch === false) break;
+        for (const entry of batch) {
+          const directory = entry.attrs.isDirectory();
+          assert.match(entry.longname, directory ? /^d[rwx-]{9}\s/ : /^-[rwx-]{9}\s/,
+            "FileZilla-compatible UNIX listing type must agree with protocol attributes");
+          assert.equal(entry.longname.trim().split(/\s+/).slice(8).join(" "), entry.filename);
+        }
         entries.push(...batch);
       }
     } finally { await call(wire, "close", handle); }
@@ -82,6 +92,17 @@ const { Client, utils } = require("ssh2");
     await json("POST", root + "/accounts", accountBody({ publicKey: key.private }), 400);
     await json("POST", root + "/accounts", accountBody({ expiresAt: new Date(Date.now() - 1000).toISOString() }), 400);
     const saved = JSON.stringify(await json("GET", root));
+    ownedData("seed-logs");
+    assert.equal((await json("GET", root)).timezone, "America/New_York");
+    const preview = await json("GET", root + "/events/delete-preview?search=owned-timezone&from=2026-10-18&to=2026-10-18");
+    assert.equal(preview.expectedCount, 1, "Date range follows project local day, not UTC");
+    assert.equal((await json("GET", root + "/events/delete-preview?search=owned-timezone&from=2026-10-19&to=2026-10-19")).expectedCount, 0);
+    await json("DELETE", root + "/events", { ...preview, confirmed: false }, 400);
+    await json("DELETE", root + "/events", { ...preview, confirmed: true, expectedCount: 2 }, 409);
+    assert.equal((await json("DELETE", root + "/events", { ...preview, confirmed: true })).deleted, 1);
+    assert.equal((await json("GET", root + "/events?search=owned-timezone")).total, 1, "Shared server logs preserved by default");
+    const shared = await json("GET", root + "/events/delete-preview?search=owned-timezone&includeShared=true");
+    assert.equal((await json("DELETE", root + "/events", { ...shared, confirmed: true })).deleted, 1);
     assert.ok(!saved.includes(password)); assert.ok(!saved.includes(key.private)); assert.ok(!saved.includes(key.public));
     const sftp = await connect(full);
     const raw = sftp.sftp;
@@ -238,6 +259,11 @@ const { Client, utils } = require("ssh2");
     await page.getByLabel("Public hostname", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Public hostname", { exact: true }).inputValue(), "127.0.0.1");
     await page.screenshot({ path: "generated-artifacts/project-workspace/embedded-sftp-settings.jpg", fullPage: true });
+    await page.getByRole("tab", { name: "Activity", exact: true }).click();
+    await page.getByRole("button", { name: "Delete matching project logs" }).click();
+    await page.getByRole("dialog").getByText("Delete matching SFTP logs?").waitFor();
+    await page.screenshot({ path: "generated-artifacts/project-workspace/sftp-delete-confirmation.jpg", fullPage: false });
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await browserContext.close();
     const phone = await browser.newContext({ storageState: await api.storageState(), viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const mobile = await phone.newPage();
@@ -260,7 +286,47 @@ const { Client, utils } = require("ssh2");
     await json("PUT", `/api/subroles/${fixture.viewerRoleId}/permissions`, { permissions: [...rolePermissions, "project.sftpConnections"] });
     assert.equal((await viewer.get(root)).status(), 200, "Delegated project SFTP permission permits account management");
     assert.equal((await viewer.put(root + "/server", { data: serverBody })).status(), 403, "Delegated SFTP permission cannot enable the shared listener");
-    console.log("PASS embedded SFTP: real key/password SSH, OpenSSH compatibility, atomic uploads/imports/exports, isolation, revocation, persistence, reports, responsive UI");
+    assert.equal((await viewer.get(root + "/events/delete-preview?includeShared=true")).status(), 403);
+    const viewerPreview = await (await viewer.get(root + "/events/delete-preview")).json();
+    assert.equal((await viewer.delete(root + "/events", { data: { ...viewerPreview, confirmed: true, filters: { ...viewerPreview.filters, includeShared: true } } })).status(), 403);
+    ownedData("restore");
+    const reviewed = await json("GET", root);
+    assert.ok(reviewed.restoreReview.requiresReview);
+    assert.equal(reviewed.server.fingerprint, fingerprint);
+    await json("PUT", root + "/server", { enabled: true, host: "127.0.0.1", publicHost: "127.0.0.1", port }, 409);
+    const reviewContext = await browser.newContext({ storageState: await api.storageState(), viewport: { width: 1280, height: 900 } });
+    const reviewPage = await reviewContext.newPage();
+    await reviewPage.goto(owner.baseURL + `/projects/${fixture.projectId}/import`);
+    await reviewPage.getByRole("tab", { name: "SFTP Server", exact: true }).click();
+    await reviewPage.getByRole("tab", { name: "Server settings", exact: true }).click();
+    await reviewPage.getByText("Review SFTP after restore", { exact: true }).waitFor();
+    await reviewPage.getByText(/Review all project transfer accounts/).click();
+    assert.ok(reviewed.restoreReview.accounts.every(account => !("password_hash" in account) && !("public_key" in account)));
+    await reviewPage.screenshot({ path: "generated-artifacts/project-workspace/sftp-restore-review.jpg", fullPage: true });
+    await reviewPage.getByRole("checkbox", { name: /I have reviewed the accounts/ }).check();
+    await reviewPage.getByRole("switch", { name: "Enable SFTP Server" }).click();
+    await reviewPage.getByRole("button", { name: "Save settings", exact: true }).click();
+    await reviewPage.getByText("Review SFTP after restore", { exact: true }).waitFor({ state: "hidden" });
+    await reviewContext.close();
+    const afterRestore = await connect(full);
+    assert.deepEqual((await afterRestore.list("/")).map(row => row.name).sort(), ["incoming", "outgoing"]);
+    await afterRestore.end();
+    assert.equal((await viewer.get(root)).status(), 200);
+    assert.equal((await (await viewer.get(root)).json()).restoreReview, null);
+    // Exercise actual multipart and chunked restore policy plumbing without replacing business rows.
+    const directRestore = await api.post("/api/system/restore", { multipart: {
+      backup: { name: "owned-policy.sql", mimeType: "application/sql", buffer: Buffer.from("SELECT 1;") },
+      sftpRestoreMode: "replace",
+    } });
+    assert.equal(directRestore.status(), 200, (await directRestore.text()).slice(0, 300));
+    assert.equal((await json("GET", root)).restoreReview.mode, "replace");
+    const init = await json("POST", "/api/system/restore/init", { fileName: "owned-policy.sql", totalChunks: 1, clearExisting: false, sftpRestoreMode: "retain" });
+    const chunk = await api.post("/api/system/restore/chunk", { multipart: { uploadId: init.uploadId, chunkIndex: "0",
+      chunk: { name: "chunk", mimeType: "application/octet-stream", buffer: Buffer.from("SELECT 1;") } } });
+    assert.equal(chunk.status(), 200);
+    await json("POST", "/api/system/restore/finalize", { uploadId: init.uploadId });
+    assert.equal((await json("GET", root)).restoreReview.mode, "retain");
+    console.log("PASS embedded SFTP: directory metadata, timezone/deletion, SQL and multipart/chunked restore policies, SSH/OpenSSH, atomic imports/exports, isolation and responsive UI");
   } finally {
     await api.put(root + "/server", { data: { enabled: false, host: "127.0.0.1", publicHost: "127.0.0.1", port: port || 2222 } }).catch(() => {});
     for (const client of clients) await client.end().catch(() => {});

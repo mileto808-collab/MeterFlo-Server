@@ -59,5 +59,6 @@
 - [Scheduled backup scope](scheduled-backup-scope.md) — standalone and hosted backups; durable hosted storage and explicit schedule re-enablement after portable restores.
 - [Project file transfers](file-transfer-scope.md) — additive transfers, independent export scope, and required on-screen help checks against live tables for every import/export change.
 - [SFTP protocol verification](sftp-protocol-verification.md) — verify raw client navigation, completed OpenSSH sessions, and actual listener lifecycle; byte checks alone are insufficient.
+- [Instance transfer settings](instance-transfer-settings.md) — portable business restores retain eligible destination SFTP setup; pause for review rather than permanently revoking credentials.
 - [Orientation verification](orientation-verification.md) — verify settled touch-landscape controls with viewport screenshots; full-page capture alone can misrepresent the responsive state.
 - [Support request context](support-request-context.md) — authenticated account/project associations and draft/attachment preservation across responsive navigation changes.

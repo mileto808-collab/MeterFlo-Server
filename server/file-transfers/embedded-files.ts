@@ -19,6 +19,10 @@ const attrs = (directory: boolean, size = 0, modified = Date.now()) => ({
   mode: directory ? 0o40700 : 0o100600, uid: 0, gid: 0, size,
   atime: Math.floor(modified / 1000), mtime: Math.floor(modified / 1000),
 });
+const listingName = (name: string, directory: boolean, size = 0, modified = Date.now()) => {
+  const date = new Date(modified).toUTCString().split(" ");
+  return `${directory ? "drwx------" : "-rw-------"} 1 0 0 ${size} ${date[2]} ${date[1]} ${date[3]} ${name}`;
+};
 async function safeFolder(account: any) {
   const folder = path.resolve(await ensureProjectFtpDirectory(account.project_name, account.project_id));
   const actual = await fs.realpath(folder);
@@ -76,7 +80,8 @@ export function serveSftpFiles(stream: SFTPWrapper, accountId: string) {
   };
   request("REALPATH", async (account, id, value) => {
     const name = authorizePath(account, value);
-    stream.name(id, [{ filename: name, longname: name, attrs: attrs(["/", "/incoming", "/outgoing"].includes(name)) }]);
+    const directory = ["/", "/incoming", "/outgoing"].includes(name);
+    stream.name(id, [{ filename: name, longname: listingName(name, directory), attrs: attrs(directory) }]);
   });
   const stat = async (account: any, id: number, value: string) => {
     const virtual = authorizePath(account, value);
@@ -104,12 +109,12 @@ export function serveSftpFiles(stream: SFTPWrapper, accountId: string) {
     if (names.length > 5000) throw new TransferError("Too many exports to list; archive older exports through MeterFlo.");
     const entries: any[] = [];
     for (const name of names) {
-      if (virtual === "/") entries.push({ filename: name, longname: name, attrs: attrs(true) });
+      if (virtual === "/") entries.push({ filename: name, longname: listingName(name, true), attrs: attrs(true) });
       else {
         try {
           sftpVirtualPath(`/outgoing/${name}`);
           const info = await fs.lstat(path.join(await safeFolder(account), name));
-          if (info.isFile() && !info.isSymbolicLink()) entries.push({ filename: name, longname: name, attrs: attrs(false, info.size, info.mtimeMs) });
+          if (info.isFile() && !info.isSymbolicLink()) entries.push({ filename: name, longname: listingName(name, false, info.size, info.mtimeMs), attrs: attrs(false, info.size, info.mtimeMs) });
         } catch (error: any) { if (error.code !== "ENOENT") throw error; }
       }
     }

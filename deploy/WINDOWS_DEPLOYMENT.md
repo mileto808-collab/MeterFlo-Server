@@ -2005,3 +2005,13 @@ its `.env`, changes the Windows service or uses a published URL. It checks norma
 signed-in desktop/phone inventory, concurrent operations and backup/restore.
 Both `metrics.json` (`passed: true`, platform `win32`) and `cleanup.json`
 (`cleaned: true`) are required. Linux results are not Windows certification.
+
+## Built-in SFTP uploads and database restores
+
+Configure the optional standalone listener under **Project → File Import/Export → SFTP Server → Server settings**. Give each customer a project transfer account, the configured hostname/port and verified SHA256 fingerprint. In FileZilla choose **SFTP**, open `/incoming`, and upload the final supported filename. The incoming directory is intentionally empty when listed; completed uploads appear in MeterFlo's Project FTP Files and need a matching LOCAL import configuration. `/outgoing` exposes successfully generated local exports, not every manually uploaded FTP file.
+
+The database restore dialog defaults to **Retain this instance's SFTP setup**. This preserves the Windows endpoint and accounts whose original project identities still match, including their original expiry and revocations. Uncheck it only to replace that setup with the backup's configuration. Restores pause customer SFTP access in either mode. After signing back in, a site administrator must review **SFTP Server → Server settings**, including accounts/projects, access locks, endpoint and fingerprint, confirm the review, and explicitly enable SFTP. Blocked project matches are reported instead of granting access based on an unrelated numeric ID.
+
+The `.meterflo-sftp` SSH host key is destination-local and is not replaced by a database restore. Protect it separately using the existing private-files backup procedure. Database backups still do not include physical Project Documents/FTP files: use the separate Project Files backup when transferring those files between instances.
+
+SFTP Activity dates, inclusive date filters and exports use the project's timezone. Authorized project SFTP managers can preview and permanently delete matching activity; only site administrators can explicitly include shared server events. Other projects, files, accounts and independent security audit evidence are preserved. Export any required evidence first. Deleting rows makes database space reusable through normal PostgreSQL maintenance; it does not force an immediate operating-system file shrink.

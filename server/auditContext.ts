@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 export interface AuditContext {
   actorId:string|null; actorLabel:string; actorKind:"user"|"service"; source:string; operationId:string;
+  sftpRestoreMode?: "retain" | "replace";
 }
 export const auditContext = new AsyncLocalStorage<AuditContext>();
 export const serviceAuditContext = (source:string):AuditContext =>

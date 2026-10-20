@@ -19,7 +19,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 type SftpAccount = { id: string; username: string; label: string; authType: "publicKey" | "password"; canUpload: boolean; canDownload: boolean; expiresAt: string; revokedAt: string | null; createdAt: string };
 type ServerConfig = { enabled: boolean; host: string; port: number; publicHost: string; running: boolean; fingerprint: string | null; error: string | null };
-type SftpContext = { supported: boolean; isAdmin: boolean; server: ServerConfig; accounts: SftpAccount[]; timezone: string };
+type SftpContext = { supported: boolean; isAdmin: boolean; server: ServerConfig; accounts: SftpAccount[]; timezone: string;
+  restoreReview?: { requiresReview: boolean; mode: string; retained: number; blocked: { username: string; reason: string }[]; message: string;
+    accounts?: { username: string; projectId: number; projectName: string; projectActive: boolean; canUpload: boolean; canDownload: boolean; expiresAt: string; revokedAt: string | null; timezone: string }[] } | null };
+type DeletePreview = { before: string; expectedCount: number; timezone: string; filters: { search: string; from: string; to: string; includeShared: boolean } };
 type SftpEvent = { id: string; username: string; action: string; status: string; fileName: string | null; bytes: number | null; message: string | null; createdAt: string };
 type EventsResponse = { rows: SftpEvent[]; total: number; timezone: string };
 type View = "accounts" | "activity" | "instructions" | "settings";
@@ -156,6 +159,9 @@ export function EmbeddedSftpWorkspace({ projectId, onUseHttps }: { projectId: nu
   const [host, setHost] = useState("0.0.0.0");
   const [port, setPort] = useState("2222");
   const [publicHost, setPublicHost] = useState("");
+  const [restoreConfirmed, setRestoreConfirmed] = useState(false);
+  const [deletePreview, setDeletePreview] = useState<DeletePreview | null>(null);
+  const [includeShared, setIncludeShared] = useState(false);
   const key = apiBase(projectId);
   const contextQuery = useQuery<SftpContext>({ queryKey: [key], queryFn: () => request("GET", key), refetchInterval: view === "activity" ? 12000 : false });
   const context = contextQuery.data;
@@ -177,7 +183,7 @@ export function EmbeddedSftpWorkspace({ projectId, onUseHttps }: { projectId: nu
     await Promise.all([queryClient.invalidateQueries({ queryKey: [key] }), queryClient.invalidateQueries({ queryKey: [key, "events"] })]);
   };
   const saveServer = useMutation({
-    mutationFn: () => request<SftpContext>("PUT", `${key}/server`, { enabled, host: host.trim() || "0.0.0.0", port: Number(port), publicHost: publicHost.trim() }),
+    mutationFn: () => request<SftpContext>("PUT", `${key}/server`, { enabled, host: host.trim() || "0.0.0.0", port: Number(port), publicHost: publicHost.trim(), confirmRestoreReview: restoreConfirmed }),
     onSuccess: async () => { await invalidate(); toast({ title: enabled ? "SFTP server configuration saved" : "SFTP server stopped" }); },
     onError: error => toast({ title: "Could not save SFTP server settings", description: errorMessage(error), variant: "destructive" }),
   });
@@ -197,6 +203,16 @@ export function EmbeddedSftpWorkspace({ projectId, onUseHttps }: { projectId: nu
     onError: error => toast({ title: "Could not revoke SFTP account", description: errorMessage(error), variant: "destructive" }),
   });
   const refresh = async () => { await Promise.all([contextQuery.refetch(), eventsQuery.refetch()]); };
+  const previewDeletion = useMutation({
+    mutationFn: () => request<DeletePreview>("GET", `${key}/events/delete-preview?${new URLSearchParams({ search: search.trim(), from, to, includeShared: String(includeShared) })}`),
+    onSuccess: setDeletePreview,
+    onError: error => toast({ title: "Could not preview log deletion", description: errorMessage(error), variant: "destructive" }),
+  });
+  const deleteLogs = useMutation({
+    mutationFn: () => request<{ deleted: number }>("DELETE", `${key}/events`, { ...deletePreview, confirmed: true }),
+    onSuccess: async result => { setDeletePreview(null); setOffset(0); await invalidate(); toast({ title: `${result.deleted} SFTP log entries deleted` }); },
+    onError: error => { setDeletePreview(null); toast({ title: "Logs were not deleted", description: errorMessage(error), variant: "destructive" }); },
+  });
   const copyText = async (text: string) => {
     try { await navigator.clipboard.writeText(text); toast({ title: "Instructions copied" }); }
     catch { toast({ title: "Copy failed", description: "Clipboard access is unavailable. Select and copy the instructions instead.", variant: "destructive" }); }
@@ -259,6 +275,8 @@ export function EmbeddedSftpWorkspace({ projectId, onUseHttps }: { projectId: nu
       })}</TableBody></Table></div> : <div className="rounded-md border border-dashed px-4 py-12 text-center"><UserRoundPlus className="mx-auto mb-2 h-7 w-7 text-muted-foreground" /><p className="font-medium">No SFTP accounts yet</p><p className="mt-1 text-sm text-muted-foreground">Create a scoped account after the server is running. No keys or passwords are retained in this view.</p><Button className="mt-4" size="sm" onClick={() => setAccountDialog(true)} disabled={!canManageAccounts}><UserRoundPlus className="mr-1 h-4 w-4" />Create first account</Button></div>}
     </section>}
     {view === "activity" && <section role="tabpanel" className="space-y-3">
+      {context.isAdmin && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={includeShared} onChange={event => setIncludeShared(event.target.checked)} />Include shared server logs in deletion (site administrators only)</label>}
+      <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">Times and inclusive date filters use {context.timezone}. Export logs before deleting if you need a copy.</p><Button variant="outline" size="sm" disabled={previewDeletion.isPending} onClick={() => previewDeletion.mutate()}>Delete matching project logs</Button></div>
       <div><h3 className="text-base font-semibold">SFTP activity</h3><p className="text-sm text-muted-foreground">Auditable uploads, downloads, authentication and server outcomes · {context.timezone}</p></div>
       <InventoryMobileTools tab="embedded-sftp-activity"><div className="grid gap-2 rounded-md border bg-card p-2 sm:grid-cols-2 lg:grid-cols-[minmax(14rem,2fr)_1fr_1fr]"><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input aria-label="Search SFTP activity" type="search" placeholder="Search username, file, action, message" value={search} onChange={event => setSearch(event.target.value)} className="pl-9" /></div><Input aria-label="Activity from date" type="date" value={from} onChange={event => setFrom(event.target.value)} /><Input aria-label="Activity to date" type="date" value={to} onChange={event => setTo(event.target.value)} /></div></InventoryMobileTools>
       {eventsQuery.isLoading ? <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : eventsQuery.isError ? <Card className="border-destructive/40"><CardContent className="flex items-center justify-between gap-3 p-4"><p className="text-sm text-destructive">{errorMessage(eventsQuery.error)}</p><Button variant="outline" onClick={() => eventsQuery.refetch()}>Retry</Button></CardContent></Card> : events.length ? <>
@@ -268,6 +286,20 @@ export function EmbeddedSftpWorkspace({ projectId, onUseHttps }: { projectId: nu
     </section>}
     {view === "instructions" && <section role="tabpanel"><ServerInstructions context={context} onUseHttps={onUseHttps} /></section>}
     {view === "settings" && context.isAdmin && <section role="tabpanel" className="grid gap-4 lg:grid-cols-[1fr_.8fr]">
+      {context.restoreReview?.requiresReview && <Card className="lg:col-span-2 border-amber-500/40">
+        <CardHeader><CardTitle className="text-base">Review SFTP after restore</CardTitle><CardDescription>{context.restoreReview.message}</CardDescription></CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p>Mode: {context.restoreReview.mode} · Local accounts retained: {context.restoreReview.retained} · Blocked: {context.restoreReview.blocked.length}</p>
+          {context.restoreReview.blocked.map(account => <p key={account.username}>{account.username}: {account.reason}</p>)}
+          <details className="rounded border p-3"><summary className="cursor-pointer font-medium">Review all project transfer accounts ({context.restoreReview.accounts?.length || 0})</summary>
+            <ul className="mt-2 space-y-2">{context.restoreReview.accounts?.map(account => <li key={account.username} className="rounded bg-muted/40 p-2">
+              <span className="font-medium">{account.username}</span> · {account.projectName} (#{account.projectId}) · {account.canUpload ? "Upload" : "No upload"} / {account.canDownload ? "Download" : "No download"}
+              <span className="block text-xs text-muted-foreground">Expires {formatDateTimeInTimezone(account.expiresAt, account.timezone)} ({account.timezone}) · {account.revokedAt ? "Revoked" : new Date(account.expiresAt).getTime() <= Date.now() ? "Expired" : "Not revoked"}{!account.projectActive ? " · Project inactive (blocked)" : ""}</span>
+            </li>)}</ul>
+          </details>
+          <label className="flex items-start gap-2"><input type="checkbox" checked={restoreConfirmed} onChange={event => setRestoreConfirmed(event.target.checked)} /><span>I have reviewed the accounts and their projects, permissions, expiry, access locks, host/port and local SHA256 host fingerprint before enabling customer access.</span></label>
+        </CardContent>
+      </Card>}
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-primary" />Built-in SFTP listener</CardTitle><CardDescription>Global server settings for this project. Saving enabled starts or restarts the listener; disabling stops it.</CardDescription></CardHeader><CardContent className="space-y-4">
         <div className={`flex items-center gap-2 rounded-md border p-3 text-sm ${context.server.running ? "border-emerald-700/20 bg-emerald-50/60 text-emerald-900" : "border-muted bg-muted/30 text-muted-foreground"}`}><span className={`h-2.5 w-2.5 rounded-full ${context.server.running ? "bg-emerald-600" : "bg-muted-foreground/50"}`} /><span className="font-medium">{context.server.running ? "Listener running" : "Listener stopped"}</span><span className="ml-auto text-xs">{context.server.enabled ? "Enabled" : "Disabled"}</span></div>
         <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="sftp-bind-host">Bind host</Label><Input id="sftp-bind-host" value={host} onChange={event => setHost(event.target.value)} disabled={!context.supported} placeholder="0.0.0.0" /><p className="text-xs text-muted-foreground">Defaults to 0.0.0.0.</p></div><div className="space-y-1.5"><Label htmlFor="sftp-port">SSH port</Label><Input id="sftp-port" type="number" min={1} max={65535} value={port} onChange={event => setPort(event.target.value)} disabled={!context.supported} /><p className="text-xs text-muted-foreground">Configurable; default is 2222.</p></div></div>
@@ -277,6 +309,7 @@ export function EmbeddedSftpWorkspace({ projectId, onUseHttps }: { projectId: nu
       </CardContent></Card>
       <Card className="h-fit"><CardHeader className="pb-2"><CardTitle className="text-base">Host readiness</CardTitle><CardDescription>Before allowing customers to connect</CardDescription></CardHeader><CardContent className="space-y-3 text-sm text-muted-foreground"><p>Open the configured SSH port in the host firewall and confirm it is reachable from the customer network.</p><p>Use TLS for the MeterFlo web administration interface. SSH and HTTPS administration protect different surfaces.</p><p>On Windows, grant the MeterFlo Windows service identity write access to the incoming folder. Keep generated export storage read-only for SFTP accounts.</p><p>Saving server settings applies them immediately; a running listener may restart briefly.</p>{context.server.fingerprint && <div className="rounded border bg-muted/30 p-3"><p className="text-xs font-medium text-foreground">Current SHA256 fingerprint</p><code className="mt-1 block break-all text-xs">{context.server.fingerprint}</code></div>}</CardContent></Card>
     </section>}
+    <Dialog open={!!deletePreview} onOpenChange={open => { if (!open && !deleteLogs.isPending) setDeletePreview(null); }}><DialogContent><DialogHeader><DialogTitle>Delete matching SFTP logs?</DialogTitle><DialogDescription>This permanently deletes {deletePreview?.expectedCount.toLocaleString()} matching activity entries for this project through {deletePreview && formatDateTimeInTimezone(deletePreview.before, deletePreview.timezone)} ({deletePreview?.timezone}). Shared server logs are {deletePreview?.filters.includeShared ? "included" : "not included"}. Other projects, files, accounts and the separate security audit trail are not deleted. Newer events are preserved. This cannot be undone.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" disabled={deleteLogs.isPending} onClick={() => setDeletePreview(null)}>Cancel</Button><Button variant="destructive" disabled={deleteLogs.isPending || !deletePreview?.expectedCount} onClick={() => deleteLogs.mutate()}>{deleteLogs.isPending ? "Deleting…" : "Permanently delete logs"}</Button></DialogFooter></DialogContent></Dialog>
     <CreateAccountDialog open={accountDialog} onOpenChange={setAccountDialog} onCreate={input => createAccount.mutate(input)} saving={createAccount.isPending} timezone={context.timezone} />
   </section>;
 }
