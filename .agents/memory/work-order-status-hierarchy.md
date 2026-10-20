@@ -33,8 +33,10 @@ The user requires a per-project setting to move Completed orders to Closed after
 
 Authorized manual bulk closing must remain available whether automatic closing is enabled or disabled.
 
+Manual closing is limited to Completed orders, including sub-statuses inheriting Completed rules. Open, Scheduled, and Trouble orders are not eligible.
+
 Work orders need comprehensive audit recording of appropriate actions throughout Open to Close, like inventory. Important actions, including manual/automatic closing and reopening, must be caught in the audit logs.
 
-**Why:** The user approved reopening before editing and explicitly clarified that automatic closing must not replace manual closing, and that comprehensive work-order audit logs are required.
+**Why:** The user approved reopening before editing and Completed-only manual closing, and explicitly clarified that automatic closing must not replace manual closing and that comprehensive work-order audit logs are required.
 
 **How to apply:** Enforce the protection consistently in server-side mutations and UI controls, including bulk actions and imports. Keep closing distinct from undoing completed work or reversing inventory.
