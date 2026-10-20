@@ -98,3 +98,9 @@ Field technicians go to the job with the systems/modules, parts and other requir
 **Why:** The user explicitly clarified this operating assumption when discussing stock checks interrupting work-order submission.
 
 **How to apply:** Distinguish recording actual installed/used equipment from checking warehouse availability to issue equipment. This assumption alone does not authorize invented stock, duplicate serial consumption or ignoring accounting discrepancies.
+
+The user approved completing field work when recorded stock quantities are short, with an inventory discrepancy flagged for review. They also asked for a review/reconciliation process with clear instructions and documentation.
+
+**Why:** Technicians physically have the required equipment at the job; a missing bookkeeping transaction should not prevent recording completed field work.
+
+**How to apply:** Treat this as a quantity-shortage exception, not permission to consume a serial twice or invent stock movements. Include warehouse review and auditable reconciliation in the same scope as relaxed completion checks; do not confuse correcting stock records with reversing actual completed usage.
