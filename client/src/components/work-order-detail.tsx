@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScannerInput } from "@/components/scanner-input";
 import { GPSCapture } from "@/components/gps-capture";
+import { capturedGpsAccuracyLabel } from "@shared/gps-capture";
 import {
   Form,
   FormControl,
@@ -183,6 +184,7 @@ export function WorkOrderDetail({
   inventoryEnabled = false,
   onReopened,
 }: WorkOrderDetailProps) {
+  const newGpsAccuracy = capturedGpsAccuracyLabel(workOrder.newGps, workOrder.gpsCapture);
   const rawStatus = workOrder.statusCode ?? workOrder.status_code ?? workOrder.status;
   const matchedStatus = workOrderStatuses.find(status => status.code === rawStatus || status.label === rawStatus);
   const isClosed = String(workOrder.statusCode ?? workOrder.status_code ?? matchedStatus?.code ?? rawStatus ?? "").toLowerCase() === "closed";
@@ -1268,7 +1270,10 @@ export function WorkOrderDetail({
                           )}
                           {workOrder.newGps && (
                             <div>
-                              <p className="text-xs text-muted-foreground">New GPS</p>
+                              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                                New GPS
+                                {newGpsAccuracy && <span className="whitespace-nowrap" data-testid="mobile-new-gps-accuracy">Accuracy: {newGpsAccuracy}</span>}
+                              </p>
                               <a
                                 href={`https://www.google.com/maps?q=${workOrder.newGps}`}
                                 target="_blank"
@@ -1813,7 +1818,10 @@ export function WorkOrderDetail({
                           )}
                           {workOrder.newGps && (
                             <div>
-                              <p className="text-xs text-muted-foreground">New GPS</p>
+                              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                                New GPS
+                                {newGpsAccuracy && <span className="whitespace-nowrap" data-testid="desktop-new-gps-accuracy">Accuracy: {newGpsAccuracy}</span>}
+                              </p>
                               <a
                                 href={`https://www.google.com/maps?q=${workOrder.newGps}`}
                                 target="_blank"

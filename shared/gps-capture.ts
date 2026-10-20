@@ -29,6 +29,14 @@ export function sameCoordinates(left: unknown, right: unknown): boolean {
   return !!a && !!b && a[0] === b[0] && a[1] === b[1];
 }
 
+/** Show recorded device/browser accuracy only for the coordinates it belongs to. */
+export function capturedGpsAccuracyLabel(coordinates: unknown, fix?: GpsFix | null): string | null {
+  if (!fix || (fix.source !== "native" && fix.source !== "browser") ||
+      !sameCoordinates(coordinates, fix.coordinates) ||
+      typeof fix.accuracy !== "number" || !Number.isFinite(fix.accuracy) || fix.accuracy < 0) return null;
+  return `±${fix.accuracy.toLocaleString(undefined, { maximumSignificantDigits: 6 })} m`;
+}
+
 export function reusedOldGpsFix(policy: { wizardReuseOldGps?: boolean | null },
   workOrder?: { oldGps?: string | null; old_gps?: string | null }): GpsFix | null {
   const coordinates = workOrder?.oldGps ?? workOrder?.old_gps;
