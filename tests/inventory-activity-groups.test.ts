@@ -7,6 +7,32 @@ import { inventoryActivityPrint } from "../server/inventoryActivityPrint";
 import { receiptIdentifierFixture } from "./support/inventory-receipt-identifiers-fixture";
 import { activityBatchFixture } from "./support/inventory-activity-groups-fixture";
 
+test("kit activity uses SKU, name and ledger receipt number without rewriting or grouping by product UUID", () => {
+  const { state } = receiptIdentifierFixture();
+  const productId = "ec6a148f-6d23-4d90-9cef-98791de545af";
+  state.items.push({ ...state.items[0], id: productId, sku: "KIT-100", name: "Residential Electric Kit" });
+  const base = { reference: productId, lines: [], warehouseId: "main", actor: "fixture", occurredAt: "2026-10-20T00:00:00Z" };
+  for (const action of ["assemble", "disassemble", "verifyVendorKit", "resolveKitHold"])
+    state.receipts.push({ ...base, id: `kit-${action}`, action });
+  const before = structuredClone(state);
+  for (const receipt of state.receipts.filter(receipt => receipt.id.startsWith("kit-"))) {
+    const group = inventoryActivityGroups(state).find(group => group.id === receipt.id)!;
+    assert.equal(group.receipts.length, 1, "Separate operations on the same product remain separate");
+    assert.match(group.title, /KIT-100 — Residential Electric Kit · Receipt #\d+$/);
+    assert.ok(!group.title.includes(productId));
+    const dataset = groupedInventoryActivity(buildOperationsDataset("activity", state, [], [], "UTC"),
+      inventoryActivityGroups(state));
+    assert.equal(dataset.rows.find(row => row.id === group.id)!.cells.reference, group.title);
+    const html = inventoryActivityPrint(group, state, "Fixture", [], "UTC", {});
+    assert.ok(html.includes(group.title), "Printed history shares the readable title");
+  }
+  assert.deepEqual(state, before, "Display never rewrites stored identities");
+  state.items = state.items.filter(item => item.id !== productId);
+  const missing = inventoryActivityGroups(state).find(group => group.id === "kit-assemble")!;
+  assert.match(missing.title, /Kit \(product unavailable\) · Receipt #\d+$/);
+  assert.ok(!missing.title.includes(productId));
+});
+
 test("one summary follows all removed-equipment transactions without merging matching serials, locations or notes", () => {
   const { state, labels } = receiptIdentifierFixture(), before = structuredClone(state);
   const groups = inventoryActivityGroups(state, labels);

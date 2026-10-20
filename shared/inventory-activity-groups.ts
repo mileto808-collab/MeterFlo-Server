@@ -3,6 +3,7 @@ import { inventoryReceiptContexts, inventoryReceiptOperationReference } from "./
 import { inventoryWorkOrderLabel, type InventoryWorkOrderLabels } from "./inventory-work-order-labels";
 import { orderLabel } from "./inventory-order-labels";
 import { inventoryCountReference } from "./inventory-count-reference";
+import { inventoryReceiptLabel } from "./inventory-display-labels";
 
 export type InventoryActivityGroup = {
   id: string; title: string; receipts: InventoryReceipt[]; returnIds: string[];
@@ -80,11 +81,14 @@ export function inventoryActivityGroups(state: InventoryState, labels: Inventory
     const handoff = receipts.map(receipt => receipt.action === "returnCustomerBatch" ? handoffs.get(receipt.reference) : undefined).find(Boolean);
     const order = receipts.map(receipt => orders.get(receipt.reference)).find(Boolean);
     const count = receipts.find(receipt => counts.has(receipt.reference) && receipt.action.startsWith("count"));
+    const kitReceipt = receipts.find(receipt => ["assemble", "disassemble", "verifyVendorKit", "resolveKitHold"].includes(receipt.action));
+    const kitItem = kitReceipt ? state.items.find(item => item.id === kitReceipt.reference) : undefined;
     const workOrders = workOrderIds.length === 1 ? `Work order ${inventoryWorkOrderLabel(workOrderIds[0], labels)}` : `${workOrderIds.length} work orders`;
     const title = handoff ? `Customer return batch · ${handoff.lines.length} equipment ${handoff.reference ? `· ${handoff.reference}` : ""}` :
       removed.length ? `${removed.length === 1 ? `Removed ${removed[0].equipment} · ${removed[0].serial}` : `Removed equipment batch · ${removed.length} items`} · ${workOrders}` :
       order ? `${orderLabel(order)} · ${order.type}` :
       count ? inventoryCountReference(state.counts, count.reference) :
+      kitReceipt ? `${inventoryActivityActionLabel(kitReceipt.action)} · ${kitItem ? `${kitItem.sku} — ${kitItem.name}` : "Kit (product unavailable)"} · ${inventoryReceiptLabel(state.receipts, kitReceipt.id)}` :
       `${inventoryActivityActionLabel(receipts[0].action)} · ${inventoryReceiptOperationReference(receipts[0], contexts.get(receipts[0].id), labels)}`;
     return { id: state.receipts[indices[0]].id, title, receipts, returnIds: removed.map(record => record.id),
       workOrderIds, batch: batch || !!handoff, latestSequence: indices[indices.length - 1] + 1 };
