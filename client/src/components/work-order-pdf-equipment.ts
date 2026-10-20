@@ -30,8 +30,8 @@ function row(label: string, value: string | number | null | undefined): string {
   </tr>`;
 }
 
-function column(heading: string, color: string, rows: string): string {
-  return `<div style="background-color: ${color}; padding: 8px; border-radius: 4px;">
+function column(heading: string, rows: string): string {
+  return `<div>
     <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">${heading}</h3>
     <table style="width: 100%; font-size: 11px;"><tbody>${rows}</tbody></table>
   </div>`;
@@ -66,21 +66,21 @@ export function buildWorkOrderEquipmentHtml(
     const hasModule = old ? hasOldModule : hasNewModule;
     const gps = workOrder[`${side}Gps`];
     if (hasSystem) {
-      systemColumns.push(column(`${label} System`, old ? "#e8f4f8" : "#e8f8e8",
+      systemColumns.push(column(`${label} System`,
         row("System ID", workOrder[`${side}SystemId`])
         + row("Reading", workOrder[`${side}SystemReading`])
         + row("Type", workOrder[`${side}SystemType`])
         + row("GPS", gps)));
     }
     if (hasModule) {
-      moduleColumns.push(column(`${label} Module`, old ? "#f8e8f4" : "#f8f4e8",
+      moduleColumns.push(column(`${label} Module`,
         row("Module ID", workOrder[`${side}ModuleId`])
         + row("Reading", workOrder[`${side}ModuleRead`])
         + row("Type", workOrder[`${side}ModuleType`])
         + (!hasSystem ? row("GPS", gps) : "")));
     }
     if (!hasSystem && !hasModule && gps) {
-      gpsColumns.push(column(`${label} Location`, "#f5f5f5", row("GPS", gps)));
+      gpsColumns.push(column(`${label} Location`, row("GPS", gps)));
     }
   }
   return table(systemColumns) + table(moduleColumns) + table(gpsColumns);

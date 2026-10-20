@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { getProjectEquipmentVisibility } from "../shared/project-equipment-scope";
 import type { WorkOrderPrintInventory } from "../client/src/components/work-order-pdf-inventory";
@@ -111,9 +111,36 @@ test("real print handler includes unreserved kit components and rejects failed i
     ], requirements: { workOrderId: 7, missing: [], lines: [{ itemId: "kit", quantity: 1 }] },
   } as unknown as WorkOrderPrintInventory;
   const printed = await print({}, record, [], inventory);
-  for (const text of ["Print kit", "Print labor", "Print seal", "1.5 hours", "No reserved stock lines"]) assert.ok(printed.html.includes(text), text);
+  for (const text of ["Print kit", "Print labor", "Print seal", "1.5 hours", "Planned items & labor"]) assert.ok(printed.html.includes(text), text);
+  assert.doesNotMatch(printed.html, /background-color:\s*#|border-left:|Reserved stock|Consumed inventory|Reservation record/);
   const failed = await print({}, record, [], undefined, true);
   assert.equal(failed.html, "", "a failed inventory refresh must not produce an incomplete PDF");
+});
+
+test("billing-only line items retain ordinary work-order information in an uncolored report", async () => {
+  const inventory = {
+    enabled: true, warehouses: [], allocation: null, items: [
+      { id: "meter", sku: "E460", name: "Electric meter", unit: "each", components: [], cost: 876543.21, billingRate: 125 },
+      { id: "labor", sku: "LABOR", name: "Residential changeout labor", kind: "labor", unit: "hours", components: [], cost: 876543.21, billingRate: 45 },
+      { id: "kit", sku: "KIT-E460", name: "Residential changeout kit", unit: "each", components: [{ itemId: "meter", quantity: 1 }, { itemId: "labor", quantity: 1.5 }] },
+    ], requirements: { workOrderId: 7, missing: [], lines: [{ itemId: "kit", quantity: 1 }] },
+  } as unknown as WorkOrderPrintInventory;
+  const { html } = await print({}, { ...record, address: "4700 Apple Creek Drive", status: "Open" }, [], inventory);
+  assert.match(html, /Billing rate/);
+  assert.match(html, /125\.00/);
+  assert.match(html, /45\.00/);
+  assert.match(html, /1\.5 hours/);
+  assert.doesNotMatch(html, /876543|[Cc]ost|background-color:\s*#|border-left:|Reservation record|Reserved stock|Consumed inventory|Removed equipment/);
+  await mkdir("generated-artifacts/work-order-print", { recursive: true });
+  await writeFile("generated-artifacts/work-order-print/planned.html", html);
+  inventory.allocation = { workOrderId: 7, revision: 1, mode: "changeout", status: "consumed", lines: [],
+    used: [{ itemId: "kit", warehouseId: "van", quantity: 1, serials: [] }], dispositions: [] };
+  inventory.componentTrace = [{ sourceId: "assembled", kitItemId: "kit", quantity: 1, kitSerials: [], partialBatch: false,
+    components: [{ itemId: "meter", quantity: 1, serials: [] }] }];
+  const completed = await print({}, { ...record, address: "4700 Apple Creek Drive", status: "Completed" }, [], inventory);
+  for (const value of ["Electric meter", "Residential changeout labor", "1.5 hours", "125.00", "45.00"]) assert.ok(completed.html.includes(value), value);
+  assert.doesNotMatch(completed.html, /876543|[Cc]ost|Reservation record|Reserved stock|Consumed inventory/);
+  await writeFile("generated-artifacts/work-order-print/preview.html", completed.html);
 });
 
 const record = Object.freeze({
@@ -141,6 +168,7 @@ test("print handler uses effective scope and retains common report content and P
   ]) {
     const { html, options } = await print(settings, record, ["fixture-photo.jpg"]);
     const visibility = getProjectEquipmentVisibility(settings);
+    assert.doesNotMatch(html, /background-color:\s*#|border-left:|#7c3aed/);
     assert.equal(html.includes("LEGACY-OLD-SYSTEM"), visibility.showSystem);
     assert.equal(html.includes("LEGACY-NEW-SYSTEM"), visibility.showSystem);
     assert.equal(html.includes("LEGACY-OLD-MODULE"), visibility.showModule);

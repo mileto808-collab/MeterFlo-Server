@@ -30,7 +30,9 @@ test("component details expand nested quantities and fractional non-stock labor,
 
 test("unreserved planned kit, nested components and labor are included in PDF; disabled projects omit inventory", () => {
   const html = buildWorkOrderInventoryHtml(true, snapshot());
-  for (const text of ["Planned requirements", "METER", "SEAL", "LABOR", "3 hours", "No reserved stock lines", "No actual inventory use"]) assert.ok(html.includes(text), text);
+  for (const text of ["Planned items & labor", "METER", "SEAL", "LABOR", "3 hours"]) assert.ok(html.includes(text), text);
+  assert.equal((html.match(/<table/g) || []).length, 1);
+  assert.doesNotMatch(html, /Reserved stock|Reservation record|Consumed inventory|Review:|background:/);
   assert.equal(buildWorkOrderInventoryHtml(false, snapshot()), "");
   assert.throws(() => buildWorkOrderInventoryHtml(true), /could not load/);
   assert.equal(buildWorkOrderInventoryHtml(true, { ...snapshot(), enabled: false }), "");
@@ -42,10 +44,37 @@ test("PDF prints actual usage with empty reservation lines and escapes inventory
     used: [{ itemId: "meter", warehouseId: "van", quantity: 1, serials: ["<SERIAL>"] }] };
   s.items = items.map(i => i.id === "meter" ? { ...i, name: "<img onerror=bad>" } : i);
   const html = buildWorkOrderInventoryHtml(true, s);
-  assert.ok(html.includes("Consumed inventory"));
-  assert.ok(html.includes("&lt;SERIAL&gt;"));
-  assert.ok(html.includes("Vehicle"));
+  assert.ok(html.includes("Recorded items & labor"));
+  assert.ok(html.includes("METER"));
+  assert.ok(!html.includes("Vehicle"), "custody locations do not clutter the line-item summary");
+  assert.ok(!html.includes("&lt;SERIAL&gt;"), "device serials remain in equipment details, not a second inventory report");
   assert.ok(!html.includes("<img onerror=bad>"));
+});
+
+test("billing is conditional, supports explicit zero, and never prints internal cost", () => {
+  const s = snapshot();
+  s.items = s.items.map(({ billingRate, ...value }) => ({ ...value, cost: 987654.32 }));
+  let html = buildWorkOrderInventoryHtml(true, s);
+  assert.doesNotMatch(html, /Billing rate|987654|[Cc]ost/);
+  s.items = s.items.map(value => ({ ...value, ...(value.id === "labor" ? { billingRate: 42.5 } : value.id === "meter" ? { billingRate: 0 } : {}) }));
+  html = buildWorkOrderInventoryHtml(true, s);
+  assert.match(html, /Billing rate/);
+  assert.match(html, /42\.50/);
+  assert.match(html, />0\.00</);
+  assert.doesNotMatch(html, /987654|[Cc]ost/);
+  assert.equal((html.match(/<table/g) || []).length, 1);
+  const redacted = { ...s, items: s.items.map(({ billingRate, ...value }) => value) };
+  assert.doesNotMatch(buildWorkOrderInventoryHtml(true, redacted), /Billing rate|42\.50/);
+});
+
+test("completed/reading-only/released orders never substitute planned stock for actual usage", () => {
+  const s = snapshot();
+  s.allocation = { workOrderId: 1, revision: 1, mode: "reading_only", status: "consumed", lines: [],
+    used: [], dispositions: [] };
+  assert.match(buildWorkOrderInventoryHtml(true, s), /No inventory line items recorded/);
+  assert.doesNotMatch(buildWorkOrderInventoryHtml(true, s), /LABOR|KIT|METER/);
+  s.allocation.status = "released";
+  assert.doesNotMatch(buildWorkOrderInventoryHtml(true, s), /LABOR|KIT|METER/);
 });
 
 test("original component trace survives recipe edits and excludes unrelated custody", () => {
@@ -59,8 +88,10 @@ test("original component trace survives recipe edits and excludes unrelated cust
   assert.equal(traces[0].components[0].quantity, 2);
   assert.deepEqual(traces[0].components[0].serials, []);
   const s = snapshot(); s.componentTrace = traces;
+  s.allocation = { workOrderId: 1, revision: 1, mode: "changeout", status: "consumed", lines: [],
+    used: [{ itemId: "kit", warehouseId: "van", quantity: 1, serials: [] }], dispositions: [] };
   assert.ok(buildWorkOrderInventoryHtml(true, s).includes("original"));
-  assert.ok(buildWorkOrderInventoryHtml(true, s).includes("Partial quantity batch"));
+  assert.ok(!buildWorkOrderInventoryHtml(true, s).includes("Partial quantity batch"), "print omits custody-report diagnostics");
 });
 
 test("loose physical parts satisfy kit requirements without requiring labor stock", () => {

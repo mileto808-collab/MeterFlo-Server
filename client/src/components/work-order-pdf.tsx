@@ -167,7 +167,7 @@ export function WorkOrderPdf({
       : null;
 
     const signatureHtml = (signatureFile || workOrder.signatureData || workOrder.signatureName) ? `
-      <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 10px; page-break-inside: avoid;">
+      <div style="margin-bottom: 10px; page-break-inside: avoid;">
         <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Signature</h3>
         ${signatureImageUrl ? `
           <div style="margin-bottom: 8px;">
@@ -197,15 +197,15 @@ export function WorkOrderPdf({
     ` : "";
 
     const notesHtml = workOrder.notes ? `
-      <div style="background-color: #fff9e6; padding: 8px; border-radius: 4px; margin-bottom: 10px; page-break-inside: avoid;">
+      <div style="margin-bottom: 10px; page-break-inside: avoid;">
         <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Notes</h3>
         <p style="margin: 0; white-space: pre-wrap; font-size: 11px;">${workOrder.notes}</p>
       </div>
     ` : "";
 
     const timeTrackingHtml = timeTracking ? `
-      <div style="background-color: #f3e8ff; padding: 8px; border-radius: 4px; margin-bottom: 10px; page-break-inside: avoid; border-left: 4px solid #a855f7;">
-        <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #7c3aed;">Time Tracking</h3>
+      <div style="margin-bottom: 10px; page-break-inside: avoid;">
+        <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold;">Time Tracking</h3>
         <table style="width: 100%; font-size: 11px;">
           <tbody>
             <tr>
@@ -214,7 +214,7 @@ export function WorkOrderPdf({
               <td style="font-weight: bold; width: 100px; padding: 2px 0;">End Time:</td>
               <td style="padding: 2px 0;">${formatDateTime(timeTracking.endTime)}</td>
               <td style="font-weight: bold; width: 80px; padding: 2px 0;">Duration:</td>
-              <td style="padding: 2px 0; color: #7c3aed; font-weight: bold;">${formatElapsedTime(timeTracking.startTime, timeTracking.endTime)}</td>
+              <td style="padding: 2px 0; font-weight: bold;">${formatElapsedTime(timeTracking.startTime, timeTracking.endTime)}</td>
             </tr>
           </tbody>
         </table>
@@ -236,7 +236,7 @@ export function WorkOrderPdf({
           <tbody>
             <tr>
               <td style="width: 50%; vertical-align: top; padding-right: 10px;">
-                <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                <div style="margin-bottom: 8px;">
                   <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Customer Information</h3>
                   <table style="width: 100%; font-size: 11px;">
                     <tbody>
@@ -279,7 +279,7 @@ export function WorkOrderPdf({
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding-left: 10px;">
-                <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                <div style="margin-bottom: 8px;">
                   <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Work Order Details</h3>
                   <table style="width: 100%; font-size: 11px;">
                     <tbody>

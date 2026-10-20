@@ -54,6 +54,7 @@
 - [Multipart audit identity](multipart-audit-identity.md) — streamed photo callbacks can lose request identity; re-establish the verified actor after parsing, never substitute an import user.
 - [Project timezone display](project-timezone-display.md) — project-related dates and times inherit the project's timezone, including inventory receipts and detail history.
 - [Work-order display identity](work-order-display-identity.md) — display the customer work-order ID; fall back to the internal number only when empty, without changing relational IDs.
+- [Work-order print content](work-order-print-policy.md) — plain layout, concise inventory/labor lines, configured billing only; never internal costs.
 - [Inventory activity histories](inventory-activity-histories.md) — one summary for related transactions, including batches; expandable, printable full history without changing the ledger.
 - [GPS capture priority](gps-capture-priority.md) — device GPS first, browser last; explicit project opt-in may reuse approved old GPS without acquisition.
 - [Scheduled backup scope](scheduled-backup-scope.md) — standalone and hosted backups; durable hosted storage and explicit schedule re-enablement after portable restores.
