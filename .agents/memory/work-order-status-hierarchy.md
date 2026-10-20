@@ -26,3 +26,11 @@ Custom business rules must use permanent status/sub-status identities rather tha
 **Why:** The user explicitly requires renaming custom statuses not to break project-specific business-rule programming.
 
 **How to apply:** Treat names as labels. Preserve existing authoritative core codes and relationships; introduce or use immutable IDs/keys for custom rule references without rewriting historical evidence.
+
+## Closed work-order protection
+
+The user requires a per-project setting to move Completed orders to Closed after a configured period. Only an authorized user may reopen or edit Closed work orders.
+
+**Why:** The user explicitly wants Closed orders protected from ordinary editing.
+
+**How to apply:** Enforce the protection consistently in server-side mutations and UI controls, including bulk actions and imports. Keep closing distinct from undoing completed work or reversing inventory.
