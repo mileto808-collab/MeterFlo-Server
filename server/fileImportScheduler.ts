@@ -10,6 +10,7 @@ import * as XLSX from "xlsx";
 import { pool } from "./db";
 import { backupLock } from "./backups/lock";
 import { importCandidate, rememberImport, generatedImportId } from "./file-transfers/imports";
+import { completeHttpsImport } from "./file-transfers/https-imports";
 import { projectZone } from "./file-transfers/exports";
 import { TransferError } from "./file-transfers/sftp";
 
@@ -150,7 +151,7 @@ class FileImportScheduler {
       if (!locked) return { success: false, imported: 0, failed: 0, error: "Another file operation or backup is running. Try again shortly." };
       return await withAuditContext(ctx,()=>auditedOperation("fileImport",String(configId),async () => {
         const total = { success: true, imported: 0, failed: 0, error: undefined as string | undefined, fileName: undefined as string | undefined };
-        for (let index = 0; index < (config?.source === "sftp" ? 25 : 1); index++) {
+        for (let index = 0; index < (["sftp", "https"].includes(config?.source || "") ? 25 : 1); index++) {
           const result = await this.runImportData(configId, index > 0);
           total.imported += result.imported; total.failed += result.failed;
           total.success = total.success && result.success; total.error = result.error;
@@ -196,7 +197,7 @@ class FileImportScheduler {
         if (!suppressEmpty) {
           await storage.updateFileImportConfigLastRun(configId, "skipped", "No new matching files to process.", 0, importConfig.lastProcessedFile);
           const skipped = await storage.createFileImportHistoryEntry(configId, importConfig.processedFilePattern || "*", "skipped", project.id,
-            importConfig.source === "sftp" ? "sftp" : "scheduled_file", auditContext.getStore()?.actorLabel || "system");
+            importConfig.source === "sftp" ? "sftp" : importConfig.source === "https" ? "https" : "scheduled_file", auditContext.getStore()?.actorLabel || "system");
           await storage.updateFileImportHistoryEntry(skipped.id, "skipped", 0, 0, "No new matching files to process.");
         }
         return { success: true, imported: 0, failed: 0 };
@@ -208,7 +209,7 @@ class FileImportScheduler {
         latestFile.name, 
         "running",
         importConfig.projectId,
-        importConfig.source === "sftp" ? "sftp" : "scheduled_file",
+        importConfig.source === "sftp" ? "sftp" : importConfig.source === "https" ? "https" : "scheduled_file",
         auditContext.getStore()?.actorLabel || "system"
       );
 
@@ -311,8 +312,8 @@ class FileImportScheduler {
             Object.assign(mappedData, importedVisitScheduling(mappedData));
             // Auto-generate customerWoId if not provided
             if (!mappedData.customerWoId) {
-              mappedData.customerWoId = importConfig.source === "sftp" ?
-                await generatedImportId(configId, candidate.hash, rowNumber, `SFTP-${configId}-${candidate.hash.slice(0, 32)}-${rowNumber + 1}`) : String(nextAutoId);
+              mappedData.customerWoId = ["sftp", "https"].includes(importConfig.source || "") ?
+                await generatedImportId(configId, candidate.hash, rowNumber, `${importConfig.source === "https" ? "HTTPS" : "SFTP"}-${configId}-${candidate.hash.slice(0, 32)}-${rowNumber + 1}`) : String(nextAutoId);
               nextAutoId++;
             }
 
@@ -441,16 +442,20 @@ class FileImportScheduler {
         const message = `Imported ${imported} records, ${failed} failed from ${processedFileName}`;
         await storage.updateFileImportHistoryEntry(historyEntry.id, status, imported, failed, errors.length > 0 ? errors.slice(0, 10).join("\n") : null);
         await storage.updateFileImportConfigLastRun(configId, status, message, imported, processedFileName);
+        await completeHttpsImport(candidate, failed === 0 ? "processed" : imported > 0 ? "partial" : "failed", message);
 
         console.log(`[FileImportScheduler] File import "${importConfig.name}" completed: ${message} (${duration}ms)`);
 
         return { success: failed === 0, imported, failed, fileName: latestFile.name,
           error: failed ? `${failed} rows failed. See import history for details.` : undefined };
       } catch (importError: any) {
+        await completeHttpsImport(candidate, "failed", "Import failed. Review import history for row or mapping details.");
         // Use processedFileName (which may have been renamed) to ensure we don't reprocess
         await storage.updateFileImportHistoryEntry(historyEntry.id, "failed", 0, 0, importError.message);
         await storage.updateFileImportConfigLastRun(configId, "failed", importError.message, 0, processedFileName);
         return { success: false, imported: 0, failed: 0, error: importError.message, fileName: processedFileName };
+      } finally {
+        if (candidate.tempDir) await fs.promises.rm(candidate.tempDir, { recursive: true, force: true }).catch(() => {});
       }
     } catch (error: any) {
       const message = error instanceof TransferError ? error.message : "File import failed. Check the source file and directory permissions.";

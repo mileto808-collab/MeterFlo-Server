@@ -11,7 +11,7 @@ export const exportConfigInput = transferSelection.extend({
   format: z.enum(["csv", "xlsx", "json"]).default("csv"),
   filenameTemplate: z.string().trim().min(1).max(180).default("work_orders_{YYYY}{MM}{DD}_{HH}{mm}{ss}_{runId}"),
   columns: z.array(z.string().regex(/^[a-zA-Z][a-zA-Z0-9]*$/)).min(1).max(200),
-  destination: z.enum(["local", "sftp"]).default("local"),
+  destination: z.enum(["local", "sftp", "https"]).default("local"),
   remoteDirectory: z.string().trim().max(500).default(""),
   scheduleFrequency: z.enum(transferFrequencies).default("manual"),
   customCronExpression: z.string().trim().max(100).nullable().default(null),
@@ -38,7 +38,19 @@ export interface TransferContext {
   statuses: { id: number; code: string; label: string }[];
   subStatuses: { id: string; label: string; parentStatusId: number }[];
   fields: string[]; timezone: string;
-  permissions: { canImport: boolean; canExport: boolean; canManageConnection: boolean };
+  columnGuide: WorkOrderColumnGuide;
+  permissions: { canImport: boolean; canExport: boolean; canManageConnection: boolean; canManageHttps: boolean };
+}
+export interface WorkOrderColumnGuide {
+  checkedAgainst: string;
+  serviceTypes: { code: string; label: string }[];
+  availableServiceTypes: { code: string; label: string }[];
+  columns: {
+    field: string; databaseColumn: string; dataType: string; databaseNullable: boolean; databaseDefault: boolean;
+    manualCsv: boolean; manualJson: boolean; scheduled: boolean; exportable: boolean;
+    requirement: "managed" | "required" | "conditional" | "generated" | "optional";
+    note: string;
+  }[];
 }
 export interface TransferHistory {
   id: string; direction: "import" | "export"; configName: string; fileName: string | null;

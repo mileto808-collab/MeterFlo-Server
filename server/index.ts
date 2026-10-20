@@ -77,16 +77,17 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(
+const jsonBodyParser =
   express.json({
     limit: '100mb',
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-  }),
-);
+  });
+app.use((req, res, next) => req.path.startsWith("/api/file-exchange/") ? next() : jsonBodyParser(req, res, next));
 
-app.use(express.urlencoded({ extended: false, limit: '100mb' }));
+const urlBodyParser = express.urlencoded({ extended: false, limit: '100mb' });
+app.use((req, res, next) => req.path.startsWith("/api/file-exchange/") ? next() : urlBodyParser(req, res, next));
 
 // Cookie parser for reading cookies (needed for Turnstile verification)
 app.use(cookieParser());

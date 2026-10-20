@@ -34,3 +34,19 @@ For Replit, the user clarified that a secure equivalent is acceptable; it does n
 **Why:** The user explicitly corrected the suggestion to replace existing methods with a universal HTTPS approach. File delivery and collection are additional options around the existing import/export processing, not a redesign of it.
 
 **How to apply:** Preserve current manual and scheduled workflows. Do not equate HTTPS with contractual SFTP support, or give customers development-workspace SSH access. Explain any platform limitation separately without silently changing the requested workflow or treating an external gateway as already approved.
+
+## Keep on-screen import/export help current
+
+Update required-column and optional-column tips, examples, and instructions every time work is done on import/export. Compare the on-screen required/optional columns to the actual database tables.
+
+**Why:** The user repeated that they always have to ask for these tips and instructions to be kept updated, and explicitly said this comparison is very important.
+
+**How to apply:** Treat help verification as part of completing every import/export change. Check actual table columns and current import/export processing, distinguishing file inputs from generated, system-managed, and export-only fields.
+
+## HTTPS deployment scope
+
+The user approved the secure HTTPS equivalent on Replit and the same HTTPS option on standalone Windows/Linux, with responsive pages and controls consistent with the rest of the app.
+
+**Why:** The user explicitly approved this design while retaining the additive-method requirement above.
+
+**How to apply:** Keep HTTPS available on all three targets without claiming it supplies contractual SSH/SFTP support.

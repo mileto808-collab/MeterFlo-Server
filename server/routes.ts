@@ -3601,8 +3601,8 @@ export async function registerRoutes(
             serviceType = defaultServiceType;
           }
         } else {
-          // Normalize case: capitalize first letter
-          serviceType = serviceType.charAt(0).toUpperCase() + serviceType.slice(1).toLowerCase();
+          // Preserve configured codes, including custom/mixed-case identifiers.
+          serviceType = projectServiceTypes.find(type => type.code.toLowerCase() === serviceType.toLowerCase())?.code || serviceType;
           
           // Validate against project's configured service types
           if (allowedServiceTypeCodes.size > 0 && !allowedServiceTypeCodes.has(serviceType)) {

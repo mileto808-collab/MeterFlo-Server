@@ -9,6 +9,9 @@ import { exportRunInput } from "../../shared/file-transfers";
 import { exportFields, getExports, saveExport, enqueueExport, projectZone, frequencyCron, runBytes } from "./exports";
 import { getConnection, publicConnection, saveConnection, withSftp, remoteDirectory, TransferError } from "./sftp";
 import { validateImportPattern } from "./imports";
+import { registerHttpsTransferRoutes } from "./https-routes";
+import { requireExchange } from "./https-service";
+import { workOrderColumnGuide } from "./column-guide";
 const uuid = (value: unknown) => z.string().uuid().parse(value);
 const projectId = (value: unknown) => z.coerce.number().int().positive().parse(value);
 function fail(res: any, error: unknown) {
@@ -27,6 +30,7 @@ export async function transferAccess(req: any, id: number) {
     canImport: await storage.hasPermission(user, "project.import"),
     canExport: await storage.hasPermission(user, "project.fileExports"),
     canManageConnection: await storage.hasPermission(user, "project.sftpConnections"),
+    canManageHttps: await storage.hasPermission(user, "project.httpsTransfers"),
   };
   return { user, project, permissions };
 }
@@ -50,7 +54,7 @@ async function history(project: number, canImport: boolean, canExport: boolean, 
     SELECT 'import:'||h.id AS id,'import'::text AS direction,coalesce(c.name,'Manual import') AS config_name,h.file_name,
       h.status,coalesce(h.records_imported,0) AS record_count,coalesce(h.records_failed,0) AS records_failed,h.error_details AS message,
       h.started_at AT TIME ZONE 'UTC' AS created_at,h.completed_at AT TIME ZONE 'UTC' AS completed_at,
-      CASE WHEN h.import_source LIKE '%sftp%' THEN 'sftp' ELSE 'local' END AS destination,
+      CASE WHEN h.import_source LIKE '%sftp%' THEN 'sftp' WHEN h.import_source='https' THEN 'https' ELSE 'local' END AS destination,
       null::uuid AS export_run_id,1 AS attempts,'[]'::jsonb AS attempt_log
     FROM public.file_import_history h LEFT JOIN public.file_import_configs c ON c.id=h.file_import_config_id WHERE h.project_id=$1 AND $2
     UNION ALL SELECT e.id::text,'export',e.config_name,e.file_name,e.status,e.record_count,0,e.message,e.created_at,e.completed_at,
@@ -70,6 +74,7 @@ async function history(project: number, canImport: boolean, canExport: boolean, 
     completedAt: row.completed_at, destination: row.destination, exportRunId: row.export_run_id, attempts: row.attempts, attemptLog: row.attempt_log })), total, timezone };
 }
 export function registerFileTransferRoutes(app: Express, authenticated: RequestHandler) {
+  registerHttpsTransferRoutes(app, authenticated, transferAccess);
   const base = "/api/projects/:projectId/file-transfers";
   const route = (method: "get" | "post" | "put" | "patch" | "delete", suffix: string, permission: "canImport" | "canExport" | "canManageConnection" | null,
     handler: (req: any, res: any, context: Awaited<ReturnType<typeof transferAccess>>) => Promise<any>) => {
@@ -93,7 +98,8 @@ export function registerFileTransferRoutes(app: Express, authenticated: RequestH
         req.body = req.method === "PATCH" ? updateFileImportConfigSchema.parse(req.body) : insertFileImportConfigSchema.omit({ projectId: true }).parse(req.body);
         const merged = { ...config, ...req.body };
         frequencyCron(merged.scheduleFrequency || "manual", merged.customCronExpression);
-        validateImportPattern(merged.processedFilePattern, merged.source === "sftp");
+        validateImportPattern(merged.processedFilePattern, ["sftp", "https"].includes(merged.source));
+        if (merged.source === "https") await requireExchange(id);
         if (merged.source === "sftp") { remoteDirectory(merged.remoteDirectory); if (!await getConnection(id)) throw new TransferError("Save the project's SFTP connection first."); }
       }
       next();
@@ -107,7 +113,8 @@ export function registerFileTransferRoutes(app: Express, authenticated: RequestH
     const subStatuses = (await pool.query(`SELECT id,label,parent_status_id AS "parentStatusId" FROM public.work_order_sub_statuses
       WHERE active AND (project_id IS NULL OR project_id=$1) ORDER BY sort_order,label`, [project.id])).rows;
     res.json({ connection: publicConnection(await getConnection(project.id)), exports: permissions.canExport ? await getExports(project.id) : [],
-      statuses, subStatuses, fields: permissions.canExport ? await exportFields(project.id) : [], timezone: await projectZone(project.id), permissions });
+      statuses, subStatuses, fields: permissions.canExport ? await exportFields(project.id) : [], columnGuide: await workOrderColumnGuide(project.id),
+      timezone: await projectZone(project.id), permissions });
   });
   route("put", "/connection", "canManageConnection", async (req, res, { project }) => {
     res.json(await auditedOperation("projectSftpUpdate", String(project.id), () => withBackupExclusive(() => saveConnection(project.id, req.body)), project.id, project.name));

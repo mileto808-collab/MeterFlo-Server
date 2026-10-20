@@ -26,7 +26,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info, Clock, Play, Trash2, Edit, Plus, Calendar, FolderSync, Settings, RotateCcw } from "lucide-react";
+import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Clock, Play, Trash2, Edit, Plus, Calendar, FolderSync, Settings, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -46,15 +46,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { Project, FileImportConfig, ServiceTypeRecord } from "@shared/schema";
+import type { TransferContext } from "@shared/file-transfers";
 import { Link } from "wouter";
 import { useTimezone } from "@/hooks/use-timezone";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import * as XLSX from "xlsx";
 import { FileTransferWorkspace } from "@/components/file-transfers/file-transfer-workspace";
+import { ProjectColumnGuide } from "@/components/file-transfers/project-column-guide";
 
 type ParsedWorkOrder = {
-  customerWoId: string;
+  customerWoId?: string;
   customerId: string;
   customerName: string;
   address: string;
@@ -222,7 +224,7 @@ function LegacyImport() {
     isEnabled: true,
     columnMapping: { ...defaultColumnMapping } as Record<string, string>,
     processedFilePattern: "",
-    source: "local" as "local" | "sftp",
+    source: "local" as "local" | "sftp" | "https",
     remoteDirectory: "",
   });
 
@@ -231,6 +233,16 @@ function LegacyImport() {
     enabled: !!projectId,
     retry: false,
   });
+  const { data: transferContext } = useQuery<TransferContext>({
+    queryKey: [`/api/projects/${projectId}/file-transfers`],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/projects/${projectId}/file-transfers`);
+      if (!response.ok) throw new Error("Could not load project import/export guidance");
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+  const serviceTypeExample = transferContext?.columnGuide.serviceTypes[0]?.code || "<configured-project-service-type>";
   const inventoryEnabled = Boolean((project as any)?.inventoryEnabled);
 
   // Fetch all service types and project-specific assignments
@@ -458,8 +470,8 @@ function LegacyImport() {
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
-    if (scheduleForm.source === "sftp" && !scheduleForm.processedFilePattern.trim()) {
-      toast({ title: "File pattern is required for SFTP", description: "Add a pattern such as *.csv or meter_*.xlsx.", variant: "destructive" });
+    if ((scheduleForm.source === "sftp" || scheduleForm.source === "https") && !scheduleForm.processedFilePattern.trim()) {
+      toast({ title: "File pattern is required", description: "SFTP and HTTPS imports need a pattern such as *.csv or meter_*.xlsx.", variant: "destructive" });
       return;
     }
     const columnMapping = { ...scheduleForm.columnMapping };
@@ -661,7 +673,7 @@ function LegacyImport() {
       const serviceTypeResult = resolveServiceType(serviceTypeRaw);
 
       const workOrder: ParsedWorkOrder = {
-        customerWoId: getValueByHeader(columnMapping.customerWoId) || "",
+        customerWoId: getValueByHeader(columnMapping.customerWoId) || undefined,
         customerId: getValueByHeader(columnMapping.customerId) || "",
         customerName: getValueByHeader(columnMapping.customerName) || "",
         address: getValueByHeader(columnMapping.address) || "",
@@ -729,10 +741,10 @@ function LegacyImport() {
   const handleFileImport = () => {
     // Service type column is required only if project doesn't have exactly one service type configured
     const serviceTypeRequired = projectServiceTypes.length !== 1;
-    if (!columnMapping.customerWoId || !columnMapping.customerId || !columnMapping.customerName || !columnMapping.address || (serviceTypeRequired && !columnMapping.serviceType)) {
-      const requiredFields = serviceTypeRequired 
-        ? "Work Order ID, Customer ID, Customer Name, Address, and Service Type"
-        : "Work Order ID, Customer ID, Customer Name, and Address";
+    if (!columnMapping.customerId || !columnMapping.customerName || !columnMapping.address || (serviceTypeRequired && !columnMapping.serviceType)) {
+      const requiredFields = serviceTypeRequired
+        ? "Customer ID, Customer Name, Address, and Service Type"
+        : "Customer ID, Customer Name, and Address";
       toast({ title: `Please map required columns: ${requiredFields}`, variant: "destructive" });
       return;
     }
@@ -769,7 +781,7 @@ function LegacyImport() {
       }
 
       const workOrder: ParsedWorkOrder = {
-        customerWoId: getValueByHeader(columnMapping.customerWoId),
+        customerWoId: getValueByHeader(columnMapping.customerWoId) || undefined,
         customerId: getValueByHeader(columnMapping.customerId),
         customerName: getValueByHeader(columnMapping.customerName),
         address: getValueByHeader(columnMapping.address),
@@ -810,7 +822,7 @@ function LegacyImport() {
       };
 
       return workOrder;
-    }).filter(wo => wo.customerWoId && wo.customerId && wo.customerName && wo.address);
+    }).filter(wo => wo.customerId && wo.customerName && wo.address);
 
     // Show service type errors if any
     if (serviceTypeErrors.length > 0) {
@@ -995,76 +1007,23 @@ function LegacyImport() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Info className="h-5 w-5" />
-                Expected Data Format
-              </CardTitle>
-              <CardDescription>
-                Prepare your file with utility system work order data
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium mb-2">Required Columns</h4>
-                  <div className="space-y-2 text-sm">
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">customer_wo_id</span> - Unique Work Order ID</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">customer_id</span> - Customer Account ID</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">customer_name</span> - Customer Name</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">address</span> - Service Address</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">service_type</span> - Water, Electric, or Gas</div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium mb-2">Optional Columns</h4>
-                  <div className="space-y-2 text-sm">
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">city, state, zip</span> - Location details</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">phone, email</span> - Contact information</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">route, zone</span> - Service routing</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_id, old_system_reading</span> - Old system info</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps</span> - GPS coordinates</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_type, new_system_type</span> - System types</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_id, new_module_id</span> - Module identifiers</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_read, new_module_read</span> - Module readings</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_type, new_module_type</span> - Module types</div>
-                    {inventoryEnabled && <div className="rounded border border-primary/20 bg-primary/5 p-2 text-xs">New system and module types create planned inventory requirements from this project’s type item links. Imports never reserve stock.</div>}
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_at, scheduled_by, trouble, notes</span> - Work order details</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_user_id, assigned_group_id, created_by, completed_at</span> - Assignment and tracking</div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium mb-2">Example CSV</h4>
-                  <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
-{`customer_wo_id,customer_id,customer_name,address,city,state,zip,service_type,route,zone,old_system_id
-WO-001,CUST-123,John Smith,123 Main St,Springfield,IL,62701,Water,Route A,Zone 1,SYS-OLD-001
-WO-002,CUST-456,Jane Doe,456 Oak Ave,Springfield,IL,62702,Electric,Route B,Zone 2,SYS-OLD-002
-WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,SYS-OLD-003`}
-                  </pre>
-                  {inventoryEnabled && <p className="mt-3 text-xs text-muted-foreground">When inventory is enabled, imported new system/module types create planned requirements from this project’s type item links. Imports never reserve stock.</p>}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ProjectColumnGuide projectId={projectId || undefined} mode="manualCsv" />
 
           {headers.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Column Mapping</CardTitle>
-                <CardDescription>
-                  Map your file columns to work order fields. Fields marked with * are required. Planning duration is a whole number (1–480); window timestamps must include Z or an explicit offset such as -07:00.
-                </CardDescription>
+                  <CardDescription>
+                    Map CSV headers to the supported import fields. The project guide below distinguishes app validation from database nullability and identifies compatibility controls that may be ignored.
+                  </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <MappingSelect field="customerWoId" label="Work Order ID" required />
+                  <MappingSelect field="customerWoId" label="Work Order ID" />
                   <MappingSelect field="customerId" label="Customer ID" required />
                   <MappingSelect field="customerName" label="Customer Name" required />
                   <MappingSelect field="address" label="Address" required />
-                  <MappingSelect field="serviceType" label="Service Type" required />
+                  <MappingSelect field="serviceType" label="Service Type" />
                   <MappingSelect field="city" label="City" />
                   <MappingSelect field="state" label="State" />
                   <MappingSelect field="zip" label="ZIP Code" />
@@ -1187,11 +1146,10 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   onChange={(e) => setJsonInput(e.target.value)}
                   placeholder={`[
   {
-    "customerWoId": "WO-001",
     "customerId": "CUST-123",
     "customerName": "John Smith",
     "address": "123 Main St",
-    "serviceType": "Water",
+    "serviceType": "${serviceTypeExample}",
     "route": "Route A",
     "zone": "Zone 1"
   }
@@ -1210,6 +1168,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
               </Button>
             </CardContent>
           </Card>
+          <ProjectColumnGuide projectId={projectId || undefined} mode="manualJson" guide={transferContext?.columnGuide} />
         </TabsContent>
 
         <TabsContent value="scheduled" className="space-y-4">
@@ -1222,7 +1181,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                     Scheduled File Imports
                   </CardTitle>
                   <CardDescription>
-                    Configure automatic imports from the Project FTP Files directory
+                    Configure imports from a local project folder, remote SFTP, or HTTPS customer inbox.
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1251,7 +1210,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                 <div className="text-center py-8 text-muted-foreground">
                   <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No scheduled imports configured</p>
-                  <p className="text-sm mb-4">Upload files to the FTP directory and configure a schedule to automate imports.</p>
+                  <p className="text-sm mb-4">Choose a source, matching pattern, and schedule to process local, SFTP, or HTTPS files.</p>
                   <Button 
                     variant="outline"
                     onClick={() => {
@@ -1396,20 +1355,21 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>How Scheduled Imports Work</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>How Scheduled Imports Work</CardTitle></CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
               <div className="space-y-2">
-                <p><strong className="text-foreground">1. Upload Files</strong> - Upload CSV, Excel, or JSON files to the Project FTP Files directory.</p>
-                <p><strong className="text-foreground">2. File Matching</strong> - Each schedule can have its own file pattern to filter which files it processes.</p>
-                <p><strong className="text-foreground">3. Automatic Processing</strong> - When the scheduled time arrives, the system finds the newest file matching the pattern and imports it.</p>
-                <p><strong className="text-foreground">4. Skip Duplicates</strong> - Files that have already been processed by a schedule are skipped on subsequent runs.</p>
+                <p><strong className="text-foreground">Local:</strong> Upload the file manually to Project FTP Files; the next run uses the newest matching file.</p>
+                <p><strong className="text-foreground">SFTP:</strong> MeterFlo checks the configured remote directory and processes the oldest eligible matching files, up to 25 per run.</p>
+                <p><strong className="text-foreground">HTTPS:</strong> MeterFlo checks this project’s customer inbox and processes the oldest eligible matching files, up to 25 per run.</p>
+                <p><strong className="text-foreground">Matching and schedule:</strong> Configure a file pattern for each source (required for SFTP and HTTPS), column mappings, enabled state, and frequency. Times use the project timezone; manual-frequency schedules run only when requested.</p>
+                <p><strong className="text-foreground">File formats:</strong> CSV and Excel use the schedule’s delimiter and header settings. JSON is an array of work-order objects; delimiter and header settings do not apply.</p>
+                <p><strong className="text-foreground">Retries and evidence:</strong> Previously processed file hashes are skipped to prevent duplicate imports. Failed work can be retried on a later run; manual execution reports imported/failed counts, and the schedule row keeps the latest run date and status.</p>
+                {inventoryEnabled && <p className="rounded border border-primary/15 bg-primary/5 p-2 text-xs">New system/module types can create planned requirements from project type-item links. Imports do not reserve stock.</p>}
               </div>
 
               <div className="border-t pt-4">
                 <h4 className="font-medium text-foreground mb-2">File Pattern Matching</h4>
-                <p className="mb-2">Use file patterns to have multiple schedules for different file types:</p>
+                <p className="mb-2">Use a pattern to separate feeds and select the right mapping for each source:</p>
                 <div className="bg-muted rounded-md p-3 space-y-2">
                   <div className="flex gap-2 items-start">
                     <code className="bg-background px-1.5 py-0.5 rounded text-xs whitespace-nowrap">*</code>
@@ -1443,73 +1403,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Info className="h-5 w-5" />
-                Expected Data Format
-              </CardTitle>
-              <CardDescription>
-                Prepare your files with the correct column structure
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <h4 className="font-medium mb-2">CSV Files</h4>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <p>Set the appropriate delimiter in your schedule configuration (comma, semicolon, tab, or pipe).</p>
-                  <p>Enable "Has Header Row" if your file includes column headers in the first row.</p>
-                </div>
-              </div>
-              
-              <div>
-                <h4 className="font-medium mb-2">Excel Files (.xlsx/.xls)</h4>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <p>The delimiter setting is ignored for Excel files - they are parsed automatically.</p>
-                  <p>Enable "Has Header Row" if your file includes column headers in the first row.</p>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-medium mb-2">JSON Files (.json)</h4>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <p>JSON files should contain an array of work order objects. The delimiter and header settings are ignored for JSON files.</p>
-                  <p>Example format:</p>
-                  <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto">
-{`[
-  {
-    "customerWoId": "WO-001",
-    "customerId": "CUST-123",
-    "customerName": "John Smith",
-    "address": "123 Main St",
-    "serviceType": "Water",
-    "city": "Springfield",
-    "state": "IL"
-  }
-]`}
-                  </pre>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-medium mb-2">Required Columns</h4>
-                <div className="text-sm">
-                  <span className="font-mono bg-muted px-2 py-1 rounded">customer_wo_id</span>,{" "}
-                  <span className="font-mono bg-muted px-2 py-1 rounded">customer_id</span>,{" "}
-                  <span className="font-mono bg-muted px-2 py-1 rounded">customer_name</span>,{" "}
-                  <span className="font-mono bg-muted px-2 py-1 rounded">address</span>,{" "}
-                  <span className="font-mono bg-muted px-2 py-1 rounded">service_type</span>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-medium mb-2">Optional Columns</h4>
-                <div className="text-sm text-muted-foreground">
-                  city, state, zip, phone, email, route, zone, old_system_id, old_system_reading, old_gps, old_system_type, new_system_type, status, scheduled_at, scheduled_by, trouble, notes, assigned_user_id, assigned_group_id, created_by, completed_by, completed_at
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ProjectColumnGuide projectId={projectId || undefined} mode="scheduled" guide={transferContext?.columnGuide} />
         </TabsContent>
       </Tabs>
 
@@ -1552,7 +1446,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
           <DialogHeader>
             <DialogTitle>{editingConfig ? "Edit Schedule" : "Create Schedule"}</DialogTitle>
             <DialogDescription>
-              Configure an automatic import schedule for files in the FTP directory
+              Configure source-specific file matching, mappings, and project-timezone execution.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -1625,7 +1519,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="file-pattern">Processed file pattern {scheduleForm.source === "sftp" && <span className="text-destructive">*</span>}</Label>
+              <Label htmlFor="file-pattern">Processed file pattern {(scheduleForm.source === "sftp" || scheduleForm.source === "https") && <span className="text-destructive">*</span>}</Label>
               <Input
                 id="file-pattern"
                 value={scheduleForm.processedFilePattern}
@@ -1634,7 +1528,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                 data-testid="input-file-pattern"
               />
               <div className="text-xs text-muted-foreground space-y-1">
-                <p>Only process files matching this pattern. Leave blank to process any file.</p>
+                <p>{scheduleForm.source === "local" ? "Filter locally uploaded files by name. Leave blank to match any local file." : "A file pattern is required for this remote source; matching eligible files are selected by this schedule."}</p>
                 <p><strong>Wildcards:</strong> <code className="bg-muted px-1 rounded">*</code> matches any characters, <code className="bg-muted px-1 rounded">?</code> matches single character</p>
                 <p><strong>Examples:</strong></p>
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
@@ -1648,11 +1542,12 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="schedule-source">File source</Label>
-                <Select value={scheduleForm.source} onValueChange={(value: "local" | "sftp") => setScheduleForm(prev => ({ ...prev, source: value }))}>
+                <Select value={scheduleForm.source} onValueChange={(value: "local" | "sftp" | "https") => setScheduleForm(prev => ({ ...prev, source: value }))}>
                   <SelectTrigger id="schedule-source"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="local">Local / uploaded</SelectItem>
-                    <SelectItem value="sftp">SFTP connection</SelectItem>
+                    <SelectItem value="sftp">Remote SFTP connection</SelectItem>
+                    <SelectItem value="https">HTTPS customer inbox</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1685,7 +1580,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
             <div className="space-y-2">
               <Label>Column Mapping</Label>
               <p className="text-xs text-muted-foreground mb-2">
-                Enter the column names from your CSV/Excel files that map to each field
+                Enter source header names for supported fields. Use the Scheduled field guide for route support, managed values, and update-only fields; importer-managed createdBy is not a customer input. Legacy controls not listed as Scheduled remain for saved-config compatibility and are ignored by this route.
               </p>
               {inventoryEnabled && <p className="mb-2 text-xs text-muted-foreground">New system/module type values create planned requirements from this project’s type item links; they do not reserve stock.</p>}
               <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">

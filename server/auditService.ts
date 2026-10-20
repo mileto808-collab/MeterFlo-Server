@@ -71,6 +71,9 @@ export async function auditedOperation<T>(type:string,target:string,fn:()=>Promi
         const { migrateFileTransfers } = await import("./file-transfers/schema");
         await migrateFileTransfers(pool);
         await pool.query("UPDATE public.file_exports SET is_enabled=false,next_run_at=null,updated_at=now()");
+        await pool.query("UPDATE public.https_transfer_settings SET enabled=false,updated_at=now()");
+        await pool.query("UPDATE public.https_transfer_credentials SET revoked_at=coalesce(revoked_at,now())");
+        await pool.query("UPDATE public.https_transfer_files SET status='received',message='Processing interrupted by restore; review before enabling.' WHERE status='processing'");
         await pool.query("UPDATE public.file_import_configs SET is_enabled=false WHERE source='sftp'");
         await pool.query(`UPDATE public.file_export_runs SET status='cancelled',completed_at=now(),
           message='Paused after system restore. Review the SFTP destination and create a new export.'

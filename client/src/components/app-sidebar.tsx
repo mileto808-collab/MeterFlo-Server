@@ -241,7 +241,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         {role !== "customer" && projects.length > 0 &&
-          (hasPermission("project.workOrders") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs") || hasPermission("inventory.view") || hasPermission("project.import") || hasPermission("project.fileExports") || hasPermission("project.sftpConnections")) && (
+          (hasPermission("project.workOrders") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs") || hasPermission("inventory.view") || hasPermission("project.import") || hasPermission("project.fileExports") || hasPermission("project.sftpConnections") || hasPermission("project.httpsTransfers")) && (
           <SidebarGroup>
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -328,7 +328,7 @@ export function AppSidebar() {
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
-                            {(hasPermission("project.import") || hasPermission("project.fileExports") || hasPermission("project.sftpConnections")) && (
+                            {(hasPermission("project.import") || hasPermission("project.fileExports") || hasPermission("project.sftpConnections") || hasPermission("project.httpsTransfers")) && (
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild

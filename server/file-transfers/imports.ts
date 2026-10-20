@@ -4,17 +4,23 @@ import { minimatch } from "minimatch";
 import { pool } from "../db";
 import { ensureProjectFtpDirectory, getProjectFtpFiles } from "../fileStorage";
 import { withSftp, remoteDirectory, digest, TransferError, readSftpFile } from "./sftp";
+import { httpsImportCandidate } from "./https-imports";
+export interface ImportCandidate {
+  name: string; size: number; modifiedAt: Date; filePath: string; hash: string; identity: string;
+  metadata: Record<string, unknown>; httpsFileId?: string; tempDir?: string;
+}
 export function validateImportPattern(value: unknown, required = false) {
   if ((typeof value !== "string" || !value.trim()) && required) throw new TransferError("SFTP imports require a filename-matching pattern.");
   const pattern = typeof value === "string" && value.trim() ? value.trim() : "*";
   if (pattern.length > 255 || /[/\\\0]/.test(pattern) || pattern.includes("..")) throw new TransferError("Use a filename pattern without a directory path.");
   return pattern;
 }
-export async function importCandidate(config: any, project: any) {
-  const remote = config.source === "sftp", pattern = validateImportPattern(config.processedFilePattern, remote);
+export async function importCandidate(config: any, project: any): Promise<ImportCandidate | null> {
+  const remote = config.source === "sftp", pattern = validateImportPattern(config.processedFilePattern, remote || config.source === "https");
   const generated = new Set((await pool.query("SELECT file_name FROM public.file_export_runs WHERE project_id=$1", [project.id])).rows.map(row => row.file_name));
   const receipts = (await pool.query("SELECT content_hash,source_identity FROM public.file_import_receipts WHERE config_id=$1", [config.id])).rows;
   const known = new Set(receipts.map(row => row.content_hash)), seen = new Set(receipts.map(row => row.source_identity));
+  if (config.source === "https") return httpsImportCandidate(config, project, pattern, known);
   const folder = await ensureProjectFtpDirectory(project.name, project.id);
   const discover = async (files: any[], read: (file: any) => Promise<Buffer>) => {
     const matches = files.filter(file => file.type !== "d" && !generated.has(file.name) && !file.name.includes("/") && !file.name.includes("\\") &&

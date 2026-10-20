@@ -11,6 +11,7 @@ import { auditedOperation } from "../auditService";
 import { backupLock } from "../backups/lock";
 import { exportConfigInput, transferSelection, type ExportConfig, type ExportSelection } from "../../shared/file-transfers";
 import { TransferError, connectionIdentity, getConnection, remoteDirectory, deliverSftp, digest } from "./sftp";
+import { requireExchange, publishHttpsExport, expireExchangeFiles } from "./https-service";
 
 export function schemaIdentifier(value: string) {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) throw new TransferError("Invalid project database configuration.");
@@ -86,6 +87,7 @@ export async function saveExport(projectId: number, body: unknown, id?: string) 
   exportFilename(input.filenameTemplate, input.format, randomUUID(), timezone);
   const next = nextTransferTime(input.scheduleFrequency, input.customCronExpression, timezone);
   if (input.destination === "sftp") { remoteDirectory(input.remoteDirectory); connectionIdentity(await getConnection(projectId)); }
+  if (input.destination === "https") await requireExchange(projectId);
   const client = await pool.connect(), key = id || randomUUID();
   try {
     await client.query("BEGIN");
@@ -233,6 +235,7 @@ async function executeRun(run: any) {
       try { await fs.copyFile(partial, target, 1); } finally { await fs.unlink(partial).catch(() => {}); }
     }
     if (run.snapshot.destination === "sftp") await deliverSftp(project.id, run.snapshot.remoteDirectory, run.file_name, run.id, bytes, run.snapshot.connectionIdentity);
+    if (run.snapshot.destination === "https") await publishHttpsExport(run, bytes);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -252,6 +255,7 @@ async function executeRun(run: any) {
   }
 }
 let working = false;
+let lastHttpsCleanup = 0;
 export async function exportTick() {
   if (working) return;
   working = true; let locked = false;
@@ -278,6 +282,10 @@ export async function exportTick() {
     }
     const run = (await pool.query("SELECT * FROM public.file_export_runs WHERE status='queued' ORDER BY created_at LIMIT 1")).rows[0];
     if (run) await auditedOperation("fileExport", run.id, () => executeRun(run), run.project_id);
+    if (Date.now() - lastHttpsCleanup > 60000) {
+      lastHttpsCleanup = Date.now();
+      await expireExchangeFiles();
+    }
   } finally {
     if (locked) await client.query("SELECT pg_advisory_unlock(hashtext($1))", [backupLock]).catch(() => {});
     client.release(); working = false;

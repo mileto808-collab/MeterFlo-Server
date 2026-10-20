@@ -130,6 +130,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
   {
+    key: "project.httpsTransfers",
+    label: "HTTPS File Exchange",
+    category: "Project Menu",
+    description: "Manage secure project file-exchange credentials, storage and retention",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
     key: "project.import",
     label: "File Import",
     category: "Project Menu",
