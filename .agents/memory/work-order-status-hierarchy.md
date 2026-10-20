@@ -29,8 +29,12 @@ Custom business rules must use permanent status/sub-status identities rather tha
 
 ## Closed work-order protection
 
-The user requires a per-project setting to move Completed orders to Closed after a configured period. Only an authorized user may reopen or edit Closed work orders.
+The user requires a per-project setting to move Completed orders to Closed after a configured period. Authorized users must reopen a Closed work order before making corrections; direct editing while Closed is not permitted.
 
-**Why:** The user explicitly wants Closed orders protected from ordinary editing.
+Authorized manual bulk closing must remain available whether automatic closing is enabled or disabled.
+
+Work orders need comprehensive audit recording of appropriate actions throughout Open to Close, like inventory. Important actions, including manual/automatic closing and reopening, must be caught in the audit logs.
+
+**Why:** The user approved reopening before editing and explicitly clarified that automatic closing must not replace manual closing, and that comprehensive work-order audit logs are required.
 
 **How to apply:** Enforce the protection consistently in server-side mutations and UI controls, including bulk actions and imports. Keep closing distinct from undoing completed work or reversing inventory.
