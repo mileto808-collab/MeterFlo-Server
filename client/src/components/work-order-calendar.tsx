@@ -128,6 +128,9 @@ export function WorkOrderCalendar({
   const [isRescheduling, setIsRescheduling] = useState(false);
   const lastHandledWorkOrderIdRef = useRef<number | null>(null);
   const [clickedWorkOrder, setClickedWorkOrder] = useState<ProjectWorkOrder | null>(null);
+  const [clickedWorkOrderSurface, setClickedWorkOrderSurface] = useState<"calendar" | "day-list" | null>(null);
+  const [appointmentsDate, setAppointmentsDate] = useState<Date | null>(null);
+  const pendingDayListActionRef = useRef<(() => void) | null>(null);
 
   // Handle initial work order for scheduling from work order detail (via useEffect to avoid state update during render)
   useEffect(() => {
@@ -332,8 +335,24 @@ export function WorkOrderCalendar({
         assignedUserId: selectedForScheduling.assignedUserId || null,
         notes: "",
       });
+    } else if (hour === undefined) {
+      setAppointmentsDate(date);
     }
   };
+
+  const getAppointmentsForDate = useCallback((date: Date) => {
+    return getWorkOrdersForDate(date)
+      .slice()
+      .sort((a, b) => {
+        const aTime = a.scheduledAt
+          ? (a.scheduledAt instanceof Date ? a.scheduledAt.getTime() : parseISO(a.scheduledAt).getTime())
+          : 0;
+        const bTime = b.scheduledAt
+          ? (b.scheduledAt instanceof Date ? b.scheduledAt.getTime() : parseISO(b.scheduledAt).getTime())
+          : 0;
+        return aTime - bTime;
+      });
+  }, [getWorkOrdersForDate]);
 
   // Convert wall-clock time to UTC using iterative refinement
   // This is independent of browser timezone - uses only Intl API
@@ -465,16 +484,19 @@ export function WorkOrderCalendar({
     lastHandledWorkOrderIdRef.current = null;
   }, []);
 
-  const renderWorkOrderCard = (workOrder: ProjectWorkOrder, compact = false) => {
+  const renderWorkOrderCard = (workOrder: ProjectWorkOrder, compact = false, surface: "calendar" | "day-list" = "calendar") => {
     const isDraggable = workOrder.status !== "Completed" && workOrder.status !== "Closed";
     const isSchedulable = workOrder.status !== "Completed" && workOrder.status !== "Closed";
     
     return (
       <Popover 
         key={workOrder.id} 
-        open={clickedWorkOrder?.id === workOrder.id}
+        open={clickedWorkOrder?.id === workOrder.id && clickedWorkOrderSurface === surface}
         onOpenChange={(open) => {
-          if (!open) setClickedWorkOrder(null);
+          if (!open) {
+            setClickedWorkOrder(null);
+            setClickedWorkOrderSurface(null);
+          }
         }}
       >
         <PopoverTrigger asChild>
@@ -485,6 +507,7 @@ export function WorkOrderCalendar({
             onClick={(e) => {
               e.stopPropagation();
               setClickedWorkOrder(workOrder);
+              setClickedWorkOrderSurface(surface);
             }}
             className={cn(
               "rounded-md border cursor-pointer hover-elevate text-xs",
@@ -509,7 +532,20 @@ export function WorkOrderCalendar({
               <div className="flex items-start gap-1">
                 {isDraggable && <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />}
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">WO {workOrder.customerWoId || workOrder.id}</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium truncate">WO {workOrder.customerWoId || workOrder.id}</div>
+                    {surface === "day-list" && (
+                      <Badge
+                        variant="outline"
+                        className={cn("shrink-0 text-[10px] text-white", getStatusColor(workOrder.status || "Open"))}
+                      >
+                        {workOrder.status || "Open"}
+                      </Badge>
+                    )}
+                  </div>
+                  {surface === "day-list" && workOrder.customerName && (
+                    <div className="text-muted-foreground truncate">{workOrder.customerName}</div>
+                  )}
                   {workOrder.address && (
                     <div className="text-muted-foreground truncate flex items-center gap-0.5">
                       <MapPin className="h-2.5 w-2.5" />
@@ -536,6 +572,7 @@ export function WorkOrderCalendar({
                 className="justify-start"
                 onClick={() => {
                   setClickedWorkOrder(null);
+                  setClickedWorkOrderSurface(null);
                   // Open scheduling dialog with this work order
                   const existingTime = workOrder.scheduledAt 
                     ? format(parseScheduledAt(workOrder.scheduledAt), "HH:mm")
@@ -543,7 +580,7 @@ export function WorkOrderCalendar({
                   const existingDate = workOrder.scheduledAt 
                     ? parseScheduledAt(workOrder.scheduledAt)
                     : new Date();
-                  setRescheduleDialog({
+                  const openRescheduleDialog = () => setRescheduleDialog({
                     open: true,
                     workOrder,
                     targetDate: existingDate,
@@ -551,6 +588,12 @@ export function WorkOrderCalendar({
                     assignedUserId: workOrder.assignedUserId || null,
                     notes: "",
                   });
+                  if (surface === "day-list") {
+                    pendingDayListActionRef.current = openRescheduleDialog;
+                    setAppointmentsDate(null);
+                  } else {
+                    openRescheduleDialog();
+                  }
                 }}
                 data-testid={`wo-action-schedule-${workOrder.id}`}
               >
@@ -564,7 +607,13 @@ export function WorkOrderCalendar({
               className="justify-start"
               onClick={() => {
                 setClickedWorkOrder(null);
-                onWorkOrderClick(workOrder);
+                setClickedWorkOrderSurface(null);
+                if (surface === "day-list") {
+                  pendingDayListActionRef.current = () => onWorkOrderClick(workOrder);
+                  setAppointmentsDate(null);
+                } else {
+                  onWorkOrderClick(workOrder);
+                }
               }}
               data-testid={`wo-action-details-${workOrder.id}`}
             >
@@ -615,7 +664,7 @@ export function WorkOrderCalendar({
                   <div
                     key={date.toISOString()}
                     className={cn(
-                      "border-r last:border-r-0 p-1 min-h-[100px] relative",
+                      "border-r last:border-r-0 p-1 min-h-[100px] relative cursor-pointer",
                       !isCurrentMonth && "bg-muted/30",
                       isToday(date) && "bg-primary/5",
                       isDropTarget && "hover:bg-primary/10 transition-colors"
@@ -625,21 +674,40 @@ export function WorkOrderCalendar({
                     onClick={() => handleCellClick(date)}
                     data-testid={`calendar-day-${format(date, "yyyy-MM-dd")}`}
                   >
-                    <div
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`${format(date, "EEEE, MMMM d, yyyy")}, ${dayWorkOrders.length} appointments. ${selectedForScheduling ? "Select to schedule work order." : "Open appointments."}`}
+                      aria-haspopup="dialog"
                       className={cn(
-                        "text-sm font-medium mb-1",
+                        "mb-1 h-7 px-2 text-sm font-medium hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary",
                         !isCurrentMonth && "text-muted-foreground",
                         isToday(date) && "text-primary"
                       )}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleCellClick(date);
+                      }}
                     >
                       {format(date, "d")}
-                    </div>
+                    </Button>
                     <div className="space-y-0.5">
                       {dayWorkOrders.slice(0, 3).map((wo) => renderWorkOrderCard(wo, true))}
                       {dayWorkOrders.length > 3 && (
-                        <div className="text-xs text-muted-foreground font-medium pl-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1 text-xs text-muted-foreground font-medium"
+                          aria-label={`${selectedForScheduling ? "Schedule" : "View"} all ${dayWorkOrders.length} appointments for ${format(date, "MMMM d")}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleCellClick(date);
+                          }}
+                        >
                           +{dayWorkOrders.length - 3} more
-                        </div>
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -998,6 +1066,51 @@ export function WorkOrderCalendar({
               {isRescheduling ? "Saving..." : "Confirm"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={appointmentsDate !== null && !rescheduleDialog.open}
+        onOpenChange={(open) => {
+          if (!open) setAppointmentsDate(null);
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+          onCloseAutoFocus={(event) => {
+            const pendingAction = pendingDayListActionRef.current;
+            if (pendingAction) {
+              event.preventDefault();
+              pendingDayListActionRef.current = null;
+              pendingAction();
+            }
+          }}
+        >
+          <DialogHeader className="border-b px-6 py-5">
+            <DialogTitle>
+              {appointmentsDate ? format(appointmentsDate, "EEEE, MMMM d, yyyy") : "Appointments"}
+            </DialogTitle>
+            <DialogDescription>
+              {appointmentsDate
+                ? `${getAppointmentsForDate(appointmentsDate).length} appointment${getAppointmentsForDate(appointmentsDate).length === 1 ? "" : "s"} · ${projectTimezone || "UTC"}`
+                : "Appointments scheduled for this day."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="calendar-day-appointments-list">
+            <div className="space-y-2 p-4 sm:p-6">
+              {appointmentsDate && getAppointmentsForDate(appointmentsDate).length > 0 ? (
+                getAppointmentsForDate(appointmentsDate).map((workOrder) => (
+                  <div key={workOrder.id}>
+                    {renderWorkOrderCard(workOrder, false, "day-list")}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No appointments scheduled for this day.
+                </div>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
