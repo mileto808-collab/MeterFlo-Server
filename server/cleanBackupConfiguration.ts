@@ -1,6 +1,31 @@
 import type { Pool, PoolClient } from "pg";
+import { randomUUID } from "node:crypto";
+import { bootstrapAdminHash } from "./bootstrapAdmin";
 
 type QueryClient = Pick<Pool | PoolClient, "query">;
+
+/** A clean installation gets a new admin, never the source admin's credentials/profile/locks. */
+export async function cleanDefaultAdministratorInsert(): Promise<string> {
+  const hash = await bootstrapAdminHash(), id = randomUUID();
+  return `
+-- Fresh-install administrator. Change the installation default password before use.
+INSERT INTO public.subroles(key,label,base_role,description)
+VALUES('administrator','Administrator','admin','Full system access with all permissions')
+ON CONFLICT(key) DO UPDATE SET base_role='admin';
+INSERT INTO public.subrole_permissions(subrole_id,permission_key)
+SELECT s.id,p.key FROM public.subroles s CROSS JOIN public.permissions p
+WHERE s.key='administrator' AND NOT EXISTS(
+  SELECT 1 FROM public.subrole_permissions sp WHERE sp.subrole_id=s.id AND sp.permission_key=p.key);
+INSERT INTO public.users(id,username,password_hash,first_name,role,subrole_id,is_locked)
+VALUES('${id}','admin','${hash}','Administrator','admin',
+  (SELECT id FROM public.subroles WHERE key='administrator'),false)
+ON CONFLICT(username) DO UPDATE SET
+  password_hash=EXCLUDED.password_hash,first_name='Administrator',last_name=NULL,email=NULL,profile_image_url=NULL,
+  role='admin',subrole_id=EXCLUDED.subrole_id,is_locked=false,locked_at=NULL,locked_reason=NULL,last_login_at=NULL,
+  address=NULL,city=NULL,state=NULL,zip=NULL,phone=NULL,website=NULL,notes=NULL,created_at=now(),updated_at=now();
+`;
+}
+
 /** Configuration-only export: project policies and cleanup journals are not portable configuration. */
 export async function cleanConfigurationInserts(client: QueryClient): Promise<string> {
   const statements: string[] = [];

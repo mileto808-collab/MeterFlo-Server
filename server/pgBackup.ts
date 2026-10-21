@@ -14,7 +14,7 @@ import { pool as applicationPool } from "./db";
 import { auditingEnabled } from "./auditContext";
 import { relationalTableNames } from "./inventoryRelationalModel";
 import { runPgProcess } from "./backups/pg-process";
-import { cleanConfigurationInserts, requireFreshCleanDestination } from "./cleanBackupConfiguration";
+import { cleanConfigurationInserts, cleanDefaultAdministratorInsert, requireFreshCleanDestination } from "./cleanBackupConfiguration";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 function stripApplicationAuditHooks(file:string) {
@@ -207,7 +207,7 @@ export async function pgRestore(
     "-p", params.port,
     "-U", params.user,
     "-d", params.database,
-    "-v",
+    "-v", "ON_ERROR_STOP=1",
     "-f", sqlFile,
   ];
   
@@ -230,6 +230,7 @@ export async function pgRestore(
     }
   }
   
+  if (!result.success) return { success: false, error: result.stderr || "PostgreSQL restore failed.", warnings };
   return { success: true, warnings };
 }
 
@@ -612,16 +613,10 @@ GRANT ALL ON SCHEMA public TO public;
   combinedSql += "\n\n-- Disable Cloudflare Turnstile for fresh deployment\n";
   combinedSql += "INSERT INTO public.system_settings (key, value) VALUES ('turnstile_enabled', 'false') ON CONFLICT (key) DO UPDATE SET value = 'false';\n";
   
-  // Step 4: Append system users (admin, file_import)
-  try {
-    const systemUsersInserts = await generateSystemUsersInserts();
-    if (systemUsersInserts) {
-      combinedSql += systemUsersInserts;
-      console.log(`[Clean Backup] Step 4: Added ${SYSTEM_USERS.join(", ")} user(s) to backup`);
-    }
-  } catch (error) {
-    console.error("[Clean Backup] Error adding system users:", error);
-  }
+  // Do not produce a nominally successful archive without a usable administrator.
+  // The admin is fresh; only the internal import identity is carried forward.
+  combinedSql += await generateSystemUsersInserts();
+  console.log("[Clean Backup] Step 4: Added fresh default administrator and available internal import identity");
   
   // Write combined backup
   fs.writeFileSync(backupFile, combinedSql, { mode: 0o600 });
@@ -647,22 +642,23 @@ GRANT ALL ON SCHEMA public TO public;
 async function generateSystemUsersInserts(): Promise<string> {
   const client = await pool.connect();
   try {
-    const placeholders = SYSTEM_USERS.map((_, i) => `$${i + 1}`).join(", ");
+    let sql = await cleanDefaultAdministratorInsert();
+    const preservedUsers = SYSTEM_USERS.filter(username => username !== "admin");
+    const placeholders = preservedUsers.map((_, i) => `$${i + 1}`).join(", ");
     const result = await client.query(
       `SELECT id, email, username, password_hash, first_name, last_name, profile_image_url, 
               role, subrole_id, is_locked, locked_at, locked_reason, last_login_at,
               address, city, state, zip, phone, website, notes, created_at, updated_at
        FROM users 
        WHERE username IN (${placeholders})`,
-      SYSTEM_USERS
+      preservedUsers
     );
     
     if (result.rows.length === 0) {
-      console.log("[Clean Backup] No system users found to backup");
-      return "";
+      return sql;
     }
     
-    let sql = "\n\n-- Clean backup: System users (admin, file_import) preserved\n";
+    sql += "\n\n-- Clean backup: internal import identity preserved; source admin excluded\n";
     sql += "-- Insert users first with NULL subrole_id to avoid FK issues during restore\n";
     sql += "-- Then update subrole_id after subroles table is populated\n\n";
     
@@ -1167,7 +1163,7 @@ async function restorePgBackupData(
     }
   }
   
-  if (options.disableForeignKeys) {
+  if (options.disableForeignKeys || options.isCleanBackup) {
     // Read the original SQL file and wrap it with FK disable/enable in a single session
     let originalSql = fs.readFileSync(sqlFile, "utf8");
     
@@ -1245,6 +1241,9 @@ async function restorePgBackupData(
 UPDATE public.system_settings SET value = 'false' WHERE key = 'turnstile_enabled';
 
 `;
+      // Enforce the same bootstrap for older clean archives which carried the
+      // source administrator's password/profile/lock state.
+      postRestoreStatements += await cleanDefaultAdministratorInsert();
     }
     
     // Create a single SQL file that runs the restore
@@ -1260,15 +1259,9 @@ ${postRestoreStatements}`;
     fs.writeFileSync(wrappedScript, wrappedSql);
     console.log(`[Restore] Created wrapped SQL script (${wrappedSql.length} bytes)`);
     
-    // Log a preview of the SQL for debugging
+    // SQL can contain account hashes and other private data. Log structure only.
     const lines = wrappedSql.split('\n');
     console.log(`[Restore] SQL script has ${lines.length} lines`);
-    if (lines.length > 20) {
-      console.log(`[Restore] Last 10 lines of SQL:`);
-      lines.slice(-10).forEach((line, i) => {
-        console.log(`[Restore]   ${lines.length - 10 + i + 1}: ${line.substring(0, 100)}`);
-      });
-    }
     
     let restoreSuccess = true;
     let restoreError = "";
@@ -1281,6 +1274,7 @@ ${postRestoreStatements}`;
         "-d", params.database,
         "-f", wrappedScript,
         "-v", "ON_ERROR_STOP=1",
+        ...(options.isCleanBackup ? ["--single-transaction"] : []),
       ], { PGPASSWORD: params.password });
       
       if (result.stderr) {

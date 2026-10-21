@@ -15,6 +15,12 @@ Clean configuration backups are intended for new, clean installations, not impli
 
 **How to apply:** Keep source data/files/history untouched during backup creation. Exclude project data, logs and stale project cleanup journals from the clean archive. Do not interpret a clean-backup request as permission to erase an occupied destination; ordinary business restores still preserve local audit history.
 
+A clean restore must leave a default administrator with the installation default password, not the source administrator's password, profile or lock state.
+
+**Why:** The user explicitly requires a default admin account and default password during clean restore.
+
+**How to apply:** Apply only to clean/fresh-install restores, including older clean archives. Never reset the source instance or an administrator during an ordinary business restore. Keep the actual password out of memory and logs.
+
 Do not equate an unsuccessful SQL restore with a fully rolled-back database. Keep file restoration gated on database success, and distinguish a successful database restore followed by file failures from a database failure.
 
 **Why:** PostgreSQL archive restores and their optional cleanup are not one cross-resource transaction. SQL failures can leave partial database changes, while later file failures cannot undo a successful database restore.

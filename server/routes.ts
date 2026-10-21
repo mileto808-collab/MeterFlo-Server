@@ -37,6 +37,7 @@ import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, up
 import { z } from "zod";
 import { importedVisitScheduling, mapSqlImportRow, schedulingDto, validateVisitScheduling, visitSchedulingKeys } from "../shared/visitScheduling";
 import bcrypt from "bcryptjs";
+import { BOOTSTRAP_ADMIN_USERNAME, bootstrapAdminHash } from "./bootstrapAdmin";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { pendingProjectFileCleanups, retryProjectFileCleanup, ProjectDeletionCleanupPending } from "./projectDeletion";
@@ -228,10 +229,10 @@ async function validateOperationalHours(
 }
 
 async function initializeAdminUser() {
-  const existingAdmin = await storage.getUserByUsername("admin");
+  const existingAdmin = await storage.getUserByUsername(BOOTSTRAP_ADMIN_USERNAME);
   if (!existingAdmin) {
-    const passwordHash = await bcrypt.hash("pa$$werd1", 10);
-    await storage.createLocalUser("admin", passwordHash, "admin");
+    const passwordHash = await bootstrapAdminHash();
+    await storage.createLocalUser(BOOTSTRAP_ADMIN_USERNAME, passwordHash, "admin");
     console.log("Default admin user created; change the initial password before use.");
   }
 }

@@ -158,8 +158,9 @@ function ScheduleEditor({
                 {backupTypes.map(type => <option key={type} value={type}>{backupTypeLabels[type]}</option>)}
               </select>
               {backupType === "clean" && <p className="text-xs text-muted-foreground">
-                For fresh installations. Includes base configuration and system accounts, not project data, files, logs or audit history.
+                For fresh installations. Includes base configuration and a fresh default admin, not project data, files, logs or audit history.
                 Creating a backup does not delete source data.
+                Change the default admin password before exposing the new server.
               </p>}
             </div>
             <div className="space-y-2">

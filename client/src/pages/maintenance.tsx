@@ -705,7 +705,8 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
                       <ul className="space-y-1 ml-1">
                         <li><strong>Includes:</strong> Full database schema + configuration data</li>
                         <li><strong>Configuration data:</strong> Roles, permissions, statuses, trouble codes, service types</li>
-                        <li><strong>Users:</strong> Admin and file_import accounts only</li>
+                        <li><strong>Users:</strong> Fresh default admin and internal file_import account only</li>
+                        <li>Admin uses the installation default password, not the source password. Change it before exposing the new server</li>
                         <li><strong>Disables:</strong> Cloudflare Turnstile (for easy login on fresh server)</li>
                         <li>Does NOT include projects, work orders, project files, operational logs, audit history, or other users</li>
                         <li>Project-specific codes and pending file-cleanup records are excluded</li>
