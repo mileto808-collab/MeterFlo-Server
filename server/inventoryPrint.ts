@@ -13,9 +13,11 @@ import type { InventoryWorkOrderLabels } from "../shared/inventory-work-order-la
 import { removalActivityIndex, removalActivityDisplay } from "../shared/inventory-removal-display";
 import { inventoryReceiptContexts, inventoryReceiptOperationReference } from "../shared/inventory-receipt-context";
 import { inventoryPalletPrint } from "./inventoryPalletPrint";
+import { inventoryFulfillmentPrint } from "./inventoryFulfillmentPrint";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string, actors: readonly InventoryActorLabel[] = [], timezone = "UTC", workOrderLabels: InventoryWorkOrderLabels = {}) {
+  if (kind === "fulfillment") return inventoryFulfillmentPrint(record, state, project, actors, timezone, workOrderLabels);
   if (kind === "return") return inventoryRemovedEquipmentPrint(record, state, project, actors, timezone, workOrderLabels);
   if (kind === "customer-handoff") return inventoryCustomerHandoffPrint(record, state, project, actors, timezone, workOrderLabels);
   if (kind === "receipt" && record.action === "returnCustomerBatch") {

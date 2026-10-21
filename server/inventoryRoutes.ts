@@ -247,15 +247,19 @@ export function registerInventoryRoutes(app: Express) {
   }));
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
+    if (req.params.kind === "fulfillment" && !c.admin && !c.permissions.includes("workOrders.view"))
+      throw Object.assign(new InventoryError("Work-order view permission required."), { status: 403 });
     const record: any = req.params.kind === "activity"
       ? inventoryActivityGroups(state).find(group => group.receipts.some(receipt => receipt.id === req.params.id))
-      : (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : req.params.kind === "customer-handoff" ? state.customerHandoffs ?? [] : []).find((r: any) => r.id === req.params.id);
+      : (req.params.kind === "fulfillment" ? state.fulfillmentBatches ?? [] : req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : req.params.kind === "customer-handoff" ? state.customerHandoffs ?? [] : []).find((r: any) => r.id === req.params.id);
     if (!record) throw Object.assign(new InventoryError("Document not found."), { status: 404 });
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
-      [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(record => (record.history ?? []).map(event => event.actor))])]]);
+      [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(record => (record.history ?? []).map(event => event.actor)),
+        ...(req.params.kind === "fulfillment" ? [record.createdBy] : [])])]]);
     const handoff = req.params.kind === "customer-handoff" ? record :
       req.params.kind === "receipt" && record.action === "returnCustomerBatch" ? state.customerHandoffs?.find(handoff => handoff.id === record.reference) : undefined;
-    const workOrderLabels = req.params.kind === "activity" ? await inventoryWorkOrderLabels(c.project.databaseName, record.workOrderIds) : req.params.kind === "return"
+    const workOrderLabels = req.params.kind === "fulfillment" ? await inventoryWorkOrderLabels(c.project.databaseName, record.workOrders.map((work: { workOrderId: number }) => work.workOrderId)) :
+      req.params.kind === "activity" ? await inventoryWorkOrderLabels(c.project.databaseName, record.workOrderIds) : req.params.kind === "return"
       ? await inventoryWorkOrderLabels(c.project.databaseName, [record.workOrderId]) :
       handoff ? await inventoryWorkOrderLabels(c.project.databaseName, handoff.lines.map((line: { workOrderId: number }) => line.workOrderId)) :
       req.params.kind === "receipt" ? await inventoryWorkOrderLabels(c.project.databaseName, inventoryReceiptContexts(state).get(record.id)?.workOrderIds ?? []) : {};

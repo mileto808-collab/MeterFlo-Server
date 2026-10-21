@@ -515,7 +515,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   };
   const startResume = (batch: FulfillmentBatch) => update({ batchId: batch.id, mode: "resume",
     step: batch.lines.some(line => line.quantity > line.stagedQuantity) ? "stage" : "vehicle" });
-  const printReceipt = (id: string) => window.open(`/api/projects/${projectId}/inventory/print/receipt/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
+  const printBatchReceipt = (id: string) => window.open(`/api/projects/${projectId}/inventory/print/fulfillment/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
   const setupLocations = () => {
     try {
       window.sessionStorage.setItem(`meterflo:inventory-tab:${user?.id ?? "pending"}:${projectId}`, "locations");
@@ -699,7 +699,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                   <p className="mt-1 text-xs text-muted-foreground">{batch.workOrders.length} work orders · {batch.mode} · {batch.createdAt ? new Date(batch.createdAt).toLocaleString() : ""}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Staged {batch.lines.reduce((sum, line) => sum + line.stagedQuantity, 0)} / {batch.lines.reduce((sum, line) => sum + line.quantity, 0)} · Vehicle {batch.lines.reduce((sum, line) => sum + line.deliveredQuantity, 0)} / {batch.lines.reduce((sum, line) => sum + line.quantity, 0)}</p></div>
                 <div className="flex flex-wrap gap-2">
-                  {receipts.filter(receipt => receipt.action === "fulfillmentMove" && receipt.reference === batch.id).map(receipt => <Button key={receipt.id} type="button" size="sm" variant="outline" onClick={() => printReceipt(receipt.id)}><Printer className="mr-2 h-4 w-4" />Receipt</Button>)}
+                  {receipts.some(receipt => ["fulfillmentMove", "fulfillmentClose"].includes(receipt.action) && receipt.reference === batch.id) &&
+                    <Button type="button" size="sm" variant="outline" onClick={() => printBatchReceipt(batch.id)}><Printer className="mr-2 h-4 w-4" />Print combined receipt</Button>}
                   {batch.status === "active" && <Button type="button" size="sm" onClick={() => startResume(batch)}><RotateCcw className="mr-2 h-4 w-4" />Resume batch</Button>}
                 </div>
               </div>) : <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No saved batches yet.</div>}
@@ -725,8 +726,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                 <p className="mx-auto max-w-lg text-sm text-muted-foreground">{activeBatch.status === "completed"
                   ? "All physical demand was handed to the batch vehicle. The work orders were not reassigned."
                   : "Unfinished quantities were released. Staged-but-undelivered stock remains physically at Staging; this was not a physical return. Delivered stock remains with the vehicle."}</p>
-                <div className="flex flex-wrap justify-center gap-2">{receipts.filter(receipt => receipt.action === "fulfillmentMove" && receipt.reference === activeBatch.id).map(receipt =>
-                  <Button key={receipt.id} type="button" variant="outline" onClick={() => printReceipt(receipt.id)}><Printer className="mr-2 h-4 w-4" />Print movement receipt</Button>)}</div>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button type="button" variant="outline" onClick={() => printBatchReceipt(activeBatch.id)}><Printer className="mr-2 h-4 w-4" />Print combined receipt</Button>
+                </div>
                 <Button type="button" variant="ghost" onClick={() => update({ batchId: "", mode: "resume", step: "orders" })}>Back to saved batches</Button>
               </div> : <>
               <div className="flex flex-wrap items-start justify-between gap-3">
