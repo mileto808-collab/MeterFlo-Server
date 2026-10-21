@@ -184,6 +184,13 @@ export function WorkOrderDetail({
   inventoryEnabled = false,
   onReopened,
 }: WorkOrderDetailProps) {
+  const [claimedAssignmentVersion, setClaimedAssignmentVersion] = useState<number | undefined>(
+    (workOrder as any).assignmentVersion ?? (workOrder as any).assignment_version
+  );
+  const [changeoutWizardSession, setChangeoutWizardSession] = useState(0);
+  useEffect(() => {
+    setClaimedAssignmentVersion((workOrder as any).assignmentVersion ?? (workOrder as any).assignment_version);
+  }, [workOrder.id, (workOrder as any).assignmentVersion, (workOrder as any).assignment_version]);
   const newGpsAccuracy = capturedGpsAccuracyLabel(workOrder.newGps, workOrder.gpsCapture);
   const rawStatus = workOrder.statusCode ?? workOrder.status_code ?? workOrder.status;
   const matchedStatus = workOrderStatuses.find(status => status.code === rawStatus || status.label === rawStatus);
@@ -359,13 +366,23 @@ export function WorkOrderDetail({
     try {
       // Call claim endpoint - this will assign the work order to the current user
       // and remove existing group/user assignments
-      await apiRequest("POST", `/api/projects/${projectId}/work-orders/${workOrder.id}/claim`);
+      const claimResponse = await apiRequest("POST", `/api/projects/${projectId}/work-orders/${workOrder.id}/claim`);
+      let claimedOrder: any = null;
+      try { claimedOrder = await claimResponse.json(); } catch { /* Older claim handlers return an empty response. */ }
+      let version = claimedOrder?.assignmentVersion ?? claimedOrder?.assignment_version;
+      if (!Number.isFinite(version)) {
+        const refreshed = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}`, { credentials: "include" });
+        if (refreshed.ok) {
+          claimedOrder = await refreshed.json();
+          version = claimedOrder?.assignmentVersion ?? claimedOrder?.assignment_version;
+        }
+      }
+      if (Number.isFinite(version)) setClaimedAssignmentVersion(version);
       
       // Open the wizard after successful claim
+      setChangeoutWizardSession(value => value + 1);
       setShowSystemChangeoutWizard(true);
     } catch (error: any) {
-      console.error("Error claiming work order:", error);
-      
       // Check if this is a "already claimed by another user" conflict (409)
       const isAlreadyClaimed = error.message?.toLowerCase().includes("claimed");
       
@@ -3499,6 +3516,7 @@ export function WorkOrderDetail({
 
       {/* System Changeout Wizard */}
       <SystemChangeoutWizard
+          key={`${workOrder.id}-${changeoutWizardSession}`}
         isOpen={showSystemChangeoutWizard}
         onClose={() => setShowSystemChangeoutWizard(false)}
         workOrderId={workOrder.id}
@@ -3514,6 +3532,7 @@ export function WorkOrderDetail({
         trouble={workOrder.trouble}
         notes={workOrder.notes}
         projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
+        assignmentVersion={claimedAssignmentVersion}
         inventoryEnabled={inventoryEnabled}
         troubleCodes={troubleCodes}
         existingOldReading={workOrder.oldSystemReading != null ? String(workOrder.oldSystemReading) : null}
@@ -3570,6 +3589,9 @@ export function WorkOrderDetail({
             photoTypes,
             changeoutScope,
             isReadingOnly: data.isReadingOnly,
+            changeoutSubmissionId: data.changeoutSubmissionId,
+            changeoutAssignmentVersion: data.changeoutAssignmentVersion,
+            inventoryUsage: data.inventoryUsage,
           }));
           
           const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}/system-changeout`, {

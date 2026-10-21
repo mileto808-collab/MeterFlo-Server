@@ -55,6 +55,9 @@ const assert = require("node:assert/strict");
     await send("receive", { orderId: "initial-part-po", lines: [{ itemId: "part", quantity: 1, serials: [] }] });
     await Promise.all(orders.map((work, index) => json("PATCH", `${root}/work-orders/${work.id}`, {
       status: "Completed", newSystemId: `NEW-FIELD-${index}`, newSystemReading: "0", signatureData, signatureName: "Fixture technician" })));
+    await expect.poll(async () => (await json("GET", `${root}/changeout-reconciliation`)).jobs
+      .filter(job => orders.some(work => work.id === job.workOrderId) && job.status === "succeeded").length,
+    { timeout: 30000 }).toBe(orders.length);
     for (const work of orders) {
       assert.equal((await json("GET", `${root}/work-orders/${work.id}`)).status, "Completed");
       const detail = await json("GET", `${root}/work-orders/${work.id}/inventory`);

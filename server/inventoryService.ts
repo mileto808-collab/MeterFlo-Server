@@ -16,6 +16,7 @@ import { actualEquipmentLines } from "../shared/inventory-requirements";
 import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inventory-field-stock";
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
 import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
+import { guardPendingInstallationUse } from "./changeoutService";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -203,7 +204,10 @@ export async function postInventory(projectId: number, command: InventoryCommand
         for (const row of work) setWorkRequirements(result.state, await workRequirements(client, projectId, result.state, row));
       }
     }
-    if (!result.replay) await saveInventory(client, projectId, before, result.state, command.operationId, command.action);
+    if (!result.replay) {
+      await guardPendingInstallationUse(client, projectId, before, result.state);
+      await saveInventory(client, projectId, before, result.state, command.operationId, command.action);
+    }
     await client.query("COMMIT");
     return result;
   } catch (e) {
@@ -217,7 +221,7 @@ export async function postInventory(projectId: number, command: InventoryCommand
     throw e;
   } finally { client.release(); }
 }
-export async function inventoryWorkOrderChange(client: PoolClient, schema: string, prior: any, next: any, usage?: unknown, importedItems?: unknown, ordinaryImport = false) {
+export async function inventoryWorkOrderChange(client: PoolClient, schema: string, prior: any, next: any, usage?: unknown, importedItems?: unknown, ordinaryImport = false, deferred = false) {
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled,wizard_mode,changeout_equipment_type,reading_equipment_type FROM public.projects WHERE database_name=$1", [schema]);
   if (!p?.inventory_enabled) {
     if (!ordinaryImport && importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
@@ -227,6 +231,18 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   const completedStatus = (status: unknown) => String(status).toLowerCase() === "completed" ||
     statuses.some(s => String(s.code).toLowerCase() === String(status).toLowerCase() && String(s.label).toLowerCase() === "completed");
   const completed = completedStatus(next?.status), previouslyCompleted = completedStatus(prior?.status);
+  if (!deferred && previouslyCompleted) {
+    const pending = await client.query(`SELECT 1 FROM public.changeout_completions WHERE project_id=$1 AND work_order_id=$2
+      AND status IN ('pending','failed') LIMIT 1`, [p.id, prior.id]);
+    if (pending.rowCount) {
+      if (String(next?.status).toLowerCase() === "closed") return;
+      if (!next || !completed) throw new InventoryError("Resolve pending completion reconciliation before reopening or deleting this work order.");
+      if (["old_system_id", "new_system_id", "old_module_id", "new_module_id"].some(key => next[key] !== prior[key]))
+        throw new InventoryError("Accepted installation identities cannot change while inventory reconciliation is pending.");
+      if (usage || importedItems) throw new InventoryError("Accepted usage is awaiting background reconciliation. Use warehouse review for inventory corrections.");
+      return; // Metadata edits must not account for the queued installation synchronously.
+    }
+  }
   // Serialize state before checking assignments; callers lock inventory before the work order too.
   let before = await lockInventory(client, p.id), state = before;
   if (!next && prior && state.returns.some(r => r.workOrderId === prior.id))
@@ -272,8 +288,8 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     const actor = auditContext.getStore()?.actorId;
     if (!actor) throw new InventoryError("Authenticated inventory identity required.");
     const u = await storage.getUser(actor);
-    if (!u || u.isLocked || !await storage.hasPermission(u, inventoryPermissions.assign)) throw new InventoryError("Inventory usage permission required.");
-    const admin = await storage.isAdminUser(u);
+    if (!deferred && (!u || u.isLocked || !await storage.hasPermission(u, inventoryPermissions.assign))) throw new InventoryError("Inventory usage permission required.");
+    const admin = deferred || await storage.isAdminUser(u!);
     if (!admin && (next.assigned_user_id && next.assigned_user_id !== actor || !await storage.isUserAssignedToProject(actor, p.id)))
       throw new InventoryError("Inventory work order is not assigned to this user.");
     const existing = state.allocations.find(a => a.workOrderId === next.id);
@@ -318,10 +334,10 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     }
     const actorId = auditContext.getStore()?.actorId;
     if (!actorId) throw new InventoryError("Authenticated inventory identity required to complete inventory work.");
-    const completionUser = await storage.getUser(actorId);
-    if (!completionUser || completionUser.isLocked || !readingVisit && !await storage.hasPermission(completionUser, inventoryPermissions.assign))
+    const completionUser = await storage.getUser(actorId) ?? (deferred ? { id: actorId } as any : null);
+    if (!deferred && (!completionUser || completionUser.isLocked || !readingVisit && !await storage.hasPermission(completionUser, inventoryPermissions.assign)))
       throw new InventoryError("Inventory usage permission required to complete inventory work.");
-    const completionAdmin = await storage.isAdminUser(completionUser);
+    const completionAdmin = deferred || await storage.isAdminUser(completionUser);
     if (!completionAdmin && (next.assigned_user_id && next.assigned_user_id !== completionUser.id || !await storage.isUserAssignedToProject(completionUser.id, p.id)))
       throw new InventoryError("Inventory work order is not assigned to this user.");
     const fieldAllocation = state.allocations.find(a => a.workOrderId === next.id);

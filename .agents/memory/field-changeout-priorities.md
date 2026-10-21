@@ -20,3 +20,15 @@ Captured work-order wizard data must survive browser refreshes and interruptions
 **Why:** The user said reopening a device can trigger a browser refresh, and technicians must not lose already-collected data.
 
 **How to apply:** Provide recoverable wizard captures comparable to Inventory order drafts, without requiring re-entry after those interruptions.
+
+Reassignment to another technician or back to a group ends the old draft's submission authority. Returning the work order to the original technician is a new assignment, not permission to submit the earlier draft.
+
+**Why:** The user explicitly asked that reassignment and return-to-group edge cases be considered.
+
+**How to apply:** Preserve earlier captures read-only until an explicit fresh attempt; do not silently rebase old captures onto a newer assignment.
+
+Confirmed work-order completion clears every previous changeout draft for that order, including earlier technicians and assignment attempts. Preserve accepted evidence and reconciliation history separately.
+
+**Why:** The user explicitly clarified that previous drafts should be released and cleared on completion.
+
+**How to apply:** Clear server copies on confirmed completion and device copies after authoritative confirmation. Never erase captures just because a submission timed out or its result is unknown.

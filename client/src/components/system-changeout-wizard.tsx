@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useGpsCapture } from "@/hooks/use-gps-capture";
+import { decodeDraftCapture, useChangeoutDraft } from "@/hooks/use-changeout-draft";
 import { GpsReview } from "./gps-review";
 import { gpsAccuracyError, reusedOldGpsFix as getReusedOldGpsFix, type GpsFix } from "@shared/gps-capture";
 import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shared/reading-precision";
@@ -136,6 +137,9 @@ interface SystemChangeoutData {
   signatureName: string;
   signatureType: SignatureType;
   isReadingOnly?: boolean;
+  changeoutSubmissionId?: string;
+  changeoutAssignmentVersion?: number;
+  inventoryUsage?: { mode: "changeout" | "reading_only"; used: Allocation[]; dispositions: Disposition[]; capture?: Record<string, unknown> };
 }
 
 interface SystemChangeoutWizardProps {
@@ -154,6 +158,7 @@ interface SystemChangeoutWizardProps {
   trouble?: string | null;
   notes?: string | null;
   projectId: number;
+  assignmentVersion?: number;
   inventoryEnabled?: boolean;
   troubleCodes: Array<{ id: number; ruleKey: string; code: string; label: string }>;
   existingOldReading?: string | null;
@@ -251,6 +256,7 @@ export function SystemChangeoutWizard({
   trouble,
   notes,
   projectId,
+  assignmentVersion,
   inventoryEnabled = false,
   troubleCodes,
   existingOldReading,
@@ -265,6 +271,15 @@ export function SystemChangeoutWizard({
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const [draftAssignmentVersion, setDraftAssignmentVersion] = useState<number | undefined>(assignmentVersion);
+  const assignmentVersionFrozen = useRef(false);
+  useEffect(() => {
+    if (!assignmentVersionFrozen.current) {
+      setDraftAssignmentVersion(assignmentVersion);
+      if (isOpen) assignmentVersionFrozen.current = true;
+    }
+  }, [assignmentVersion, isOpen]);
+  const changeoutDraft = useChangeoutDraft(projectId, workOrderId, draftAssignmentVersion);
   const { hasPermission } = usePermissions();
   const inventoryQueryKey = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
   type WizardInventory = { enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
@@ -294,11 +309,6 @@ export function SystemChangeoutWizard({
   const [defaultsReview, setDefaultsReview] = useState<{
     basis: string; sourceId: string; sourceLabel: string; mode: PlannedStockMode; lines: ActualUseDraft[];
     locationBasis: string; draftBasis: string;
-  } | null>(null);
-  const prepareAttempt = useRef<{
-    fingerprint: string; operationId: string; intent: string; revision: number;
-    requirements: string; reservedLines: string;
-    commandData: { workOrderId: number; revision: number; mode: "changeout" | "reading_only"; used: Allocation[]; dispositions: Disposition[] };
   } | null>(null);
   const [removedMeters, setRemovedMeters] = useState<Record<string, { serial: string; disposition: string; warehouseId: string }>>({});
   const locationSignatureIn = (snapshot: WizardInventory, id: string) => {
@@ -397,7 +407,6 @@ export function SystemChangeoutWizard({
       actualUseBaseline.current = null;
       actualUseLocationBaseline.current.clear();
       actualUseTouched.current = false;
-      prepareAttempt.current = null;
       setActualUse([]);
       setFieldSourceId("");
       setFieldSourceOverridden(false);
@@ -524,6 +533,77 @@ export function SystemChangeoutWizard({
     signatureName: "",
     signatureType: null,
   });
+  const [changeoutSubmissionId, setChangeoutSubmissionId] = useState<string>(() => crypto.randomUUID());
+  const [draftDecision, setDraftDecision] = useState<"checking" | "choose" | "ready">("checking");
+  const [draftReadOnly, setDraftReadOnly] = useState(false);
+  const [freshDraftStarted, setFreshDraftStarted] = useState(false);
+  const [completionConfirmed, setCompletionConfirmed] = useState(false);
+  const [discardingDraft, setDiscardingDraft] = useState(false);
+  const [draftNotice, setDraftNotice] = useState("");
+  const restoreDraft = () => {
+    if (!changeoutDraft.draft) return;
+    try {
+      const restored = decodeDraftCapture(changeoutDraft.draft.capture);
+      const savedData = restored.data as SystemChangeoutData;
+      setData(savedData);
+      setCurrentStep((changeoutDraft.draft.step || restored.step || "canChange") as WizardStep);
+      setSelectedWorkflowMode(restored.selectedWorkflowMode ?? null);
+      setActualUse(restored.actualUse ?? []);
+      setRemovedMeters(restored.removedMeters ?? {});
+      setFieldSourceId(restored.fieldSourceId ?? "");
+      setFieldSourceOverridden(restored.fieldSourceOverridden ?? false);
+      setManualSystemIdInput(restored.manualSystemIdInput ?? "");
+      setHidSystemIdInput(restored.hidSystemIdInput ?? "");
+      setSystemIdInputMode(restored.systemIdInputMode ?? null);
+      setPhotoType(restored.photoType ?? "before");
+      setSessionStartTime(restored.sessionStartTime ? new Date(restored.sessionStartTime) : null);
+      setOldSystemReadingConfirmed(restored.oldSystemReadingConfirmed ?? true);
+      setOldModuleReadingConfirmed(restored.oldModuleReadingConfirmed ?? true);
+      setChangeoutSubmissionId(changeoutDraft.draft.submissionId);
+      setDraftAssignmentVersion(changeoutDraft.draft.assignmentVersion);
+      assignmentVersionFrozen.current = true;
+      setFreshDraftStarted(false);
+      setDraftReadOnly(!changeoutDraft.canResume || !Number.isFinite(changeoutDraft.draft.assignmentVersion));
+      setDraftDecision("ready");
+      setDraftNotice("Draft restored. Nothing was submitted.");
+    } catch {
+      setDraftNotice("This saved draft could not be restored completely. Its backup remains available.");
+      setDraftDecision("ready");
+    }
+  };
+  useEffect(() => {
+    if (changeoutDraft.status === "loading") return;
+    if (changeoutDraft.draft && draftDecision === "checking") setDraftDecision("choose");
+    else if (!changeoutDraft.draft && draftDecision === "checking") setDraftDecision("ready");
+  }, [changeoutDraft.status, changeoutDraft.draft, draftDecision]);
+  useEffect(() => {
+    const normalizedStatus = String(status ?? "").toLowerCase();
+    const terminal = normalizedStatus === "completed" || normalizedStatus === "closed";
+    const assignmentChanged = Number.isFinite(draftAssignmentVersion) && Number.isFinite(assignmentVersion) &&
+      draftAssignmentVersion !== assignmentVersion;
+    const verifiedAssignmentChanged = Number.isFinite(draftAssignmentVersion) &&
+      Number.isFinite(changeoutDraft.currentAssignmentVersion) && draftAssignmentVersion !== changeoutDraft.currentAssignmentVersion;
+    const freshAssignmentVerified = (freshDraftStarted || changeoutDraft.freshGenerationAvailable) && Number.isFinite(draftAssignmentVersion) &&
+      draftAssignmentVersion === changeoutDraft.currentAssignmentVersion;
+    if (terminal || assignmentChanged || verifiedAssignmentChanged || (!changeoutDraft.canResume && !freshAssignmentVerified))
+      setDraftReadOnly(true);
+  }, [changeoutDraft.canResume, changeoutDraft.currentAssignmentVersion, changeoutDraft.draft, changeoutDraft.freshGenerationAvailable, assignmentVersion,
+    draftAssignmentVersion, freshDraftStarted, status]);
+  useEffect(() => {
+    if (!isOpen || draftDecision !== "ready" || draftReadOnly || completionConfirmed) return;
+    if (!assignmentVersionFrozen.current && draftAssignmentVersion !== assignmentVersion) return;
+    const capture = {
+      context: { workOrderId, customerWoId, oldSystemId, oldModuleId },
+      data, selectedWorkflowMode, actualUse, removedMeters, fieldSourceId, fieldSourceOverridden, manualSystemIdInput, hidSystemIdInput,
+      systemIdInputMode, photoType, sessionStartTime: sessionStartTime?.toISOString() ?? null,
+      oldSystemReadingConfirmed, oldModuleReadingConfirmed,
+    };
+    assignmentVersionFrozen.current = true;
+    changeoutDraft.persist(currentStep, capture, changeoutSubmissionId);
+  }, [isOpen, draftDecision, draftReadOnly, currentStep, data, selectedWorkflowMode, actualUse, removedMeters,
+    fieldSourceId, fieldSourceOverridden, manualSystemIdInput, hidSystemIdInput, systemIdInputMode, photoType, sessionStartTime,
+    oldSystemReadingConfirmed, oldModuleReadingConfirmed, changeoutSubmissionId, completionConfirmed,
+    assignmentVersion, draftAssignmentVersion, changeoutDraft.persist, workOrderId, customerWoId, oldSystemId, oldModuleId]);
   const wizardActualUse = inventoryEnabled ? bindWizardEquipmentSerials(actualUse, workInventory?.items ?? [],
     { system: data.newSystemId, module: data.newModuleId }) : actualUse;
   
@@ -631,24 +711,6 @@ export function SystemChangeoutWizard({
     </div>
   ) : null;
 
-  // Reset the step when the dialog opens to ensure it starts at the correct step for the mode
-  useEffect(() => {
-    if (isOpen) {
-      // Set initial step based on wizard mode when dialog opens using generated steps
-      const initialStep = getInitialStep();
-      setCurrentStep(initialStep);
-      if (config.wizardMode === "user_choice") {
-        setSelectedWorkflowMode(null);
-      }
-      
-      // Reset session start time when wizard opens - will be set when user makes canChange choice
-      setSessionStartTime(null);
-      
-      // GPS capture is now started when user confirms they can proceed (in handleCanChangeChoice)
-      // This ensures we don't capture GPS for trouble events
-    }
-  }, [isOpen, workOrderId, config.wizardMode, effectiveGpsMode]);
-
   // Reset photo capture state when user returns to page (handles camera cancel on mobile)
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -725,6 +787,12 @@ export function SystemChangeoutWizard({
     // Reset confirmation state based on whether existing values are present
     setOldSystemReadingConfirmed(!existingOldReading);
     setOldModuleReadingConfirmed(!existingOldModuleReading);
+    setSessionStartTime(null);
+    setManualSystemIdInput("");
+    setHidSystemIdInput("");
+    setSystemIdInputMode(null);
+    setActualUse([]);
+    setRemovedMeters({});
     setData({
       canChange: true,
       troubleCode: null,
@@ -749,8 +817,8 @@ export function SystemChangeoutWizard({
     data.afterPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
   }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps, config.wizardMode, clearCaptureFlags]);
 
-  const handleClose = () => {
-    resetWizard();
+  const handleClose = (clearAfterConfirmedCompletion = false) => {
+    if (clearAfterConfirmedCompletion) resetWizard();
     onClose();
   };
 
@@ -805,7 +873,6 @@ export function SystemChangeoutWizard({
   };
 
   const canProceed = (): boolean => {
-    if (defaultsBusy || defaultsReview) return false;
     switch (currentStep) {
       case "modeSelection":
         // For user_choice mode, require a selection
@@ -827,12 +894,7 @@ export function SystemChangeoutWizard({
       case "beforePhotos":
         return data.beforePhotos.length >= 1;
       case "physicalChange":
-        return !inventoryEnabled || (!workInventoryLoading && !workInventoryError && !!workInventory && hasPermission("inventory.assign") &&
-          !workInventory.requirements?.missing.length &&
-          actualUse.some(line => Number(line.quantity) > 0) &&
-          actualUseLinesAreValid(actualUse, workInventory?.items ?? [], true) &&
-          !actualUse.some(line => Number(line.quantity) > 0 && !accessibleWarehouses(workInventory).some(warehouse => warehouse.id === line.warehouseId)) &&
-          !actualUseConflict);
+        return true;
       case "newSystemId": {
         // Validate based on scope
         const needsNewSystemId = (displayMode === "system" || displayMode === "both");
@@ -841,8 +903,7 @@ export function SystemChangeoutWizard({
         const systemIdValid = !needsNewSystemId || !!data.newSystemId.trim();
         const moduleIdValid = !needsNewModuleId || !!data.newModuleId.trim();
         
-        return systemIdValid && moduleIdValid && (!inventoryEnabled ||
-          actualUseLinesAreValid(wizardActualUse, workInventory?.items ?? []));
+        return systemIdValid && moduleIdValid;
       }
       case "newReading": {
         // Validate based on scope
@@ -866,19 +927,7 @@ export function SystemChangeoutWizard({
         // Just need a name - signature drawing is optional
         return !!data.signatureName.trim();
       case "inventoryReview": {
-        if (!hasPermission("inventory.assign")) return false;
-        const quantitiesValid = actualUseLinesAreValid(wizardActualUse, workInventory?.items ?? []) && !actualUseConflict;
-        const assets = [
-          ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ key: "system" as const }] : []),
-          ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ key: "module" as const }] : []),
-        ];
-        const dispositionsValid = assets.every(({ key }) => {
-          const entry = removedMeters[key];
-          const rule = workInventory && removalChoices(workInventory, key, "field").find(r => r.id === entry?.disposition);
-          return !!entry?.serial.trim() && !!rule &&
-            (rule.outcome !== "returned" || !!entry.warehouseId);
-        });
-        return quantitiesValid && dispositionsValid;
+        return true;
       }
       case "confirm": {
         // Final validation: check all required fields based on path, scope, and mode
@@ -930,7 +979,6 @@ export function SystemChangeoutWizard({
           const signatureValid = !config.showSignatureStep || (!!data.signatureName.trim() && !!data.signatureType);
           
           return (
-            (!inventoryEnabled || (actualUseLinesAreValid(wizardActualUse, workInventory?.items ?? []) && !actualUseConflict)) &&
             oldSystemReadingValid &&
             newSystemIdValid &&
             newSystemReadingValid &&
@@ -1096,6 +1144,7 @@ export function SystemChangeoutWizard({
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting || draftReadOnly) return;
     if (!canProceed()) {
       toast({
         title: "Incomplete Data",
@@ -1110,82 +1159,45 @@ export function SystemChangeoutWizard({
     // Optional background capture must never change the submission underneath us.
     gpsCapture.stop();
     try {
-      if (inventoryEnabled && data.canChange && !isReadingOnlyMode) {
-        if (!hasPermission("inventory.assign")) throw new Error("Inventory assignment permission is required to record actual stock use.");
-        const latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
-          .then(response => response.json() as Promise<WizardInventory>);
-        const latestBasis = inventoryWizardBasis(latest);
-        if (!actualUseLinesAreValid(bindWizardEquipmentSerials(actualUse, latest.items ?? [],
-          { system: data.newSystemId, module: data.newModuleId }), latest.items ?? []))
-          throw new Error("Check used quantities and serials. Reserved lines can only use their reserved quantity and serials.");
-        if (actualUse.some(line => Number(line.quantity) > 0 && !accessibleWarehouses(latest).some(warehouse => warehouse.id === line.warehouseId))) {
-          queryClient.setQueryData(inventoryQueryKey, latest);
-          setBasisAccepted(false);
-          throw new Error("A selected stock location is missing, inactive, or no longer accessible. Your entries are retained; choose an accessible location.");
-        }
-        if (currentLocationIds.some(id => actualUseLocationBaseline.current.has(id) &&
-          actualUseLocationBaseline.current.get(id) !== locationSignatureIn(latest, id))) {
-          queryClient.setQueryData(inventoryQueryKey, latest);
-          setBasisAccepted(false);
-          throw new Error("A selected location type or access policy changed. Your entries are retained; recheck the current location details.");
-        }
-        const mode = isReadingOnlyMode || !data.canChange ? "reading_only" : "changeout";
-        const used: Allocation[] = mode === "reading_only" || !data.canChange ? [] : bindWizardEquipmentSerials(actualUse, latest.items,
-          { system: data.newSystemId, module: data.newModuleId }).flatMap(line => {
-          const quantity = Number(line.quantity);
-          if (quantity <= 0) return [];
-          const item = latest.items.find(value => value.id === line.itemId);
-          const serials = item?.tracking === "serialized" ? line.serials.split(/[\n,;]/).map(value => value.trim()).filter(Boolean) : [];
-          return [{ itemId: line.itemId, warehouseId: line.warehouseId, quantity, serials }];
-        });
-        const removedAssets = [
-          ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ equipment: "system" as const, key: "system", oldSerial: oldSystemId }] : []),
-          ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ equipment: "module" as const, key: "module", oldSerial: oldModuleId }] : []),
-        ];
-        const dispositions: Disposition[] = mode === "reading_only" || !data.canChange ? [] : removedAssets.map(asset => {
-          const entry = removedMeters[asset.key];
-          const rule = removalChoices(latest, asset.equipment, "field").find(r => r.id === entry?.disposition);
-          if (!entry?.disposition || !rule) throw new Error(`Choose a currently approved disposition for the removed ${asset.key} meter.`);
-          const serial = entry.serial.trim();
-          if (!serial) throw new Error(`Scan the removed ${asset.key} meter serial.`);
-          if (rule.outcome === "returned" && !entry.warehouseId) throw new Error("Choose a warehouse for returned equipment.");
-          return { equipment: asset.equipment, serial, disposition: rule.outcome as Disposition["disposition"], warehouseId: rule.outcome === "returned" ? entry.warehouseId : null,
-            ruleId: rule.id, ruleRevision: rule.revision, policyRevision: removalConfig(latest).policy.revision };
-        });
-        const intent = JSON.stringify({ workOrderId, mode, used, dispositions });
-        const priorAttempt = prepareAttempt.current;
-        const retryAfterPrepared = !!priorAttempt && priorAttempt.intent === intent &&
-          (latest.allocation?.revision ?? 0) === priorAttempt.revision + 1 &&
-          JSON.stringify(latest.requirements ?? null) === priorAttempt.requirements &&
-          JSON.stringify(latest.allocation?.lines ?? []) === priorAttempt.reservedLines;
-        if (actualUseBaseline.current !== null && latestBasis !== actualUseBaseline.current && !retryAfterPrepared) {
-          queryClient.setQueryData(inventoryQueryKey, latest);
-          setBasisAccepted(false);
-          throw new Error("Work-order inventory or planned requirements changed. Your entries are retained; review the updated basis before submitting.");
-        }
-        let commandData: NonNullable<typeof prepareAttempt.current>["commandData"];
-        if (retryAfterPrepared && priorAttempt) {
-          commandData = priorAttempt.commandData;
-        } else {
-          commandData = { workOrderId, revision: latest.allocation?.revision ?? 0, mode, used, dispositions };
-          const fingerprint = JSON.stringify(commandData);
-          if (prepareAttempt.current?.fingerprint !== fingerprint) {
-            prepareAttempt.current = {
-              fingerprint, operationId: crypto.randomUUID(), intent, revision: commandData.revision,
-              requirements: JSON.stringify(latest.requirements ?? null),
-              reservedLines: JSON.stringify(latest.allocation?.lines ?? []), commandData,
-            };
-          }
-        }
-        const prepared = await apiRequest("POST", `/api/projects/${projectId}/inventory/commands`, {
-          operationId: prepareAttempt.current!.operationId, action: "prepareUse", data: commandData,
-        }).then(response => response.json());
-        const preparedAllocation = prepared.state?.allocations?.find((value: WorkAllocation) => value.workOrderId === workOrderId);
-        // Acknowledge only our own successful preparation, not new settings or
-        // requirements that may have changed in another session meanwhile.
-        if (preparedAllocation) actualUseBaseline.current = inventoryWizardBasis({ ...latest, allocation: preparedAllocation });
-        await queryClient.invalidateQueries({ queryKey: inventoryQueryKey });
+      const mode: "changeout" | "reading_only" = isReadingOnlyMode || !data.canChange ? "reading_only" : "changeout";
+      const boundUsage = mode === "reading_only" ? [] : bindWizardEquipmentSerials(actualUse,
+        workInventory?.items ?? [], { system: data.newSystemId, module: data.newModuleId });
+      const used: Allocation[] = boundUsage.flatMap(line => {
+        const quantity = Number(line.quantity);
+        if (!Number.isFinite(quantity) || quantity <= 0 || !line.itemId) return [];
+        return [{ itemId: line.itemId, warehouseId: line.warehouseId || "", quantity,
+          serials: line.serials.split(/[\n,;]/).map(value => value.trim()).filter(Boolean) }];
+      });
+      const removedAssets = [
+        ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ equipment: "system" as const, key: "system" }] : []),
+        ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ equipment: "module" as const, key: "module" }] : []),
+      ];
+      const dispositions: Disposition[] = removedAssets.flatMap(asset => {
+        const entry = removedMeters[asset.key];
+        const rule = workInventory && removalChoices(workInventory, asset.equipment, "field").find(value => value.id === entry?.disposition);
+        if (!entry || !rule) return [];
+        return [{ equipment: asset.equipment, serial: entry.serial.trim(), disposition: rule.outcome as Disposition["disposition"],
+          warehouseId: rule.outcome === "returned" ? entry.warehouseId || null : null,
+          ruleId: rule.id, ruleRevision: rule.revision, policyRevision: removalConfig(workInventory!).policy.revision }];
+      });
+      const inventoryUsage: NonNullable<SystemChangeoutData["inventoryUsage"]> = {
+        mode, used, dispositions, capture: { actualUse, removedMeters, fieldSourceId },
+      };
+      const ownershipResponse = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}/changeout-draft`, { credentials: "include" });
+      if (!ownershipResponse.ok) throw new Error("Unable to verify current assignment. Captured data is retained; reconnect and retry.");
+      const ownership = await ownershipResponse.json();
+      const freshAssignmentIsCurrent = (freshDraftStarted || changeoutDraft.freshGenerationAvailable) && Number.isFinite(ownership.assignmentVersion) &&
+        ownership.assignmentVersion === draftAssignmentVersion;
+      if (ownership.completed) {
+        await changeoutDraft.confirmComplete();
+        throw new Error("This work order has already been completed. Your saved draft was cleared after server confirmation.");
       }
+      if ((ownership.canResume === false && !freshAssignmentIsCurrent) ||
+        (Number.isFinite(ownership.assignmentVersion) && ownership.assignmentVersion !== draftAssignmentVersion)) {
+        setDraftReadOnly(true);
+        throw new Error(ownership.reason || "Assignment changed. Captured data is retained for read-only recovery.");
+      }
+      if (!Number.isFinite(draftAssignmentVersion)) throw new Error("The original assignment version is unavailable. This draft is read-only; start a fresh draft for the current assignment.");
       // For reading-only mode, set new IDs equal to old IDs (no equipment change)
       // Also copy old types to new types since no equipment is being changed
       let submitData = { ...data, isReadingOnly: isReadingOnlyMode };
@@ -1197,22 +1209,10 @@ export function SystemChangeoutWizard({
           newSystemType: oldSystemType || "", newModuleType: oldModuleType || "",
         };
       }
-      
+      submitData = { ...submitData, changeoutSubmissionId, changeoutAssignmentVersion: draftAssignmentVersion, inventoryUsage };
       await onComplete(submitData);
-      prepareAttempt.current = null;
-      if (inventoryEnabled && data.canChange && !isReadingOnlyMode) {
-        try {
-          const completed = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
-            .then(response => response.json() as Promise<WizardInventory>);
-          const outstanding = completed.stockDiscrepancies?.filter(value => value.status === "open") ?? [];
-          if (outstanding.length) toast({ title: "Work order completed — stock review needed",
-            description: `${outstanding.length} inventory ${outstanding.length === 1 ? "discrepancy was" : "discrepancies were"} recorded for warehouse review. Your actual usage was saved.` });
-        } catch {
-          // Completion already committed. A follow-up display failure must never
-          // turn it into a failed submission or prompt a second physical usage.
-          toast({ title: "Work order completed", description: "Inventory review status could not refresh. Check Inventory → Stock discrepancies for any outstanding review." });
-        }
-      }
+      setCompletionConfirmed(true);
+      await changeoutDraft.confirmComplete();
       
       // Save time tracking data on successful submission
       if (sessionStartTime && projectId && workOrderId) {
@@ -1222,9 +1222,8 @@ export function SystemChangeoutWizard({
             startTime: sessionStartTime.toISOString(),
             endTime: endTime.toISOString(),
           });
-        } catch (timeTrackingError) {
-          // Log but don't fail the overall submission if time tracking fails
-          console.error("Failed to save time tracking:", timeTrackingError);
+        } catch {
+          // Time tracking is ancillary; the confirmed completion remains authoritative.
         }
       }
       
@@ -1233,10 +1232,10 @@ export function SystemChangeoutWizard({
         description: isReadingOnlyMode
           ? "Reading captured successfully!"
           : data.canChange 
-            ? "System changeout completed successfully!" 
+            ? "Changeout completed. Inventory reconciliation is pending."
             : "Trouble report submitted successfully!",
       });
-      handleClose();
+      handleClose(true);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -1255,7 +1254,6 @@ export function SystemChangeoutWizard({
   const startScanner = useCallback(async (mode: "barcode" | "qr", captureTarget: "system" | "module") => {
     // Prevent concurrent scanner operations
     if (scannerBusyRef.current) {
-      console.log("Scanner busy, ignoring start request");
       return;
     }
     scannerBusyRef.current = true;
@@ -1334,7 +1332,6 @@ export function SystemChangeoutWizard({
         }
       );
     } catch (error: any) {
-      console.error("Scanner error:", error);
       setIsScanning(false);
       scannerBusyRef.current = false;
       toast({
@@ -2997,6 +2994,84 @@ export function SystemChangeoutWizard({
           </DialogTitle>
         </DialogHeader>
 
+        {draftDecision === "choose" ? (
+          <div className="space-y-4 rounded-lg border border-teal-900/15 bg-teal-50/60 p-4 dark:bg-teal-950/20" data-testid="changeout-draft-resume-prompt">
+            <div>
+              <p className="font-semibold">A saved field draft is available</p>
+              <p className="mt-1 text-sm text-muted-foreground">Saved {changeoutDraft.draft ? new Date(changeoutDraft.draft.updatedAt).toLocaleString() : ""}. Resuming restores your entries only; it will not submit the work order.</p>
+              {!changeoutDraft.canResume && <p className="mt-2 text-sm font-medium text-amber-800">{changeoutDraft.reason || "Assignment changed. The captured draft is read-only."}</p>}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => {
+                if (!window.confirm("Discard this saved changeout draft? This does not release or change the work-order claim.")) return;
+                setDiscardingDraft(true);
+                void changeoutDraft.discard().then(() => {
+                  setDraftAssignmentVersion(assignmentVersion);
+                  assignmentVersionFrozen.current = true;
+                  setFreshDraftStarted(true);
+                  setDraftDecision("ready"); setChangeoutSubmissionId(crypto.randomUUID());
+                }).catch(error => setDraftNotice(error instanceof Error ? error.message : "Draft discard failed. Backup retained."))
+                  .finally(() => setDiscardingDraft(false));
+              }} disabled={discardingDraft} data-testid="button-discard-changeout-draft">
+                {discardingDraft ? "Discarding…" : "Discard draft"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => {
+                resetWizard();
+                setCompletionConfirmed(false);
+                setDraftAssignmentVersion(assignmentVersion);
+                assignmentVersionFrozen.current = true;
+                setChangeoutSubmissionId(crypto.randomUUID());
+                setFreshDraftStarted(true);
+                setDraftReadOnly(false);
+                setDraftDecision("ready");
+                setDraftNotice("Started a fresh draft. The older backup remains preserved.");
+              }} data-testid="button-start-fresh-changeout">Start fresh</Button>
+              <Button type="button" onClick={restoreDraft} data-testid="button-restore-changeout-draft">
+                {changeoutDraft.canResume ? "Resume draft" : "Review read-only"}
+              </Button>
+            </div>
+            {draftNotice && <p role="status" className="text-sm text-amber-800">{draftNotice}</p>}
+          </div>
+        ) : draftReadOnly ? (
+          <div className="space-y-3" data-testid="changeout-draft-readonly">
+            <div className="rounded-md border border-amber-600/30 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="font-semibold">Captured data is read-only</p>
+              <p>{changeoutDraft.reason || "This draft belongs to a previous assignment or the work order is no longer eligible."} Submission is disabled. The capture remains backed up.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-md border bg-card p-3 text-sm">
+              <span className="text-muted-foreground">Work order</span><span className="font-medium">{customerWoId}</span>
+              <span className="text-muted-foreground">Workflow</span><span className="font-medium">{isReadingOnlyMode ? "Reading only" : "Changeout"}</span>
+              {(displayMode === "system" || displayMode === "both") && <><span className="text-muted-foreground">System reading</span><span>{data.oldSystemReading} → {data.newSystemReading}</span><span className="text-muted-foreground">System ID</span><span>{data.newSystemId || "Not captured"}</span></>}
+              {(displayMode === "module" || displayMode === "both") && <><span className="text-muted-foreground">Module reading</span><span>{data.oldModuleReading} → {data.newModuleReading}</span><span className="text-muted-foreground">Module ID</span><span>{data.newModuleId || "Not captured"}</span></>}
+              <span className="text-muted-foreground">GPS</span><span>{data.gpsCoordinates || "Not captured"}{data.gpsCapture ? ` · ${data.gpsCapture.source}` : ""}</span>
+              <span className="text-muted-foreground">Notes</span><span className="whitespace-pre-wrap">{data.completionNotes || data.troubleNote || "—"}</span>
+              <span className="text-muted-foreground">Signature</span><span>{data.signatureName || "Not captured"}</span>
+            </div>
+            {data.signatureData && <img src={data.signatureData} alt="Saved signature" className="max-h-20 rounded border bg-white p-1" data-testid="image-recovered-signature" />}
+            <div className="flex flex-wrap gap-2">{[...data.troublePhotos, ...data.beforePhotos, ...data.afterPhotos].map((photo, index) =>
+              <img key={`${photo.type}-${index}`} src={photo.preview} alt={`${photo.type} photo ${index + 1}`} className="h-16 w-16 rounded object-cover" />)}</div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => {
+                if (!window.confirm("Discard this captured draft? This does not release the work-order claim.")) return;
+                setDiscardingDraft(true);
+                void changeoutDraft.discard().then(() => { setDraftReadOnly(false); setDraftDecision("ready"); })
+                  .catch(error => setDraftNotice(error instanceof Error ? error.message : "Draft discard failed. Backup retained."))
+                  .finally(() => setDiscardingDraft(false));
+              }} disabled={discardingDraft} data-testid="button-discard-readonly-draft">Discard</Button>
+              <Button type="button" onClick={() => handleClose()} data-testid="button-close-readonly-draft">Close</Button>
+            </div>
+          </div>
+        ) : (
+        <>
+        {draftDecision === "checking" && <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground" data-testid="changeout-draft-checking">Checking for a saved draft…</div>}
+        {draftDecision === "ready" && <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-teal-900/15 bg-teal-50/50 px-3 py-2 text-xs dark:bg-teal-950/20" data-testid="changeout-draft-status">
+          <span>{changeoutDraft.status === "syncing" ? "Saving server backup…" : changeoutDraft.status === "offline" ? "Device backup saved · server unavailable" : changeoutDraft.status === "conflict" ? "Server draft changed elsewhere · your device copy is preserved" : "Device backup saved"}</span>
+          {draftNotice && <span role="status">{draftNotice}</span>}
+        </div>}
+        {changeoutDraft.conflict && <div className="flex items-center justify-between gap-2 rounded-md border border-amber-600/30 bg-amber-50 p-2 text-xs text-amber-950" role="alert" data-testid="changeout-draft-conflict">
+          <span>Another browser has a newer saved revision. Your entries are still on this device.</span>
+          <Button size="sm" variant="outline" onClick={changeoutDraft.resolveConflictUseLocal} data-testid="button-keep-local-draft">Keep my entries</Button>
+        </div>}
         {renderStepIndicator()}
 
         <div className="min-h-[300px]">
@@ -3030,7 +3105,7 @@ export function SystemChangeoutWizard({
             <Button
               type="button"
               variant="outline"
-              onClick={handleClose}
+              onClick={() => handleClose()}
               disabled={isSubmitting}
               data-testid="button-wizard-cancel"
             >
@@ -3069,6 +3144,8 @@ export function SystemChangeoutWizard({
             </Button>
           ) : null}
         </div>
+        </>
+        )}
       </DialogContent>
     </Dialog>
 

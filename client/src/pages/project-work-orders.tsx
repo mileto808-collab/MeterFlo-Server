@@ -88,6 +88,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import SignaturePad, { SignaturePadRef } from "@/components/signature-pad";
 import { WorkOrderDetail } from "@/components/work-order-detail";
+import { ChangeoutDraftRecovery } from "@/components/changeout-draft-recovery";
 import { WorkOrderHistory } from "@/components/work-orders/work-order-history";
 import { ScannerInput } from "@/components/scanner-input";
 import { GPSCapture } from "@/components/gps-capture";
@@ -145,6 +146,7 @@ export default function ProjectWorkOrders() {
   
   // Track editing work order ID in a ref for SSE callback (avoids stale closure)
   const editingWorkOrderIdRef = useRef<number | null>(null);
+  const editingWorkOrderRef = useRef<ProjectWorkOrder | null>(null);
   
   // Helper function to recursively convert snake_case keys to camelCase
   const snakeToCamelCase = (data: any): any => {
@@ -176,10 +178,19 @@ export default function ProjectWorkOrders() {
           const rawWorkOrder = await response.json();
           // Transform snake_case API response to camelCase for component compatibility
           const updatedWorkOrder = snakeToCamelCase(rawWorkOrder) as ProjectWorkOrder;
+          const current = editingWorkOrderRef.current;
+          if (!current || current.id !== workOrderId) return;
+          const currentAssignmentVersion = Number((current as any).assignmentVersion ?? (current as any).assignment_version);
+          const nextAssignmentVersion = Number((updatedWorkOrder as any).assignmentVersion ?? (updatedWorkOrder as any).assignment_version);
+          const assignmentChanged = Number.isFinite(nextAssignmentVersion) && nextAssignmentVersion !== currentAssignmentVersion;
+          const currentStatus = String((current as any).statusCode ?? (current as any).status_code ?? current.status ?? "").toLowerCase();
+          const nextStatus = String((updatedWorkOrder as any).statusCode ?? (updatedWorkOrder as any).status_code ?? updatedWorkOrder.status ?? "").toLowerCase();
+          const statusChanged = currentStatus !== nextStatus;
+          const terminalStatus = nextStatus === "completed" || nextStatus === "closed";
+          // Routine same-assignment updates must not replace active editor state.
+          // Assignment changes and terminal status updates are safety boundaries.
+          if (!assignmentChanged && !(statusChanged && terminalStatus)) return;
           setEditingWorkOrder(updatedWorkOrder);
-          // Note: We don't increment version here - the existing useEffect will reset the form
-          // with the new editingWorkOrder data. Incrementing version causes a remount which
-          // breaks the form's internal field registrations and prevents submission.
         }
       } catch (error) {
         console.error("Failed to refresh work order from SSE event:", error);
@@ -205,7 +216,14 @@ export default function ProjectWorkOrders() {
   // Keep ref in sync with editingWorkOrder state for SSE callback
   useEffect(() => {
     editingWorkOrderIdRef.current = editingWorkOrder?.id ?? null;
+    editingWorkOrderRef.current = editingWorkOrder;
   }, [editingWorkOrder]);
+  useEffect(() => {
+    if (projectEvents.status !== "live" || !projectId) return;
+    window.dispatchEvent(new CustomEvent("meterflo:work-order-event", {
+      detail: { type: "workorder_updated", projectId, workOrderId: editingWorkOrder?.id },
+    }));
+  }, [projectEvents.status, projectId, editingWorkOrder?.id]);
   const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
   const accessDenied = accessDeniedForProject === projectId;
   const [searchQuery, setSearchQuery] = useState("");
@@ -1065,6 +1083,9 @@ export default function ProjectWorkOrders() {
         ...normalizedData,
         signatureData: finalSignatureData,
         signatureName: finalSignatureName || null,
+        changeoutSubmissionId: (data as any).changeoutSubmissionId,
+        changeoutAssignmentVersion: (data as any).changeoutAssignmentVersion,
+        inventoryUsage: (data as any).inventoryUsage,
       });
     },
     onSuccess: async (response) => {
@@ -2711,7 +2732,7 @@ export default function ProjectWorkOrders() {
             ]);
             toast({
               title: "Success",
-              description: "System changeout completed successfully!",
+              description: "Changeout completed. Inventory reconciliation is pending.",
             });
             closeDetailView();
           }}
@@ -3806,6 +3827,16 @@ export default function ProjectWorkOrders() {
 
   return (
     <div className="p-4 flex flex-col gap-2 h-[calc(100vh-72px)] overflow-hidden">
+      <ChangeoutDraftRecovery
+        projectId={Number(projectId)}
+        onResume={(workOrderId) => {
+          const target = workOrders.find(order => order.id === workOrderId);
+          if (!target) return;
+          setAutoLaunchChangeoutScope("system");
+          setAutoLaunchSystemChangeout(true);
+          setEditingWorkOrder(target);
+        }}
+      />
       {stats && viewMode !== "calendar" && showStats && (
         <>
           {/* Mobile toggle for stats */}

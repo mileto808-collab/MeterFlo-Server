@@ -1458,7 +1458,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           onVerifyVendorKit={() => { setVendorKitOpen(true); }} />
       </TabsContent>
       <TabsContent value="stock-discrepancies" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
-        <InventoryStockDiscrepancies state={state} canResolve={can("inventory.resolveExceptions")} busy={command.isPending}
+        <InventoryStockDiscrepancies projectId={projectId!} state={state} canResolve={can("inventory.resolveExceptions")} busy={command.isPending}
           timezone={timezone} projectName={data.projectName} actors={data.actors ?? []}
           workOrderLabels={data.workOrderLabels ?? {}} workOrderIdentifiers={data.workOrderIdentifiers}
           onNavigate={setInventoryTab}

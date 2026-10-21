@@ -34,6 +34,9 @@ import { initializeRouting } from "./routing/configuration";
 import { initializeVisitScheduling } from "./visitScheduling";
 import { initializeAccessLocks } from "./accessLocks";
 import { initializeGpsSchema } from "./gpsSchema";
+import { initializeChangeoutSchema } from "./changeoutSchema";
+import { startChangeoutWorker } from "./changeoutWorker";
+import { startChangeoutEvents } from "./eventEmitter";
 import { initializeBackupSchema } from "./backups/schema";
 import { startBackupWorker } from "./backups/service";
 import { initializeFileTransfers } from "./file-transfers/schema";
@@ -114,6 +117,7 @@ app.use(requestLogging(log));
   await initializeRouting();
   await initializeVisitScheduling();
   await initializeGpsSchema(pool);
+  await initializeChangeoutSchema(pool);
   await initializeWorkOrderLifecycle(pool);
   await initializeBackupSchema(pool);
   await initializeFileTransfers(pool);
@@ -128,6 +132,8 @@ app.use(requestLogging(log));
   await initializeInventory(pool);
   await assertAttachmentLayoutReady();
   await registerRoutes(httpServer, app);
+  startChangeoutEvents();
+  startChangeoutWorker();
   await registerCustomerExtensions(app, {auth:isAuthenticated, storage});
 
   // Missing API routes must not fall through to the web application's HTML.

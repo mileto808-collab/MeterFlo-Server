@@ -16,18 +16,21 @@ import { fieldStockSettingsSchema } from "../shared/inventory-field-stock";
 import { removalRuleSchema, removalPolicySchema } from "../shared/inventory-removal-policy";
 import { dispositionSchema } from "../shared/inventory";
 import { stockDiscrepancySchema } from "../shared/inventory-stock-discrepancies";
+import { exportChangeouts, restoreChangeouts, validateChangeouts, type ChangeoutBackup } from "./changeoutBackup";
 
-export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
+export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean; changeouts?: ChangeoutBackup };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled FROM public.projects WHERE database_name=$1", [schema]);
   if (!p) return;
   const { rows: [r] } = await client.query("SELECT project_id FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [p.id]);
-  if (!r) return;
-  const state = storedCategoryState(await readRelationalInventory(client, p.id));
+  const changeouts = await exportChangeouts(client, p.id);
+  if (!r && !changeouts.completions.length && !changeouts.drafts.length) return;
+  const state = r ? storedCategoryState(await readRelationalInventory(client, p.id)) : emptyInventory();
   const { rows } = await client.query("SELECT operation_id,action,actor_id,occurred_at,changes FROM public.inventory_movements WHERE project_id=$1 ORDER BY id", [p.id]);
-  return { state, movements: rows, enabled: !!p.inventory_enabled };
+  return { state, movements: rows, enabled: !!p.inventory_enabled, changeouts };
 }
 export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: number[]) {
+  validateChangeouts(backup.changeouts, new Set(workOrderIds));
   const discrepancies = z.array(stockDiscrepancySchema).parse(backup.state.stockDiscrepancies ?? []);
   const state = backup.state;
   if (new Set(discrepancies.map(value => value.id)).size !== discrepancies.length)
@@ -190,4 +193,5 @@ export async function restoreInventory(client: PoolClient, schema: string, backu
   for (const m of backup.movements) await client.query("INSERT INTO public.inventory_movements(project_id,operation_id,action,actor_id,occurred_at,changes) VALUES($1,$2,$3,$4,$5,$6)",
     [p.id, m.operation_id, m.action, m.actor_id, m.occurred_at, JSON.stringify(m.changes)]);
   await client.query("UPDATE public.projects SET inventory_enabled=$2 WHERE id=$1", [p.id, backup.enabled]);
+  await restoreChangeouts(client, p.id, schema, backup.changeouts);
 }

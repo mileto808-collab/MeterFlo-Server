@@ -87,6 +87,8 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
     eventSource.onopen = () => {
       if (eventSourceRef.current !== eventSource) return;
       setStatus("live");
+      // Reconnection is a state resync boundary, not proof that no events were missed.
+      invalidateProjectQueries({ type: "workorder_updated", projectId, timestamp: new Date().toISOString() });
       console.log(`SSE connected for project ${projectId}`);
     };
 
@@ -94,6 +96,7 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
       if (eventSourceRef.current !== eventSource) return;
       try {
         const data: ProjectEvent = JSON.parse(event.data);
+        window.dispatchEvent(new CustomEvent("meterflo:work-order-event", { detail: data }));
         invalidateProjectQueries(data);
       } catch (error) {
         console.error("Failed to parse SSE event:", error);
@@ -121,8 +124,14 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
   useEffect(() => {
     setStatus("connecting");
     connect();
+    const resume = () => {
+      if (document.visibilityState === "visible" && projectId)
+        invalidateProjectQueries({ type: "workorder_updated", projectId, timestamp: new Date().toISOString() });
+    };
+    document.addEventListener("visibilitychange", resume);
 
     return () => {
+      document.removeEventListener("visibilitychange", resume);
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;

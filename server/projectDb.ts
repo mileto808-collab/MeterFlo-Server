@@ -9,9 +9,11 @@ import { enqueueCustomerDelivery } from "./customerApiService";
 import { initializeExactReadings } from "./exactReadingMigration";
 import { installProjectAudit } from "./auditMigration";
 import { auditedOperation, insertAuditEvent } from "./auditService";
-import { auditingEnabled } from "./auditContext";
+import { auditingEnabled, auditContext } from "./auditContext";
 import { exactReadingDto, exactReadingFields, capturedReadingText, readingParameter, withExactReadings } from "../shared/exact-readings";
 import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventoryService";
+import { acceptCompletion, assertClaimAllowed, canonicalStatus, ChangeoutError, submissionReplay } from "./changeoutService";
+import { installChangeoutProject } from "./changeoutSchema";
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { installProjectSubStatuses, listSubStatuses, restoreSubStatusDefinitions } from "./workOrderSubStatuses";
 import { migrateProjectTroubleCodeReferences, exportTroubleCodes, restoreTroubleCodes } from "./projectTroubleCodes";
@@ -116,6 +118,7 @@ export const projectWorkOrders = pgTable("work_orders", {
   signatureName: varchar("signature_name", { length: 100 }),
   assignedUserId: varchar("assigned_user_id", { length: 50 }),
   assignedGroupId: varchar("assigned_group_id", { length: 100 }),
+  assignmentVersion: integer("assignment_version").notNull().default(0),
   completedBy: varchar("completed_by", { length: 50 }),
   scheduledBy: varchar("scheduled_by", { length: 50 }),
 });
@@ -234,6 +237,7 @@ export async function createProjectSchema(projectName: string, projectId: number
     await installVisitScheduling(client,schemaName);
     await installGpsColumns(client,schemaName);
     await installWorkOrderLifecycle(client,schemaName);
+    await installChangeoutProject(client, schemaName);
     if (auditingEnabled) {
       await client.query(`INSERT INTO meterflo_audit.project_scopes(schema_name,project_id,project_label) VALUES($1,$2,$3)
         ON CONFLICT(schema_name) DO UPDATE SET project_id=EXCLUDED.project_id,project_label=EXCLUDED.project_label`,[schemaName,projectId,projectName]);
@@ -1590,8 +1594,19 @@ export class ProjectWorkOrderStorage {
 
       await client.query("BEGIN");
       try {
-        await lockInventoryForSchema(client, this.schemaName);
+        const completing = !ordinaryImport && await canonicalStatus(client, updates.status) === "completed";
+        if (!completing) await lockInventoryForSchema(client, this.schemaName);
         const { rows: [prior] } = await client.query(`SELECT * FROM "${this.schemaName}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
+        const { rows: [project] } = await client.query("SELECT id,inventory_enabled FROM public.projects WHERE database_name=$1", [this.schemaName]);
+        const replay = await submissionReplay(client, project.id, id, (updates as any).changeoutSubmissionId);
+        if (replay) {
+          // Do not replay old completion over a subsequently reopened order.
+          if (await canonicalStatus(client, prior?.status) !== "completed" &&
+              await canonicalStatus(client, prior?.status) !== "closed")
+            throw new ChangeoutError("This submission already completed an earlier attempt. Start a new changeout.");
+          await client.query("COMMIT");
+          return await this.getWorkOrder(id);
+        }
         const result = await client.query(
           `UPDATE "${this.schemaName}".work_orders SET ${setClauses.join(", ")} WHERE id = $${paramCount} RETURNING *`,
           values
@@ -1600,7 +1615,13 @@ export class ProjectWorkOrderStorage {
           await client.query("COMMIT");
           return undefined;
         }
-        await inventoryWorkOrderChange(client, this.schemaName, prior, result.rows[0], (updates as any).inventoryUsage, (updates as any).inventoryItems, ordinaryImport);
+        if (completing && !["completed", "closed"].includes(await canonicalStatus(client, prior?.status))) {
+          await acceptCompletion(client, this.schemaName, prior, result.rows[0], updates, project);
+        } else {
+          await inventoryWorkOrderChange(client, this.schemaName, prior, result.rows[0], (updates as any).inventoryUsage, (updates as any).inventoryItems, ordinaryImport);
+          await client.query("INSERT INTO public.changeout_events(project_id,work_order_id,type,actor_id,operation_id) VALUES($1,$2,'workorder_updated',$3,$4) ON CONFLICT DO NOTHING",
+            [project.id, id, auditContext.getStore()?.actorId ?? null, auditContext.getStore()?.operationId ?? null]);
+        }
         await enqueueCustomerDelivery(client, this.schemaName, result.rows[0]);
         await client.query("COMMIT");
       } catch (error) {
@@ -1648,6 +1669,10 @@ export class ProjectWorkOrderStorage {
   async claimWorkOrder(id: number, userId: string, updatedBy: string): Promise<ProjectWorkOrder | null> {
     const client = await pool.connect();
     try {
+      await client.query("BEGIN");
+      const { rows: [current] } = await client.query(`SELECT * FROM "${this.schemaName}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
+      if (!current) { await client.query("COMMIT"); return null; }
+      await assertClaimAllowed(client, current, userId);
       // Atomic update: only claim if assigned_user_id is NULL or already assigned to this user
       // This prevents race conditions where two users try to claim simultaneously
       const result = await client.query(`
@@ -1663,11 +1688,18 @@ export class ProjectWorkOrderStorage {
       
       // If no rows were updated, the work order was already claimed by someone else
       if (result.rowCount === 0) {
+        await client.query("COMMIT");
         return null;
       }
-      
+      const { rows: [project] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1", [this.schemaName]);
+      await client.query("INSERT INTO public.changeout_events(project_id,work_order_id,type,actor_id,operation_id) VALUES($1,$2,'workorder_updated',$3,$4) ON CONFLICT DO NOTHING",
+        [project.id, id, userId, auditContext.getStore()?.operationId ?? null]);
+      await client.query("COMMIT");
       // Re-fetch with JOINs to get display fields
       return await this.getWorkOrder(id) ?? null;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
     } finally {
       client.release();
     }
@@ -1794,6 +1826,7 @@ export class ProjectWorkOrderStorage {
       signatureName: row.signature_name,
       assignedUserId: row.assigned_user_id,
       assignedGroupId: row.assigned_group_id,
+      assignmentVersion: row.assignment_version,
       // Keep IDs for data integrity and filtering
       completedBy: row.completed_by,
       scheduledBy: row.scheduled_by,
@@ -1901,6 +1934,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       signatureName: row.signature_name,
       assignedUserId: row.assigned_user_id,
       assignedGroupId: row.assigned_group_id,
+      assignmentVersion: row.assignment_version ?? 0,
       completedBy: row.completed_by,
       scheduledBy: row.scheduled_by,
     })) as unknown as ProjectWorkOrder[];
@@ -2000,9 +2034,9 @@ async function restoreProjectDatabaseData(
       try {
         const restoredOrder = await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (${backup.inventory ? "id, " : ""}status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
+           (${backup.inventory ? "id, " : ""}status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text,assignment_version)
            ${backup.inventory ? "OVERRIDING SYSTEM VALUE" : ""}
-           VALUES (${backup.inventory ? "$45, " : ""}$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44) RETURNING id`,
+           VALUES (${backup.inventory ? "$46, " : ""}$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44,$45) RETURNING id`,
           [
             wo.status || "Open",
             wo.createdBy || null,
@@ -2045,6 +2079,7 @@ async function restoreProjectDatabaseData(
             wo.completedBy || null,
             wo.scheduledBy || null,
             ...exactReadingFields.map(({key}) => capturedReadingText(wo[key])),
+            Number.isInteger(wo.assignmentVersion) && wo.assignmentVersion >= 0 ? wo.assignmentVersion : 0,
             ...(backup.inventory ? [zInventoryId(wo.id)] : []),
           ]
         );

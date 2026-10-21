@@ -14,10 +14,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Download, FileSpreadsheet, Printer, Search, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
+import { ChangeoutReconciliationJobs } from "@/components/changeout-reconciliation-jobs";
 
 type ResolveInput = { id: string; method: "apply_stock" | "documented_adjustment"; reason: string; evidence: string; receiptIds: string[] };
 type Props = {
-  state: InventoryState; canResolve: boolean; busy?: boolean; timezone: string; projectName: string;
+  projectId: number | string; state: InventoryState; canResolve: boolean; busy?: boolean; timezone: string; projectName: string;
   actors: InventoryActorLabel[]; workOrderLabels: Record<string, string>;
   workOrderIdentifiers?: Record<string, { customerWoId: string; equipmentIds: string[] }>;
   onResolve: (payload: ResolveInput) => Promise<boolean>; onNavigate: (tab: string) => void;
@@ -36,7 +37,7 @@ const csvCell = (value: unknown) => {
   return `"${safe.replace(/"/g, '""')}"`;
 };
 
-export function InventoryStockDiscrepancies({ state, canResolve, busy = false, timezone, projectName, actors, workOrderLabels, workOrderIdentifiers, onResolve, onNavigate }: Props) {
+export function InventoryStockDiscrepancies({ projectId, state, canResolve, busy = false, timezone, projectName, actors, workOrderLabels, workOrderIdentifiers, onResolve, onNavigate }: Props) {
   const [status, setStatus] = useState<"open" | "resolved" | "all">("open");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<StockDiscrepancy | null>(null);
@@ -115,6 +116,7 @@ export function InventoryStockDiscrepancies({ state, canResolve, busy = false, t
       <div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-semibold">Stock discrepancies</h2><Badge variant={openCount ? "outline" : "secondary"}>{openCount} open</Badge></div>
       <p className="text-xs text-muted-foreground">Field-reported shortages awaiting warehouse review</p>
     </div>
+    <ChangeoutReconciliationJobs projectId={projectId} state={state} canResolve={canResolve} projectName={projectName} timezone={timezone} onNavigate={onNavigate} />
     <InventoryMobileTools tab="stock-discrepancies">
       <div className="space-y-3 pb-1">
         <div className="flex flex-wrap gap-2" data-testid="stock-discrepancy-exports">

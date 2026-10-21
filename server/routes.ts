@@ -4,6 +4,8 @@ import { registerBackupRoutes } from "./backups/routes";
 import { registerSupportRoutes } from "./supportRequests";
 import { registerRoutingRoutes } from "./routing/routes";
 import { technicianAssignmentScope, visibleAssignedOrders } from "./workOrderVisibility";
+import { registerChangeoutRoutes } from "./changeoutRoutes";
+import { ChangeoutError } from "./changeoutService";
 import { accessLockMiddleware, loginAccessLock, registerAccessLockRoutes, sendAccessLocked } from "./accessLocks";
 import { accessLockContext } from "./accessLockContext";
 import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
@@ -248,6 +250,7 @@ export async function registerRoutes(
   registerAccessLockRoutes(app);
   registerAuditRoutes(app);
   registerFileTransferRoutes(app, isAuthenticated);
+  registerChangeoutRoutes(app, isAuthenticated);
   registerWorkOrderLifecycleRoutes(app);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
@@ -2158,9 +2161,7 @@ export async function registerRoutes(
       res.write(`data: ${JSON.stringify({ type: "connected", projectId })}\n\n`);
       
       const sendEvent = (event: ProjectEvent) => {
-        if (event.userId !== currentUser.id) {
-          res.write(`data: ${JSON.stringify(event)}\n\n`);
-        }
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
       };
       
       const unsubscribe = projectEventEmitter.subscribeToProject(projectId, sendEvent);
@@ -2576,7 +2577,7 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
         }
         
-        res.json({ ...workOrder, ...schedulingDto(workOrder), ...gpsFixDto(workOrder) });
+        res.json({ ...workOrder, assignmentVersion: workOrder.assignment_version, ...schedulingDto(workOrder), ...gpsFixDto(workOrder) });
       } finally {
         client.release();
       }
@@ -2696,10 +2697,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
-      // Skip claim if already assigned to this user AND no group assignment
-      if (workOrder.assignedUserId === currentUser.id && !workOrder.assignedGroupId) {
-        return res.json({ message: "Already assigned to you", workOrder, claimed: false });
-      }
       
       // Use atomic claim operation - this prevents race conditions where two users
       // try to claim the same work order simultaneously
@@ -2725,6 +2722,7 @@ export async function registerRoutes(
       res.json({ message: "Work order assigned to you", workOrder: claimedWorkOrder, claimed: true });
     } catch (error) {
       console.error("Error claiming work order:", error);
+      if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message, claimed: false });
       res.status(500).json({ message: "Failed to claim work order" });
     }
   });
@@ -3039,6 +3037,7 @@ export async function registerRoutes(
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
+      if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message });
       if (["GPS_ACCURACY", "GPS_CAPTURE"].includes((error as any)?.code)) return res.status(400).json({ message: (error as Error).message, code: (error as any).code });
       if (error instanceof z.ZodError) return res.status(400).json({ message: "Invalid visit scheduling fields.", errors: error.issues });
       if ((error as any)?.code === "23514" || (error as any)?.code === "23503" || (error as any)?.code === "22P02")
@@ -4067,6 +4066,20 @@ export async function registerRoutes(
       
       // Parse the changeout data
       const changeoutData = JSON.parse(req.body.data || "{}");
+      if (changeoutData.changeoutSubmissionId) {
+        const accepted = await pool.query("SELECT project_id,work_order_id,actor_id FROM public.changeout_completions WHERE id=$1",
+          [z.string().uuid().parse(changeoutData.changeoutSubmissionId)]);
+        if (accepted.rowCount) {
+          const row = accepted.rows[0];
+          if (row.project_id !== projectId || row.work_order_id !== workOrderId || row.actor_id !== currentUser.id)
+            throw new ChangeoutError("Submission identity belongs to another changeout.");
+          if (!["completed", "closed"].includes(String(workOrder.status).toLowerCase()))
+            throw new ChangeoutError("This token completed an earlier attempt. Start a new changeout.");
+          return res.json({ success: true, message: "Changeout already completed.", uploadedPhotos: [], replay: true });
+        }
+        if (changeoutData.changeoutAssignmentVersion !== workOrder.assignmentVersion)
+          throw new ChangeoutError("This assignment changed. Your draft is retained, but this old screen cannot submit.");
+      }
       if (changeoutData.canChange) applyOldGpsReuse(project, workOrder, changeoutData);
       const gpsProblem = changeoutData.canChange && gpsSubmissionProblem(project, changeoutData.gpsCoordinates, changeoutData.gpsCapture, workOrder);
       if (gpsProblem) return res.status(400).json(gpsProblem);
@@ -4403,7 +4416,11 @@ export async function registerRoutes(
       }
       
       // Update the work order - pass username as third parameter (FK references public.users(username))
-      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, updatedByUsername);
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, {
+        ...updateData, changeoutSubmissionId: changeoutData.changeoutSubmissionId,
+        changeoutAssignmentVersion: changeoutData.changeoutAssignmentVersion,
+        inventoryUsage: changeoutData.inventoryUsage,
+      } as any, updatedByUsername);
       
       if (!updatedWorkOrder) {
         console.error("System changeout: updateWorkOrder returned undefined for work order", workOrderId);
@@ -4426,6 +4443,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error processing system changeout:", error);
+      if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message });
       if (["GPS_ACCURACY", "GPS_CAPTURE"].includes(error.code)) return res.status(400).json({ message: error.message, code: error.code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to process system changeout" });
