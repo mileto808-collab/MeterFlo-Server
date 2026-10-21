@@ -15,6 +15,8 @@ import { auditingEnabled } from "./auditContext";
 import { relationalTableNames } from "./inventoryRelationalModel";
 import { runPgProcess } from "./backups/pg-process";
 import { cleanConfigurationInserts, cleanDefaultAdministratorInsert, requireFreshCleanDestination } from "./cleanBackupConfiguration";
+import { withBackupExclusive } from "./backups/lock";
+import { cleanupPackageStages } from "./project-packages/stage-cleanup";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 function stripApplicationAuditHooks(file:string) {
@@ -127,7 +129,7 @@ function getPgToolPath(toolName: string): string {
   return exeName;
 }
 
-async function runPgCommand(
+export async function runPgCommand(
   command: string,
   args: string[],
   env: Record<string, string>,
@@ -143,12 +145,12 @@ async function runPgCommand(
       env: { ...process.env, ...env },
       stdio: ["pipe", "pipe", "pipe"],
       // Use shell on Windows to handle paths with spaces and proper PATH resolution
-      shell: isWindows,
+      shell: false,
       windowsHide: true,
     };
     
     // On Windows with shell mode, quote paths that contain spaces
-    const execPath = isWindows && toolPath.includes(" ") ? `"${toolPath}"` : toolPath;
+    const execPath = toolPath;
     
     return await runPgProcess(execPath, args, options, outputFile);
   } catch (error: any) {
@@ -256,6 +258,14 @@ export interface PgBackupResult {
 }
 
 export async function createPgBackup(): Promise<PgBackupResult> {
+  return withBackupExclusive(async () => {
+    const client = await applicationPool.connect();
+    try { await cleanupPackageStages(client); } finally { client.release(); }
+    return createPgBackupData();
+  });
+}
+
+async function createPgBackupData(): Promise<PgBackupResult> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     return {
@@ -477,6 +487,14 @@ const CLEAN_TABLES_TO_CLEAR = [
 const SYSTEM_USERS = ["admin", "file_import"];
 
 export async function createCleanPgBackup(): Promise<PgBackupResult> {
+  return withBackupExclusive(async () => {
+    const client = await applicationPool.connect();
+    try { await cleanupPackageStages(client); } finally { client.release(); }
+    return createCleanPgBackupData();
+  });
+}
+
+async function createCleanPgBackupData(): Promise<PgBackupResult> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     return {

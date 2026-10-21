@@ -1,0 +1,43 @@
+const fs = require("node:fs/promises");
+const assert = require("node:assert/strict");
+const { request, chromium } = require("@playwright/test");
+(async () => {
+  if (!process.env.WORKSPACE_UI_SANDBOX_CONFIG) throw new Error("Owned sandbox required.");
+  const baseURL = require("./support/workspace-ui-base.cjs")();
+  const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
+  const api = await request.newContext({ baseURL });
+  const viewer = await request.newContext({ baseURL });
+  let browser;
+  try {
+    const route = `/api/projects/${fixture.projectId}/package`;
+    assert.equal((await api.get(route)).status(), 401);
+    assert.equal((await api.post(route + "/restore")).status(), 401);
+    assert.equal((await api.post("/api/auth/local/login", { data: fixture })).status(), 200);
+    await viewer.post("/api/auth/local/login", { data: fixture.viewer });
+    assert.equal((await viewer.get(route)).status(), 403);
+    assert.equal((await viewer.post(route + "/restore")).status(), 403);
+    browser = await chromium.launch({ headless: true, executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
+    const context = await browser.newContext({ baseURL, storageState: await api.storageState() });
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto("/settings?section=backup-restore");
+    await page.getByRole("tab", { name: "Projects", exact: true }).click();
+    await page.getByText("Complete single-project ZIP backups", { exact: false }).waitFor();
+    const download = page.waitForEvent("download");
+    await page.getByTestId(`button-backup-${fixture.projectId}`).click();
+    const completed = await download;
+    assert.match(completed.suggestedFilename(), /\.zip$/);
+    assert.equal(await completed.failure(), null);
+    await page.getByTestId(`button-restore-${fixture.projectId}`).click();
+    await page.getByRole("dialog").getByText("Restore Project Backup", { exact: true }).waitFor();
+    await page.getByRole("dialog").getByText("never to complete ZIP packages", { exact: false }).waitFor();
+    await fs.mkdir("generated-artifacts/project-packages", { recursive: true });
+    await page.screenshot({ path: "generated-artifacts/project-packages/desktop-restore.jpg" });
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: "generated-artifacts/project-packages/mobile-backups.jpg" });
+    assert.deepEqual(errors, []);
+    console.log("PASS: Authenticated backup ZIP download, restore help, responsive screens and unauthenticated/viewer permission boundaries.");
+  } finally { await browser?.close(); await api.dispose(); await viewer.dispose(); }
+})().catch(error => { console.error(error); process.exit(1); });

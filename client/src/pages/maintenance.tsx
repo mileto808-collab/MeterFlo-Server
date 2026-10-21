@@ -170,9 +170,11 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
     }
   }, [projects, canAccessProjectMaintenance, active, showProjects, showFiles]);
 
-  const handleBackup = async (project: ProjectWithStats) => {
+  const [packageBackupId, setPackageBackupId] = useState<number | null>(null);
+  const handleBackup = async (project: ProjectWithStats, legacy = false) => {
+    setPackageBackupId(project.id);
     try {
-      const response = await fetch(`/api/projects/${project.id}/database/backup`, {
+      const response = await fetch(legacy ? `/api/projects/${project.id}/database/backup` : `/api/projects/${project.id}/package`, {
         credentials: "include",
       });
       
@@ -181,12 +183,11 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
         throw new Error(error.message || "Failed to create backup");
       }
       
-      const data = await response.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `backup_${project.name.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `${legacy ? "legacy" : "complete"}_project_${project.name.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}.${legacy ? "json" : "zip"}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -194,7 +195,8 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
       
       toast({
         title: "Backup created",
-        description: `Successfully backed up ${data.workOrders.length} work orders from ${project.name}`,
+        description: legacy ? `Legacy JSON created for ${project.name}. Files and complete audit history are not included.` :
+          `Complete project ZIP created for ${project.name}, including PostgreSQL archive, project data, audit history and files.`,
       });
     } catch (error) {
       toast({
@@ -202,7 +204,7 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
         description: error instanceof Error ? error.message : "Failed to create backup",
         variant: "destructive",
       });
-    }
+    } finally { setPackageBackupId(null); }
   };
 
   const openRestoreDialog = (project: ProjectWithStats) => {
@@ -226,7 +228,8 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
       formData.append("backup", file);
       formData.append("clearExisting", String(clearExisting));
 
-      const response = await fetch(`/api/projects/${selectedProject.id}/database/restore`, {
+      const complete = file.name.toLowerCase().endsWith(".zip");
+      const response = await fetch(complete ? `/api/projects/${selectedProject.id}/package/restore` : `/api/projects/${selectedProject.id}/database/restore`, {
         method: "POST",
         credentials: "include",
         body: formData,
@@ -235,12 +238,18 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
       const result = await response.json();
 
       if (!response.ok) {
+        if (result.databaseCommitted === true || result.databaseCommitted === "unknown") {
+          queryClient.invalidateQueries({ queryKey: ["/api/maintenance/projects"] });
+          setRestoreDialogOpen(false);
+          throw new Error(result.message || "Restore outcome needs administrator review. Do not repeat the restore.");
+        }
         throw new Error(result.message || "Failed to restore backup");
       }
 
       toast({
         title: "Restore completed",
-        description: `Restored ${result.restored} work orders${result.errors.length > 0 ? ` with ${result.errors.length} errors` : ""}`,
+        description: complete ? `Restored ${result.restored} work orders and ${result.files} files. Imported users are inactive; review assignments and paused integrations.` :
+          `Restored ${result.restored} work orders${result.errors.length > 0 ? ` with ${result.errors.length} errors` : ""}`,
       });
 
       if (result.errors.length > 0) {
@@ -787,10 +796,16 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
             Project Databases
           </CardTitle>
           <CardDescription>
-            View database statistics and perform individual project backup/restore operations
+            Complete single-project ZIP backups for MeterFlo migration and PostgreSQL/pgAdmin analysis
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 rounded-md border bg-muted/30 p-3 text-sm space-y-2">
+            <p><strong>Complete ZIP:</strong> Project work orders, relational inventory even if now disabled, project logs and audit history, required shared definitions, documents, FTP files, inspection photos and secure-exchange files. Includes a native <code>project.backup</code>, validated data files, checksums and restore instructions.</p>
+            <p><strong>pgAdmin:</strong> Extract the ZIP and restore <code>project.backup</code> into an empty PostgreSQL database. The README identifies the data, work-order and audit schemas. Files remain in the extracted ZIP.</p>
+            <p><strong>MeterFlo:</strong> Create an empty destination project with Inventory disabled, then choose Restore and select the ZIP. Its name and identity are retained. Existing project data is never overwritten; destination administrator accounts and audit history are preserved. Imported identities are inactive and integrations require credential review and explicit re-enabling.</p>
+            <p className="text-muted-foreground">Legacy JSON remains available, but is not a complete project backup. ZIP restore: up to 2 GiB uploaded / 4 GiB expanded. Keep backups private. Checksums detect corruption; verify who supplied the archive.</p>
+          </div>
           <InventoryMobileTools tab="backup-project-databases">
             <div className="mb-3 flex flex-col gap-2 rounded-md border bg-card p-2 sm:flex-row sm:items-center">
               <div className="relative min-w-0 flex-1">
@@ -898,13 +913,15 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleBackup(project)}
-                                disabled={!project.databaseName}
+                                disabled={!project.databaseName || packageBackupId !== null}
                                 data-testid={`button-backup-${project.id}`}
                               >
                                 <Download className="h-4 w-4 mr-1" />
-                                Backup
+                                {packageBackupId === project.id ? "Backing up…" : "Complete ZIP"}
                               </Button>
                             )}
+                            {canProjectBackup && <Button variant="ghost" size="sm" onClick={() => handleBackup(project, true)}
+                              disabled={!project.databaseName || packageBackupId !== null} title="Legacy JSON: not a complete project backup">JSON</Button>}
                             {canProjectRestore && (
                               <Button
                                 variant="outline"
@@ -1098,10 +1115,11 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
-              Restore Database
+              Restore Project Backup
             </DialogTitle>
             <DialogDescription>
-              Restore work orders from a backup file to {selectedProject?.name}
+              Restore a complete project ZIP or legacy JSON to {selectedProject?.name}.
+              ZIP requires an empty project; it never overwrites existing records. Review imported identities and paused integrations afterward.
             </DialogDescription>
           </DialogHeader>
 
@@ -1109,7 +1127,7 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
             <div className="flex items-center gap-2 p-4 rounded-md bg-destructive/10 text-destructive">
               <AlertTriangle className="h-5 w-5 flex-shrink-0" />
               <p className="text-sm">
-                Restoring a backup will add work orders to the database. Use the option below to
+                Legacy JSON adds work orders. The replacement option below applies only to JSON, never to complete ZIP packages. Use it to
                 clear existing data first if you want a complete replacement.
               </p>
             </div>
@@ -1130,7 +1148,7 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept=".json"
+              accept=".json,.zip"
               onChange={handleFileChange}
               data-testid="input-restore-file"
             />

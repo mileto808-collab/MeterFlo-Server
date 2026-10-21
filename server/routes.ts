@@ -38,6 +38,7 @@ import { z } from "zod";
 import { importedVisitScheduling, mapSqlImportRow, schedulingDto, validateVisitScheduling, visitSchedulingKeys } from "../shared/visitScheduling";
 import bcrypt from "bcryptjs";
 import { BOOTSTRAP_ADMIN_USERNAME, bootstrapAdminHash } from "./bootstrapAdmin";
+import { registerProjectPackageRoutes } from "./project-packages/routes";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { pendingProjectFileCleanups, retryProjectFileCleanup, ProjectDeletionCleanupPending } from "./projectDeletion";
@@ -6420,7 +6421,9 @@ export async function registerRoutes(
     }
   });
 
-  // Create database backup for a project
+  registerProjectPackageRoutes(app);
+
+  // Legacy JSON project backup remains available for compatibility.
   app.get("/api/projects/:projectId/database/backup", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
