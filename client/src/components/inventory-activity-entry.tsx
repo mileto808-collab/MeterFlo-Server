@@ -6,6 +6,7 @@ import { inventoryActivityActionLabel } from "@shared/inventory-activity-groups"
 import type { OperationsRow } from "@/lib/inventory-operations-data";
 import type { InventoryReceipt, InventoryState } from "@shared/inventory";
 import { removalStatusLabel } from "@shared/inventory-removal-display";
+import { ReceiptPalletHistory } from "@/components/inventory/receipt-pallet-history";
 
 type Props = { group: InventoryActivityGroup; row: OperationsRow; state: InventoryState;
   receiptSummary: (receipt: InventoryReceipt) => string; print: (kind: "receipt" | "count" | "activity", id: string) => void };
@@ -39,6 +40,7 @@ export function InventoryActivityEntry({ group, row, state, receiptSummary, prin
               <p className="break-words text-xs text-muted-foreground">{entry.cells.date} · {entry.cells.actor} · {entry.cells.location}</p>
               <p className="mt-1 break-words text-xs">{entry.cells.reference}</p>
               <p className="mt-1 break-words text-xs">{receiptSummary(receipt)}</p>
+              {!!receipt.pallets?.length && <ReceiptPalletHistory pallets={receipt.pallets} state={state} />}
               {(["items", "componentsOut", "componentsIn", "missingComponents", "inspectionSerials", "reason", "resolution",
                 "externalReference", "fieldDisposition", "warehouseDisposition", "custodyEvent"] as const).map(key =>
                 !!entry.cells[key] && <p key={key} className="mt-1 break-words text-xs"><span className="font-medium">{

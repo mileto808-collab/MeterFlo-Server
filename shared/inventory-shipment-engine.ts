@@ -3,6 +3,7 @@ import { InventoryError } from "./inventory-errors";
 import { stockLineSchema, type InventoryCommand, type InventoryState, type InventoryReceipt, type StockLine } from "./inventory";
 import { damageLineSchema, remainingHold, holdStatus, settledLines, shipmentStatus, shipmentTotal } from "./inventory-shipment-model";
 import { holdDispositionCommandSchema, selectHoldDisposition } from "./inventory-hold-disposition";
+import { receiptPalletSchema, receivingPalletIssue } from "./inventory-receiving-pallets";
 
 const assert: (value: unknown, message: string) => asserts value = (value, message) => {
   if (!value) throw new InventoryError(message);
@@ -98,7 +99,13 @@ export function applyShipmentCommand(
   const d = z.object({
     orderId: id, lines, damaged: z.array(damageLineSchema).max(500).default([]),
     reason: z.string().max(1000).default(""), closeRemainder: z.boolean().default(false),
+    pallets: z.array(receiptPalletSchema).max(1000).optional(),
   }).strict().parse(data);
+  assert(action === "receive" || !d.pallets?.length, "Pallet groups are purchase-receiving evidence only.");
+  assert((d.pallets ?? []).every(pallet => s.items.some(item => item.id === pallet.itemId && item.tracking === "serialized")),
+    "Pallet scan groups require serialized items in this project.");
+  const palletIssue = receivingPalletIssue(d.pallets ?? [], [...d.lines, ...d.damaged]);
+  assert(!palletIssue, palletIssue);
   assert(d.lines.length || d.damaged.length || d.closeRemainder, "Enter a quantity or choose an authorized closure.");
   assert(!d.closeRemainder || d.reason.trim(), "Closing an order requires a reason.");
   ctx.validate(d.lines);
@@ -160,6 +167,7 @@ export function applyShipmentCommand(
   order.status = shipmentStatus(s, order);
   const short = d.closeRemainder ? close(d.reason.trim()) : undefined;
   receipt(order.id, action === "dispatch" ? order.sourceId! : order.destinationId, d.lines, d.reason, {
+    ...(d.pallets?.length ? { pallets: d.pallets } : {}),
     ...(d.damaged.length ? { damaged: d.damaged } : {}), ...(short ? { closedShort: short } : {}),
   });
 }

@@ -30,7 +30,9 @@ function shipmentDraftAudit(value: SavedShipmentDraft | undefined) {
     lines: Object.values(value.capture.entries).map(row => ({ itemId: row.itemId,
       goodQuantity: row.goodQuantity, damagedQuantity: row.damagedQuantity, unreadableQuantity: row.unreadableQuantity,
       damageReason: row.damageReason, goodSerialCount: row.goodSerials.length,
-      damagedSerialCount: row.damagedSerials.length, expectedReferenceCount: row.expectedSerials.length })),
+      damagedSerialCount: row.damagedSerials.length, expectedReferenceCount: row.expectedSerials.length,
+      ...(row.pallets?.length ? { pallets: row.pallets.map(pallet => ({ id: pallet.id, label: pallet.label,
+        expectedQuantity: pallet.expectedQuantity, scannedQuantity: pallet.serials.length, exceptionReason: pallet.exceptionReason })) } : {}) })),
     unfinishedBuffers: Object.entries(value.capture.scanBuffers).filter(([, text]) => !!text).map(([field, text]) => ({ field, characters: text.length })),
   };
 }

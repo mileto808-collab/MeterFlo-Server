@@ -15,6 +15,12 @@ Verify the width of the actual content inside a scroll container, not just the p
 
 **How to apply:** When verifying documentation, long tables, or nested scroll areas, check both article/content width and outer-page width. Radix ScrollArea's inner display-table wrapper can propagate intrinsic widths; constrain that layout locally rather than changing every shared scroll area.
 
+Keep a fixed-header scanner dialog's outer container from scrolling when the browser focuses a control in its inner pane.
+
+**Why:** `overflow: hidden` still allows programmatic focus scrolling. After an import expanded the scanner content, the browser scrolled the outer dialog, hiding its title and moving its footer despite passing a width-only check.
+
+**How to apply:** Bound the dialog height, scroll only the inner content, and use non-scrollable clipping on the outer container where appropriate. After scanner focus and large content changes, verify the outer scroll offset stays zero and inspect header/footer positions in desktop and phone screenshots.
+
 Keep persistent page controls outside a bounded content scroller when an ancestor's overflow prevents CSS sticky from following the actual scrolling surface.
 
 **Why:** Inventory's sticky styling passed a static visual check but scrolled off-screen in the authenticated layout; its overflow ancestor was not the surface the visitor was scrolling.

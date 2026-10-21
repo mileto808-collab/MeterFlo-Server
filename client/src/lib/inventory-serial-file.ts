@@ -15,22 +15,23 @@ export type SerialFileSheet = {
 /** Read locally. Numeric identities must be exact; never guess lost digits. */
 export async function readSerialFile(bytes: ArrayBuffer): Promise<SerialFileSheet[]> {
   if (bytes.byteLength > SERIAL_FILE_MAX_BYTES) throw new Error("Serial files are limited to 5 MiB.");
-  const XLSX = await import("xlsx");
+  const imported = await import("xlsx");
+  const XLSX = ("default" in imported ? imported.default : imported) as typeof import("xlsx");
   const book = XLSX.read(bytes, { type: "array", raw: true, cellNF: true, cellDates: false,
-    cellHTML: false, sheetRows: SERIAL_FILE_MAX_ROWS + 2 });
+    cellHTML: false, sheetStubs: true, sheetRows: SERIAL_FILE_MAX_ROWS + 2 });
   if (book.SheetNames.length > 20) throw new Error("Use a file with no more than 20 worksheets.");
   const headers = new Set(["serial", "serials", "serialid", "serialnumber", "serialnumbers", "serialno",
     "meterserial", "meterserialnumber", "systemserial", "systemserialnumber", "moduleserial", "moduleserialnumber"]);
   const text = (cell: import("xlsx").CellObject | undefined): string => {
+    if (cell?.f) throw new Error("Formula cells are not supported; convert serials to text values.");
     if (!cell || cell.v === undefined || cell.v === null || cell.t === "z") return "";
-    if (cell.f) throw new Error("Formula cells are not supported; convert serials to text values.");
     if (cell.t === "n") {
       const number = Number(cell.v);
       if (!Number.isSafeInteger(number) || Math.abs(number) >= 1e15)
         throw new Error("Numeric serial is not safely exact. Supply the original serial as text.");
       const format = typeof cell.z === "string" ? cell.z : "";
       if (format && XLSX.SSF.is_date(format)) throw new Error("Date cells cannot be imported as serials.");
-      return /^0+$/.test(format) ? String(number).padStart(format.length, "0") : String(number);
+      return /^0+$/.test(format) ? `${number < 0 ? "-" : ""}${String(Math.abs(number)).padStart(format.length, "0")}` : String(number);
     }
     if (cell.t !== "s") throw new Error("Use a text serial, not a boolean or spreadsheet error.");
     return String(cell.v).trim();

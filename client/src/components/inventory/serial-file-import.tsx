@@ -52,7 +52,7 @@ export function SerialFileImport({ category, currentCount, quantity, onAdd }: {
       onClick={() => setOpen(value => !value)}><Upload className="mr-1 h-4 w-4" />Import serials from file</Button>
     {open && <div id={id} className="space-y-2 rounded-md border bg-muted/20 p-2">
       <p className="text-xs text-muted-foreground">Add to <strong>{category}</strong> for this item only. CSV, XLSX or XLS · 5 MiB · 10,000 data rows maximum. Nothing is received until movement review and posting.</p>
-      <p className="text-xs text-muted-foreground">Required: one serial column, one serial per row. A header such as Serial or Serial number is recommended; headers are optional for single-column files. Other columns are ignored. Store serials as text to preserve leading zeros and long IDs. Pallet IDs do not expand into individual serials.</p>
+      <p className="text-xs text-muted-foreground">Required: one serial column, one serial per row, up to 100 characters per serial. A header such as Serial or Serial number is recommended; headers are optional for single-column files. Other columns are ignored. Store serials as text to preserve leading zeros and long IDs. Trusted files import as ungrouped serials without pallet-count checks. Pallet IDs do not expand into individual serials.</p>
       <Label htmlFor={`${id}-file`} className="sr-only">Serials file</Label>
       <Input id={`${id}-file`} type="file" accept=".csv,.xlsx,.xls" disabled={busy} className="h-auto min-w-0 py-1.5 text-xs"
         onChange={event => { const file = event.target.files?.[0]; void load(file); event.target.value = ""; }} />

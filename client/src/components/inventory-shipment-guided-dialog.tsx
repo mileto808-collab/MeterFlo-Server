@@ -107,7 +107,14 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   const values = (itemId: string) => entries[itemId] ?? blankShipmentEntry(itemId);
   const patch = (itemId: string, change: Partial<ShipmentEntry>) => {
-    setEntries(current => ({ ...current, [itemId]: { ...values(itemId), ...change } }));
+    setEntries(current => {
+      const row = { ...(current[itemId] ?? blankShipmentEntry(itemId)), ...change };
+      if (row.pallets && (change.goodSerials || change.damagedSerials)) {
+        const captured = new Set([...row.goodSerials, ...row.damagedSerials]);
+        row.pallets = row.pallets.map(pallet => ({ ...pallet, serials: pallet.serials.filter(serial => captured.has(serial)) }));
+      }
+      return { ...current, [itemId]: row };
+    });
     setValidation("");
   };
   const close = () => { if (busy || savingDraft) return; if (dirty || checkpointBusy) setDiscard(true); else onClose(); };
@@ -151,7 +158,10 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     const serial = raw.trim(), row = values(item.id);
     const issue = serialIssue(item, bucket, serial);
     if (issue) { setValidation(issue); return false; }
-    patch(item.id, { [bucket]: [...row[bucket], serial] });
+    patch(item.id, { [bucket]: [...row[bucket], serial],
+      ...(action === "receive" && row.activePalletId ? {
+        pallets: row.pallets?.map(pallet => pallet.id === row.activePalletId ? { ...pallet, serials: [...pallet.serials, serial] } : pallet),
+      } : {}) });
     setValidation("");
     return true;
   };
@@ -167,7 +177,8 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       if (issue) rejected.push({ index, reason: issue });
       else { row[bucket].push(serial); seen.add(serial); added++; }
     });
-    if (added) patch(item.id, { [bucket]: row[bucket], ...(useCount ? { [quantityKey]: String(row[bucket].length) } : {}) });
+    if (added) patch(item.id, { [bucket]: row[bucket], activePalletId: null,
+      ...(useCount ? { [quantityKey]: String(row[bucket].length) } : {}) });
     return { added, rejected };
   };
   const commitChildScannerInput = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", input: HTMLInputElement) => {
@@ -249,10 +260,11 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         }
       }
     }
-    const { lines, damaged } = buildShipmentPayload(rows, action);
+    const { lines, damaged, pallets } = buildShipmentPayload(rows, action);
     if (!lines.length && !damaged.length && !closeRemainder) { setValidation("Enter at least one movement quantity or choose close remainder."); return false; }
     if (closeRemainder && !reason.trim()) { setValidation("Enter a reason before closing the order remainder."); return false; }
     if (lines.length > 500 || damaged.length > 500) { setValidation("A shipment is limited to 500 product lines."); return false; }
+    if (pallets && pallets.length > 1000) { setValidation("A receiving movement supports up to 1,000 pallet groups. Split this shipment into separate receipts."); return false; }
     const allScanned = rows.flatMap(row => [...row.goodSerials, ...row.damagedSerials]);
     if (new Set(allScanned).size !== allScanned.length) {
       setValidation("Scans must be unique across the entire movement."); return false;
@@ -271,7 +283,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     const payload = buildShipmentPayload(eligible.map(item => values(item.id)), action);
     setError("");
     try {
-      const confirmed = await onPost({ orderId: order.id, lines: payload.lines, damaged: payload.damaged, reason: reason.trim(), ...(closeRemainder ? { closeRemainder: true } : {}) }, capture);
+      const confirmed = await onPost({ orderId: order.id, ...payload, reason: reason.trim(), ...(closeRemainder ? { closeRemainder: true } : {}) }, capture);
       if (confirmed) { onDirtyChange(false); onClose(); }
       else setError("The posting was not confirmed. Your quantities and scans are still here; retry without changing them.");
     } catch (cause) {

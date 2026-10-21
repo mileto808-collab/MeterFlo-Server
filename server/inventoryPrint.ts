@@ -12,6 +12,7 @@ import { inventoryCustomerHandoffPrint } from "./inventoryCustomerHandoffPrint";
 import type { InventoryWorkOrderLabels } from "../shared/inventory-work-order-labels";
 import { removalActivityIndex, removalActivityDisplay } from "../shared/inventory-removal-display";
 import { inventoryReceiptContexts, inventoryReceiptOperationReference } from "../shared/inventory-receipt-context";
+import { inventoryPalletPrint } from "./inventoryPalletPrint";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string, actors: readonly InventoryActorLabel[] = [], timezone = "UTC", workOrderLabels: InventoryWorkOrderLabels = {}) {
@@ -74,5 +75,5 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
      ${removal?.fieldLabel ? `<p>Field disposition: ${escape(removal.fieldLabel)}</p>` : ""}
      ${removal?.decisionLabel ? `<p>Warehouse decision: ${escape(removal.decisionLabel)}</p>` : ""}
      ${removal?.custodyLabel ? `<p>Custody event: ${escape(removal.custodyLabel)}</p>` : ""}
-     ${kind === "receipt" ? receiptSerialAppendix(record, state, project) : ""}</body></html>`;
+     ${kind === "receipt" ? inventoryPalletPrint(record, state) + receiptSerialAppendix(record, state, project) : ""}</body></html>`;
 }

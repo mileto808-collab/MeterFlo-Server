@@ -211,6 +211,7 @@ export function buildOperationsDataset(
           r.kitConversion ? inventoryReceiptLabel(state.receipts, r.kitConversion.assemblyId) :
           r.kitHoldId ? inventoryReceiptLabel(state.receipts, state.kitHolds?.find(h => h.id === r.kitHoldId)?.assemblyId ?? "") : "",
         inspectionSerials: r.kitInspection?.serials.join("; ") ?? "",
+        pallets: (r.pallets ?? []).map(pallet => `${pallet.label} · ${items.get(pallet.itemId)?.sku ?? "Item unavailable"} · ${pallet.serials.length}/${pallet.expectedQuantity} scanned${pallet.exceptionReason ? ` · Count discrepancy: ${pallet.exceptionReason}` : ""} · Serials: ${pallet.serials.join(", ")}`).join("; "),
         reason: r.reason ?? "", resolution: r.resolution ?? "", externalReference: r.externalReference ?? "",
         fieldDisposition: removal.fieldLabel, warehouseDisposition: removal.decisionLabel, custodyEvent: removal.custodyLabel,
       }, facets: { action: r.action, warehouse: r.warehouseId ?? "none", actor: r.actor }, searchFields: identifiers,
@@ -222,7 +223,7 @@ export function buildOperationsDataset(
     });
     cols = columns([["receipt", "Receipt"], ["action", "Action"], ["reference", "Order / operation"], ["orderReference", "Order reference"],
       ["location", "Location"], ["actor", "User"], ["date", `Date (${timezone})`], ["items", "Items"], ["quantity", "Quantity"],
-      ["damaged", "Damaged quantity"], ["reason", "Reason"], ["resolution", "Resolution"], ["externalReference", "External reference"]]);
+      ["damaged", "Damaged quantity"], ["reason", "Reason"], ["resolution", "Resolution"], ["externalReference", "External reference"], ["pallets", "Receiving pallets / serials"]]);
     cols.push(...columns([["componentsOut", "Components consumed"], ["componentsIn", "Usable components returned"],
       ["missingComponents", "Missing components"], ["sourceAssembly", "Original assembly"], ["inspectionSerials", "Inspection serials"]]));
     cols.push(...columns([["fieldDisposition", "Field disposition"], ["warehouseDisposition", "Warehouse decision"], ["custodyEvent", "Custody event"]]));

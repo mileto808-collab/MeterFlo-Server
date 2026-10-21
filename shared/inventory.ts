@@ -9,6 +9,7 @@ import type { RemovalRule, RemovalPolicy, FieldRemovalChoice } from "./inventory
 import type { FieldStockSettings } from "./inventory-field-stock";
 import type { StockDiscrepancy } from "./inventory-stock-discrepancies";
 import type { PlannedLine, WorkPlan } from "./inventory-planning";
+import type { ReceiptPallet } from "./inventory-receiving-pallets";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -102,6 +103,7 @@ export type WorkRequirements = { workOrderId: number; lines: { itemId: string; q
   automaticLines?: { itemId: string; quantity: number }[]; manualLines?: PlannedLine[]; planRevision?: number };
 export type InventoryCount = { id: string; warehouseId: string; scope?: "selected" | "warehouse"; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
+  pallets?: ReceiptPallet[];
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
   labor?: import("./inventory-pricing").LaborCharge[];
   damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[]; sourceReceiptId?: string;

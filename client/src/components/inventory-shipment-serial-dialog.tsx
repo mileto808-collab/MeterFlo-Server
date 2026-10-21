@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ShipmentAction, ShipmentEntry } from "@/lib/inventory-shipment-guidance";
 import { SerialFileImport, type SerialImportResult } from "@/components/inventory/serial-file-import";
+import { ReceivingPallets } from "@/components/inventory/receiving-pallets";
 
 type Bucket = "goodSerials" | "damagedSerials";
 type Props = {
@@ -44,6 +45,7 @@ export function InventoryShipmentSerialDialog({
   const [referenceSearch, setReferenceSearch] = useState("");
   const [referencePage, setReferencePage] = useState(0);
   const [activeReferenceTab, setActiveReferenceTab] = useState(false);
+  const [viewPalletId, setViewPalletId] = useState(entry.activePalletId ?? null);
   const inputRefs = useRef<Record<Bucket, HTMLInputElement | null>>({ goodSerials: null, damagedSerials: null });
   const doneRef = useRef<HTMLButtonElement | null>(null);
   const initialFocusPending = useRef(true);
@@ -53,9 +55,11 @@ export function InventoryShipmentSerialDialog({
   };
   const target = (key: Bucket) => Number(key === "goodSerials" ? entry.goodQuantity : entry.damagedQuantity);
   const serials = entry[bucket];
+  const activePallet = entry.pallets?.find(pallet => pallet.id === (viewOnly ? viewPalletId : entry.activePalletId));
   const filtered = useMemo(() => serials
     .map((value, sourceIndex) => ({ value, sourceIndex }))
-    .filter(({ value }) => value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), [serials, search]);
+    .filter(({ value }) => (!activePallet || activePallet.serials.includes(value)) &&
+      value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), [serials, search, activePallet]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const effectivePage = Math.min(page, pageCount - 1);
   const visible = filtered.slice(effectivePage * PAGE_SIZE, (effectivePage + 1) * PAGE_SIZE);
@@ -103,7 +107,7 @@ export function InventoryShipmentSerialDialog({
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
     <DialogContent
       data-serial-child-dialog="true"
-      className="flex max-h-[min(90dvh,780px)] w-[calc(100vw-1rem)] max-w-2xl flex-col gap-3 overflow-hidden p-4 sm:w-full sm:p-6"
+      className="flex h-[min(90dvh,780px)] w-[calc(100vw-1rem)] max-w-2xl flex-col gap-3 overflow-clip p-4 sm:w-full sm:p-6"
       onOpenAutoFocus={event => {
         // Radix's default first-button focus runs after mount effects. Establish
         // HID readiness here so category buttons cannot steal the initial scan.
@@ -148,6 +152,10 @@ export function InventoryShipmentSerialDialog({
       {!viewOnly && validation && <p className="shrink-0 text-sm text-destructive" role="alert">{validation}</p>}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+        {action === "receive" && <ReceivingPallets entry={entry} viewOnly={viewOnly} onPatch={onPatch}
+          viewPalletId={viewPalletId} onViewPalletChange={setViewPalletId} onSelected={() => {
+            setPage(0); setSearch(""); if (!viewOnly) requestAnimationFrame(() => inputRefs.current[bucket]?.focus());
+          }} />}
         <div className="flex flex-wrap gap-2" role="group" aria-label="Serial categories">
           {(["goodSerials", "damagedSerials"] as const).map((key) => {
             const label = key === "goodSerials" ? "Good" : "Known damaged";
@@ -191,7 +199,7 @@ export function InventoryShipmentSerialDialog({
         </fieldset> : <section className="space-y-2 rounded-md border p-3" aria-label={`${bucket === "goodSerials" ? "Good" : "Known damaged"} serial entry`}>
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">{bucket === "goodSerials" ? "Good serials" : "Known damaged serials"}</h3>
-            <span className="font-mono text-xs text-muted-foreground">{serials.length} committed</span>
+            <span className="font-mono text-xs text-muted-foreground">{serials.length} committed{activePallet ? ` · showing ${activePallet.label}` : ""}</span>
           </div>
           {!viewOnly && <div className="space-y-1">
             <Label htmlFor={`${item.id}-${bucket}`} className="sr-only">{bucket === "goodSerials" ? `Good serial scanner for ${item.name}` : `Known damaged serial scanner for ${item.name}`}</Label>
@@ -234,6 +242,9 @@ export function InventoryShipmentSerialDialog({
               const visibleIndex = effectivePage * PAGE_SIZE + index;
               return <li key={`${serial}-${sourceIndex}`} className="flex min-h-9 items-center justify-between gap-2 border-b px-2 py-1 font-mono text-xs last:border-0">
                 <span className="min-w-0 break-all">{visibleIndex + 1}. {serial}</span>
+                {entry.pallets?.some(pallet => pallet.serials.includes(serial)) && <span className="min-w-0 break-words text-xs text-muted-foreground">
+                  {entry.pallets.find(pallet => pallet.serials.includes(serial))?.label}
+                </span>}
                 {!viewOnly && <button type="button" className="shrink-0 rounded p-1 hover:bg-muted" aria-label={`Remove serial ${serial}`}
                   onClick={() => onPatch({ [bucket]: entry[bucket].filter((_, serialIndex) => serialIndex !== sourceIndex) })}><Trash2 className="h-3.5 w-3.5" /></button>}
               </li>;

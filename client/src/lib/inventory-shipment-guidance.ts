@@ -3,6 +3,7 @@ import type { DamageLine } from "@shared/inventory-shipment-model";
 import { orderLineProgress, settledLines } from "@shared/inventory-shipment-model";
 import { canonicalInventoryJson } from "@shared/inventory-engine";
 import type { ShipmentCapture } from "@shared/inventory-shipment-draft-model";
+import { receivingPalletIssue, type ReceivingPallet, type ReceiptPallet } from "@shared/inventory-receiving-pallets";
 
 export type ShipmentAction = "receive" | "dispatch" | "accept";
 export type ShipmentEntry = {
@@ -14,6 +15,8 @@ export type ShipmentEntry = {
   damagedSerials: string[];
   expectedSerials: string[];
   damageReason: string;
+  pallets?: ReceivingPallet[];
+  activePalletId?: string | null;
 };
 
 export const blankShipmentEntry = (itemId: string): ShipmentEntry => ({
@@ -50,6 +53,13 @@ export function unresolvedTransferSerials(state: InventoryState, order: Inventor
 
 export function validateShipmentEntry(entry: ShipmentEntry, serialized: boolean, action: ShipmentAction, availableSerials: string[]) {
   const good = Number(entry.goodQuantity), damaged = Number(entry.damagedQuantity), unreadable = Number(entry.unreadableQuantity);
+  if (action !== "receive" && entry.pallets?.length) return "Pallet groups apply to purchase receiving only.";
+  if (entry.pallets?.length) {
+    if (!serialized) return "Pallet scan groups require a serialized item.";
+    const issue = receivingPalletIssue(entry.pallets.map(pallet => ({ ...pallet, itemId: entry.itemId })),
+      [{ itemId: entry.itemId, quantity: good + damaged, serials: [...entry.goodSerials, ...entry.damagedSerials] }]);
+    if (issue) return issue;
+  }
   for (const [label, quantity] of [["good", good], ["damaged", damaged], ["unreadable", unreadable]] as const) {
     if (!Number.isInteger(quantity) || quantity < 0 || quantity > 1_000_000) return `Enter a whole ${label} quantity from 0 to 1,000,000.`;
   }
@@ -82,8 +92,10 @@ export function validateShipmentEntry(entry: ShipmentEntry, serialized: boolean,
 export function buildShipmentPayload(entries: ShipmentEntry[], action: ShipmentAction) {
   const lines: StockLine[] = [];
   const damaged: DamageLine[] = [];
+  const pallets: ReceiptPallet[] = [];
   for (const entry of entries) {
     const good = Number(entry.goodQuantity), damagedKnown = Number(entry.damagedQuantity), unreadable = Number(entry.unreadableQuantity);
+    if (action === "receive") pallets.push(...(entry.pallets ?? []).map(pallet => ({ ...pallet, itemId: entry.itemId })));
     if (good > 0) lines.push({ itemId: entry.itemId, quantity: good, serials: entry.goodSerials });
     if (damagedKnown + unreadable > 0) damaged.push({
       itemId: entry.itemId, quantity: damagedKnown + unreadable,
@@ -92,7 +104,7 @@ export function buildShipmentPayload(entries: ShipmentEntry[], action: ShipmentA
       reason: entry.damageReason.trim(),
     });
   }
-  return { lines, damaged };
+  return { lines, damaged, ...(pallets.length ? { pallets } : {}) };
 }
 
 export function shipmentFingerprint(action: string, data: Record<string, unknown>) {
