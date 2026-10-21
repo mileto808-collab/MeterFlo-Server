@@ -22,6 +22,14 @@ Inventory and Work Order Details operations remain available.
 1. **Choose work.** Select a crew's group-assigned Open orders, or Scheduled orders
    for one individual installer. Filter by route, zone, group, installer, date,
    or work-order identifier. Each order is counted once.
+   Use **Select all eligible matching orders** to select the current filtered
+   results, or uncheck it to deselect those results. Mixed crews/installers must
+   be filtered to one crew/installer first. Unavailable orders are excluded.
+   Individual checkboxes let you adjust the selection. Filter changes retain
+   previously selected orders; the summary shows selections outside the current
+   eligible results. **Clear selection** removes every selection, including hidden
+   ones, without clearing filters or other inputs. A batch is limited to 500
+   work orders; bulk selection never silently truncates the results.
 2. **Review batch.** Name it and choose Warehouse → Staging → Vehicle.
    One batch serves one group or one installer and one vehicle; multiple routes
    and zones can be included. Creating a batch records demand coverage, not a

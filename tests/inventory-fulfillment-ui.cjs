@@ -45,12 +45,12 @@ const assert = require("node:assert/strict");
     await command("receive", { orderId: "fulfill-po", lines: [{ itemId: "fulfill-meter", quantity: 8,
       serials: ["F-A", "F-B", "F-C", "F-D", "F-E", "F-F", "F-G", "F-H"] }] });
     const services = await request("GET", "/api/service-types", undefined, admin);
-    const createWork = async (label, scheduled = false) => {
+    const createWork = async (label, scheduled = false, options = {}, planned = true) => {
       const work = await request("POST", `${root}/work-orders`, { customerWoId: label,
         customerName: "Fulfillment customer", serviceType: services[0].code, route: "789", zone: "2233",
         status: scheduled ? "Scheduled" : "Open", ...(scheduled ? { assignedUserId: user.id,
-          scheduledAt: new Date(Date.now() + 86400000).toISOString() } : { assignedGroupId: group.name }) }, admin);
-      await command("plan", { workOrderId: work.id, revision: 0,
+          scheduledAt: new Date(Date.now() + 86400000).toISOString() } : { assignedGroupId: group.name }), ...options }, admin);
+      if (planned) await command("plan", { workOrderId: work.id, revision: 0,
         lines: [{ id: crypto.randomUUID(), itemId: "fulfill-meter", kind: "addition", quantity: 1, reason: "Customer replacement" }] });
       return work;
     };
@@ -67,6 +67,17 @@ const assert = require("node:assert/strict");
     const replay = await command("fulfillmentCreate", createPayload, prep, operationId);
     assert.equal(replay.state.fulfillmentBatches.filter(batch => batch.id === batchId).length, 1);
     await rejected("fulfillmentCreate", { ...createPayload, id: crypto.randomUUID() });
+    const otherGroup = await request("POST", "/api/user-groups", { name: `Other fulfillment crew ${crypto.randomUUID().slice(0, 8)}`,
+      projectIds: [fixture.projectId] }, admin);
+    const otherInstaller = await request("POST", "/api/users", { username: `fulfill-other-${crypto.randomUUID().slice(0, 8)}`,
+      password: `Aa1!${crypto.randomUUID()}`, firstName: "Other", lastName: "Installer", role: "user",
+      subroleId: role.id, projectIds: [fixture.projectId] }, admin);
+    await createWork("BULK-CREW-A");
+    await createWork("BULK-CREW-B");
+    await createWork("BULK-CREW-OTHER", false, { assignedGroupId: otherGroup.name });
+    await createWork("BULK-UNAVAILABLE", false, {}, false);
+    await createWork("BULK-SCHEDULED-OWN", true);
+    await createWork("BULK-SCHEDULED-OTHER", true, { assignedUserId: otherInstaller.id });
     const batch = async () => (await request("GET", `${inventory}/fulfillment`)).batches.find(batch => batch.id === batchId);
     assert.equal((await batch()).lines.length, 2);
     const page = await prep.newPage();
@@ -79,6 +90,69 @@ const assert = require("node:assert/strict");
     };
     await launch();
     const dialog = page.getByRole("dialog");
+    let selectionPosts = 0;
+    const countSelectionPosts = req => {
+      if (req.method() === "POST" && req.url().includes(`${inventory}/commands`)) selectionPosts++;
+    };
+    page.on("request", countSelectionPosts);
+    const selectAll = dialog.getByRole("checkbox", { name: "Select all eligible matching orders", exact: true });
+    const clearSelection = dialog.getByRole("button", { name: "Clear selection", exact: true });
+    const rowCheckbox = label => dialog.locator("label").filter({ hasText: label }).getByRole("checkbox");
+    const setFilter = async (label, option) => {
+      await dialog.getByLabel(label, { exact: true }).click();
+      await page.getByRole("option", { name: option, exact: true }).click();
+    };
+    await expect(selectAll).toBeDisabled(); // Several crews; never pick the first crew implicitly.
+    await setFilter("Work group", group.name);
+    await expect(rowCheckbox("BULK-UNAVAILABLE")).toBeDisabled();
+    await selectAll.check();
+    await expect(dialog.getByTestId("fulfillment-selection-summary")).toContainText("Selected 2 / Eligible matching 2");
+    await expect(rowCheckbox("BULK-CREW-A")).toBeChecked();
+    await expect(rowCheckbox("BULK-CREW-B")).toBeChecked();
+    await expect(rowCheckbox("FUL-CREW-1")).not.toBeChecked(); // Covered by an existing batch.
+    await rowCheckbox("BULK-CREW-A").uncheck();
+    await expect(selectAll).toHaveAttribute("data-state", "indeterminate");
+    await selectAll.click();
+    await expect(rowCheckbox("BULK-CREW-A")).toBeChecked();
+    await dialog.getByLabel("Search orders", { exact: true }).fill("BULK-CREW-A");
+    await selectAll.uncheck();
+    await expect(rowCheckbox("BULK-CREW-A")).not.toBeChecked();
+    await dialog.getByLabel("Search orders", { exact: true }).clear();
+    await expect(rowCheckbox("BULK-CREW-B")).toBeChecked(); // Hidden selections survive filtered unselect.
+    await clearSelection.click();
+    await expect(rowCheckbox("BULK-CREW-B")).not.toBeChecked();
+    await rowCheckbox("BULK-CREW-A").check();
+    await setFilter("Work group", otherGroup.name);
+    await expect(selectAll).toBeDisabled(); // Hidden selection belongs to another crew.
+    await clearSelection.click();
+    await expect(selectAll).toBeEnabled();
+    await selectAll.check();
+    await expect(rowCheckbox("BULK-CREW-OTHER")).toBeChecked();
+    await clearSelection.click();
+    await dialog.getByRole("button", { name: "Scheduled installer work", exact: false }).click();
+    await expect(selectAll).toBeDisabled(); // Several installers.
+    await setFilter("Work group", "Any group");
+    await setFilter("Installer", credentials.username);
+    await selectAll.check();
+    await expect(rowCheckbox("FUL-SCHEDULED")).toBeChecked();
+    await expect(rowCheckbox("BULK-SCHEDULED-OWN")).toBeChecked();
+    await expect(rowCheckbox("BULK-SCHEDULED-OTHER")).toHaveCount(0);
+    await dialog.getByLabel("Search orders", { exact: true }).fill("FUL-SCHEDULED");
+    await clearSelection.click();
+    await expect(rowCheckbox("FUL-SCHEDULED")).not.toBeChecked();
+    await dialog.getByLabel("Search orders", { exact: true }).clear();
+    await expect(rowCheckbox("BULK-SCHEDULED-OWN")).not.toBeChecked(); // Clear selection clears hidden too.
+    await fs.mkdir("generated-artifacts/inventory-fulfillment", { recursive: true });
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport);
+      await selectAll.scrollIntoViewIfNeeded();
+      const rect = await selectAll.boundingBox();
+      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= viewport.width, "Bulk checkbox must remain in viewport.");
+      await page.screenshot({ path: `generated-artifacts/inventory-fulfillment/bulk-${viewport.width}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.equal(selectionPosts, 0, "Selections must never post stock operations.");
+    page.off("request", countSelectionPosts);
     await dialog.getByRole("button", { name: "Resume saved batch", exact: false }).click();
     await dialog.getByRole("button", { name: "Resume batch", exact: true }).click();
     await expect(dialog.getByText("Scan stock as it is pulled")).toBeVisible();
@@ -144,6 +218,7 @@ const assert = require("node:assert/strict");
     assert.ok(scheduledCandidate.eligible);
     await dialog.getByRole("button", { name: "Back to saved batches", exact: true }).click();
     await dialog.getByRole("button", { name: "Scheduled installer work", exact: false }).click();
+    await dialog.getByLabel("Search orders", { exact: true }).fill("FUL-SCHEDULED");
     await dialog.locator("label").filter({ hasText: "FUL-SCHEDULED" }).getByRole("checkbox").check();
     await dialog.getByLabel("Batch name", { exact: true }).fill("Owned scheduled pull");
     for (const [label, option] of [["Warehouse source", "Fulfillment warehouse"], ["Staging destination", "Crew staging shelf"], ["Vehicle", "Crew vehicle"]]) {
@@ -172,6 +247,6 @@ const assert = require("node:assert/strict");
     await request("PUT", `/api/subroles/${role.id}/permissions`, { permissions: ["workOrders.view", "inventory.view"] }, admin);
     await rejected("fulfillmentClose", { id: scheduledId, revision: 3, reason: "Permission revoked during an open wizard" }, 403);
     assert.deepEqual(errors, []);
-    console.log("PASS normal-role crew and scheduled discovery, duplicate demand guard, recoverable physical staging, exactly-once handoff, readable print, reassignment safety, release semantics, permissions and responsive wizard.");
+    console.log("PASS filtered crew/scheduled bulk selection, tri-state/hidden/clear behavior, mixed-assignee protection, no selection stock posts, responsive controls, normal-role discovery, duplicate demand guard, recoverable staging, exactly-once handoff, readable print, reassignment safety, release semantics and permissions.");
   } finally { await prep.close(); await admin.close(); await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

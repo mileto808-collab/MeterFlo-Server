@@ -71,6 +71,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [storageReady, setStorageReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [selectionNotice, setSelectionNotice] = useState("");
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
@@ -247,6 +248,54 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
         ? "A scheduled batch can contain work for one assigned installer only." : "")
       : "";
   const isOrderSelectable = (order: FulfillmentOrder) => order.eligible && order.missing.length === 0 && order.lines.length > 0;
+  const eligibleMatchingOrders = filteredOrders.filter(isOrderSelectable);
+  const eligibleMatchingIds = new Set(eligibleMatchingOrders.map(order => order.workOrderId));
+  const selectedMatchingCount = eligibleMatchingOrders.filter(order => draft.selectedIds.includes(order.workOrderId)).length;
+  const allMatchingSelected = eligibleMatchingOrders.length > 0 && selectedMatchingCount === eligibleMatchingOrders.length;
+  const hiddenSelectionCount = draft.selectedIds.filter(id => !eligibleMatchingIds.has(id)).length;
+  const unresolvedSelection = draft.selectedIds.some(id => !orderMap.has(id));
+  const bulkIdentityError = (() => {
+    if (allMatchingSelected || !eligibleMatchingOrders.length) return "";
+    if (draft.mode === "crew") {
+      const targetGroups = new Set(eligibleMatchingOrders.map(order => order.group).filter(Boolean));
+      if (targetGroups.size > 1 || eligibleMatchingOrders.some(order => !order.group))
+        return "Filter to one crew/group before selecting all matching orders.";
+      if (unresolvedSelection) return "Some selected orders are no longer available to verify. Clear selection before adding this group.";
+      const groups = new Set([...selectedOrders.map(order => order.group), ...eligibleMatchingOrders.map(order => order.group)]);
+      if (groups.size > 1 || [...groups].some(group => !group))
+        return "Selected orders include another crew/group. Clear or filter the selection before adding this group.";
+    } else if (draft.mode === "scheduled") {
+      const targetInstallers = new Set(eligibleMatchingOrders.map(order => order.installerId).filter((id): id is string => !!id));
+      if (targetInstallers.size > 1 || eligibleMatchingOrders.some(order => !order.installerId))
+        return "Filter to one installer before selecting all matching orders.";
+      if (unresolvedSelection) return "Some selected orders are no longer available to verify. Clear selection before adding this installer.";
+      const installers = new Set([...selectedOrders.map(order => order.installerId), ...eligibleMatchingOrders.map(order => order.installerId)]);
+      if (installers.size > 1 || [...installers].some(installer => !installer))
+        return "Selected orders include another installer. Clear or filter the selection before adding this installer.";
+    }
+    return "";
+  })();
+  const bulkAddWouldExceedLimit = !allMatchingSelected &&
+    new Set([...draft.selectedIds, ...eligibleMatchingOrders.map(order => order.workOrderId)]).size > 500;
+  const bulkSelectionDisabled = !eligibleMatchingOrders.length || !!draft.pending || !!draft.createAttempt ||
+    (!allMatchingSelected && (!!bulkIdentityError || bulkAddWouldExceedLimit));
+  const handleSelectAllMatching = () => {
+    if (!eligibleMatchingOrders.length || draft.pending || draft.createAttempt) return;
+    if (allMatchingSelected) {
+      const matchingIds = new Set(eligibleMatchingOrders.map(order => order.workOrderId));
+      update({ selectedIds: draft.selectedIds.filter(id => !matchingIds.has(id)) });
+      setSelectionNotice("");
+      return;
+    }
+    if (bulkIdentityError) { setSelectionNotice(bulkIdentityError); return; }
+    const nextIds = [...new Set([...draft.selectedIds, ...eligibleMatchingOrders.map(order => order.workOrderId)])];
+    if (nextIds.length > 500) {
+      setSelectionNotice("A batch is limited to 500 work orders. Refine the filters or clear/remove selections; no orders were added.");
+      return;
+    }
+    update({ selectedIds: nextIds });
+    setSelectionNotice("");
+  };
   const pendingLock = !!draft.pending;
   const createLock = !!draft.createAttempt;
   const canCreate = canPost && !!draft.name.trim() && selectedOrders.length > 0 && selectedOrders.length === draft.selectedIds.length &&
@@ -408,10 +457,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     await sendPending(pending);
   };
   const changeSelection = (id: number) => {
+    if (draft.pending || draft.createAttempt) return;
     const order = orderMap.get(id);
     if (!draft.selectedIds.includes(id) && (!order || !isOrderSelectable(order))) return;
+    if (!draft.selectedIds.includes(id) && draft.selectedIds.length >= 500) {
+      setSelectionNotice("A batch is limited to 500 work orders. Remove a selection before adding another.");
+      return;
+    }
     selectedOrderIds(draft.selectedIds.includes(id)
       ? draft.selectedIds.filter(value => value !== id) : [...draft.selectedIds, id]);
+    setSelectionNotice("");
   };
   const setLineValue = (key: string, value: string, field: "quantities" | "serialText") => update({ [field]: { ...draft[field], [key]: value } });
   const startResume = (batch: FulfillmentBatch) => update({ batchId: batch.id, mode: "resume",
@@ -509,11 +564,43 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                 <div className="space-y-1"><Label htmlFor="fulfillment-installer">Installer</Label><Select value={draft.installer || "all"} onValueChange={value => update({ installer: value === "all" ? "" : value })}><SelectTrigger id="fulfillment-installer"><SelectValue placeholder="Any installer" /></SelectTrigger><SelectContent><SelectItem value="all">Any installer</SelectItem>{[...new Map(orders.filter(order => order.installerId).map(order => [order.installerId!, order.installer])).entries()].map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select></div>
                 {draft.mode === "scheduled" && <div className="space-y-1"><Label htmlFor="fulfillment-date">Scheduled date</Label><Input id="fulfillment-date" type="date" value={draft.date} onChange={event => update({ date: event.target.value })} /></div>}
               </div>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/70 p-3">
+                <label className="flex min-w-0 items-center gap-2 text-sm">
+                  <Checkbox
+                    id="fulfillment-select-all-matching"
+                    data-testid="fulfillment-select-all-matching"
+                    aria-label="Select all eligible matching orders"
+                    aria-describedby="fulfillment-selection-summary"
+                    checked={allMatchingSelected ? true : selectedMatchingCount > 0 ? "indeterminate" : false}
+                    disabled={bulkSelectionDisabled}
+                    onCheckedChange={handleSelectAllMatching}
+                  />
+                  <span className="font-medium">Select all eligible matching orders</span>
+                </label>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <p id="fulfillment-selection-summary" data-testid="fulfillment-selection-summary" aria-live="polite" className="text-xs text-muted-foreground">
+                    Selected {draft.selectedIds.length} / Eligible matching {eligibleMatchingOrders.length}
+                  </p>
+                  <Button type="button" size="sm" variant="outline" data-testid="fulfillment-clear-selection"
+                    disabled={!draft.selectedIds.length || !!draft.pending || !!draft.createAttempt}
+                    onClick={() => { update({ selectedIds: [] }); setSelectionNotice(""); }}>
+                    Clear selection
+                  </Button>
+                </div>
+                {hiddenSelectionCount > 0 && <p className="w-full text-xs text-muted-foreground">
+                  {hiddenSelectionCount} selected {hiddenSelectionCount === 1 ? "order is" : "orders are"} outside these filters or unavailable. Bulk changes affect only eligible matching orders.
+                </p>}
+                {!allMatchingSelected && !!bulkIdentityError && eligibleMatchingOrders.length > 0 && <p className="w-full text-xs text-amber-700">{bulkIdentityError}</p>}
+                {!allMatchingSelected && bulkAddWouldExceedLimit && <p className="w-full text-xs text-amber-700">A batch is limited to 500 work orders. Refine filters or clear/remove selections before adding these matches.</p>}
+                {draft.selectedIds.length >= 500 && <p className="w-full text-xs text-amber-700">500-order batch limit reached. Remove selected orders before adding more.</p>}
+                {selectionNotice && <p role="alert" className="w-full text-xs text-destructive">{selectionNotice}</p>}
+              </div>
               <div className="space-y-2">
                 {filteredOrders.map(order => {
                   const checked = draft.selectedIds.includes(order.workOrderId);
+                  const limitBlocked = !checked && draft.selectedIds.length >= 500;
                   return <label key={order.workOrderId} className={`flex min-h-16 cursor-pointer items-start gap-3 rounded-lg border p-3 ${checked ? "border-primary bg-primary/5" : "bg-card"} ${!order.eligible ? "opacity-65" : ""}`}>
-                    <Checkbox checked={checked} disabled={!isOrderSelectable(order) || (!!draft.pending) || !!draft.createAttempt} onCheckedChange={() => changeSelection(order.workOrderId)} />
+                    <Checkbox checked={checked} disabled={(!checked && !isOrderSelectable(order)) || limitBlocked || !!draft.pending || !!draft.createAttempt} onCheckedChange={() => changeSelection(order.workOrderId)} />
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2 font-medium">{order.label || `Work order ${order.workOrderId}`}<Badge variant={isOrderSelectable(order) ? "outline" : "secondary"}>{isOrderSelectable(order) ? "Eligible" : "Unavailable"}</Badge></span>
                       <span className="mt-1 block text-xs text-muted-foreground">{[order.group, order.installer || "No installer", projectDate(order.scheduledDate), order.route && `Route ${order.route}`, order.zone && `Zone ${order.zone}`].filter(Boolean).join(" · ")}</span>
