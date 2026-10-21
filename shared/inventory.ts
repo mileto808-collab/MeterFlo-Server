@@ -8,6 +8,7 @@ import type { InventoryLocationType } from "./inventory-location-types";
 import type { RemovalRule, RemovalPolicy, FieldRemovalChoice } from "./inventory-removal-policy";
 import type { FieldStockSettings } from "./inventory-field-stock";
 import type { StockDiscrepancy } from "./inventory-stock-discrepancies";
+import type { PlannedLine, WorkPlan } from "./inventory-planning";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -50,6 +51,7 @@ export const itemSchema = z.object({
 export const stockLineSchema = z.object({ itemId: id, quantity: z.number().int().positive().max(1000000),
   serials: z.array(z.string().trim().min(1).max(100)).max(10000).default([]) }).strict();
 export const allocationSchema = stockLineSchema.extend({ warehouseId: id });
+export const reservationSchema = allocationSchema.extend({ reservationMode: z.enum(["quantity", "serial"]).optional() });
 export const inventoryImportSchema = z.preprocess(value => {
   if (typeof value === "string") {
     if (!value.trim()) return [];
@@ -74,7 +76,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
-    "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
+    "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy"]),
   data: z.record(z.unknown()),
 }).strict();
@@ -83,6 +85,7 @@ export type InventoryItem = z.infer<typeof itemSchema>;
 export type Vendor = z.infer<typeof vendorSchema>;
 export type StockLine = z.infer<typeof stockLineSchema>;
 export type Allocation = z.infer<typeof allocationSchema>;
+export type Reservation = z.infer<typeof reservationSchema>;
 export type Disposition = z.infer<typeof dispositionSchema>;
 export type InventoryCommand = z.infer<typeof inventoryCommandSchema>;
 export type Stock = { warehouseId: string; itemId: string; quantity: number; serials: string[]; revision: number };
@@ -90,12 +93,13 @@ export type InventoryOrder = { id: string; type: "purchase" | "transfer"; vendor
   orderNumber?: string; reference?: string;
   destinationId: string; lines: StockLine[]; received: StockLine[]; dispatched: StockLine[]; status: "draft" | "released" | "partial" | "completed" | "cancelled" | "closed"; notes: string; createdAt: string; archivedAt?: string;
   replacementFor?: string; losses?: StockLine[]; closure?: OrderClosure };
-export type WorkAllocation = { workOrderId: number; lines: Allocation[]; used: Allocation[]; dispositions: Disposition[];
-  mode: "changeout" | "reading_only" | null; status: "reserved" | "consumed" | "released"; revision: number };
+export type WorkAllocation = { workOrderId: number; lines: Reservation[]; used: Allocation[]; dispositions: Disposition[];
+  mode: "changeout" | "reading_only" | null; status: "reserved" | "consumed" | "released"; revision: number; assignmentVersion?: number };
 export type InventoryTypeLink = { id: string; equipment: "system" | "module"; typeId: number; itemId: string;
   systemTypeId?: number | null; moduleTypeId?: number | null };
 export type WorkRequirements = { workOrderId: number; lines: { itemId: string; quantity: number }[];
-  missing: { equipment: "system" | "module"; typeId: string }[] };
+  missing: { equipment: "system" | "module"; typeId: string }[];
+  automaticLines?: { itemId: string; quantity: number }[]; manualLines?: PlannedLine[]; planRevision?: number };
 export type InventoryCount = { id: string; warehouseId: string; scope?: "selected" | "warehouse"; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
@@ -114,7 +118,7 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
   removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[];
   fieldRemovalChoices?: FieldRemovalChoice[];
   stockDiscrepancies?: StockDiscrepancy[];
-  typeLinks?: InventoryTypeLink[]; workRequirements?: WorkRequirements[];
+  typeLinks?: InventoryTypeLink[]; workRequirements?: WorkRequirements[]; workPlans?: WorkPlan[];
   categories?: string[];
   categoryCatalog?: InventoryCategory[];
   orderNumberCounters?: Record<string, number>;
@@ -138,7 +142,8 @@ export const commandPermission = (action: InventoryCommand["action"]) =>
   ["assemble", "disassemble"].includes(action) ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :
   action === "resolveStockDiscrepancy" ? inventoryPermissions.resolveExceptions :
-  ["assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;
+  action === "stageWorkOrder" ? inventoryPermissions.transfer :
+  ["plan", "assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;
 
 // Legacy free-text category values remain selectable without a destructive migration.
 export function inventoryCategoryNames(state: Pick<InventoryState, "categories" | "categoryCatalog" | "items">): string[] {

@@ -13,6 +13,7 @@ import { kitSerialContents } from "../shared/inventory-kits";
 import { readRelationalInventory, writeRelationalInventory } from "./inventoryRelational";
 import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
 import { actualEquipmentLines } from "../shared/inventory-requirements";
+import { workPlanInputSchema } from "../shared/inventory-planning";
 import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inventory-field-stock";
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
 import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
@@ -73,7 +74,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "stockDiscrepancies"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -139,9 +140,14 @@ export async function postInventory(projectId: number, command: InventoryCommand
       if (isTypeCommand && !canManageLocations)
         throw Object.assign(new InventoryError("Manage inventory location types and access permission required."), { status: 403 });
     }
-    if (["assign", "prepareUse"].includes(command.action)) {
-      if (command.action === "assign" && p.wizard_mode === "reading_only")
+    if (["plan", "stageWorkOrder", "assign", "prepareUse"].includes(command.action)) {
+      if (["plan", "stageWorkOrder", "assign"].includes(command.action) && p.wizard_mode === "reading_only")
         throw new InventoryError("Reading-only projects cannot reserve replacement inventory.");
+      const user = await storage.getUser(actor);
+      if (command.action === "stageWorkOrder" && (!user ||
+        !await storage.hasPermission(user, inventoryPermissions.assign) ||
+        !await storage.hasPermission(user, inventoryPermissions.receive)))
+        throw Object.assign(new InventoryError("Staging requires transfer, receive and assign-inventory permissions."), { status: 403 });
       if (command.action === "prepareUse") {
         const parsed = z.object({ mode: z.string(), used: z.array(allocationSchema), dispositions: z.array(dispositionSchema) }).parse(command.data);
         const user = await storage.getUser(actor);
@@ -158,13 +164,21 @@ export async function postInventory(projectId: number, command: InventoryCommand
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       if (!project?.database_name || !/^[a-z0-9_]+$/.test(project.database_name)) throw new InventoryError("Project work-order storage unavailable.");
       const id = z.number().int().positive().parse(command.data.workOrderId);
-      const { rows: [wo] } = await client.query(`SELECT status,assigned_user_id FROM "${project.database_name}".work_orders WHERE id=$1`, [id]);
+      const { rows: [wo] } = await client.query(`SELECT * FROM "${project.database_name}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
       if (!wo) throw new InventoryError("Work order not found in this project.");
-      if (!admin && wo.assigned_user_id && wo.assigned_user_id !== actor) throw new InventoryError("Work order assigned to another user.");
-      const { rows: labels } = await client.query("SELECT label FROM public.work_order_statuses WHERE lower(code)=lower($1)", [wo.status]);
+      if (!admin && wo.assigned_user_id && wo.assigned_user_id !== actor &&
+        (!user || !await storage.hasPermission(user, inventoryPermissions.maintain) && !await storage.hasPermission(user, inventoryPermissions.configure)))
+        throw new InventoryError("Work order assigned to another user. Inventory maintenance or configuration authority is required to prepare another installer's stock.");
+      const { rows: labels } = await client.query("SELECT code,label FROM public.work_order_statuses WHERE lower(code)=lower($1) OR lower(label)=lower($1)", [wo.status]);
       if (["completed", "closed", "cancelled"].includes(String(wo.status).toLowerCase()) ||
-          labels.some(l => ["completed", "closed", "cancelled"].includes(String(l.label).toLowerCase())))
+          labels.some(l => [l.code, l.label].some(value => ["completed", "closed", "cancelled"].includes(String(value).toLowerCase()))))
         throw new InventoryError("Only unfinished, non-closed work orders can change inventory selections.");
+      if (command.action === "plan") {
+        const automatic = (await workRequirements(client, projectId, before, wo)).automaticLines ?? [];
+        const { lines } = workPlanInputSchema.parse(command.data);
+        if (lines.some(line => line.kind === "override" && !automatic.some(item => item.itemId === line.itemId)))
+          throw new InventoryError("Overrides must refer to an automatically planned item. Use an addition for other items.");
+      }
     }
     if (command.action === "typeLink") {
       const { equipment, typeId } = z.object({ equipment: z.enum(["system", "module"]), typeId: z.number().int() }).parse(command.data);
@@ -195,6 +209,17 @@ export async function postInventory(projectId: number, command: InventoryCommand
       }
     }
     const result = applyInventoryCommand(before, command, actor, admin, undefined, { manageLocations: canManageLocations });
+    if (!result.replay && ["assign", "stageWorkOrder"].includes(command.action)) {
+      const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
+      const { rows: [work] } = await client.query(`SELECT assignment_version FROM "${project.database_name}".work_orders WHERE id=$1`, [command.data.workOrderId]);
+      const allocation = result.state.allocations.find(allocation => allocation.workOrderId === command.data.workOrderId);
+      if (allocation) allocation.assignmentVersion = work.assignment_version;
+    }
+    if (!result.replay && command.action === "plan") {
+      const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
+      const { rows: [work] } = await client.query(`SELECT * FROM "${project.database_name}".work_orders WHERE id=$1`, [command.data.workOrderId]);
+      setWorkRequirements(result.state, await workRequirements(client, projectId, result.state, work));
+    }
     if (!result.replay && command.action === "typeLink") {
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       if (project?.database_name && /^[a-z0-9_]+$/.test(project.database_name)) {
@@ -225,6 +250,11 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled,wizard_mode,changeout_equipment_type,reading_equipment_type FROM public.projects WHERE database_name=$1", [schema]);
   if (!p?.inventory_enabled) {
     if (!ordinaryImport && importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
+    if (p && !next && (await client.query("SELECT 1 FROM public.inventory_state WHERE project_id=$1", [p.id])).rowCount) {
+      const state = await lockInventory(client, p.id);
+      if (state.workPlans?.some(plan => plan.workOrderId === prior?.id))
+        throw new InventoryError("Enable inventory before deleting a work order with saved inventory planning. Clear its plan and reconcile any reservations first.");
+    }
     return;
   }
   const { rows: statuses } = await client.query("SELECT code,label FROM public.work_order_statuses");
@@ -270,7 +300,8 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     const requirements = await workRequirements(client, p.id, state, next);
     const saved = state.workRequirements?.find(r => r.workOrderId === next.id);
     if ((saved || requirements.lines.length || requirements.missing.length) &&
-        canonicalInventoryJson(saved) !== canonicalInventoryJson(requirements)) {
+        canonicalInventoryJson(saved) !== canonicalInventoryJson({ workOrderId: requirements.workOrderId, lines: requirements.lines,
+          missing: requirements.missing, automaticLines: requirements.automaticLines })) {
       if (state === before) state = structuredClone(before);
       setWorkRequirements(state, requirements);
       state.revision++;
@@ -278,6 +309,11 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   } else if (!next && state.workRequirements?.some(r => r.workOrderId === prior?.id)) {
     if (state === before) state = structuredClone(before);
     state.workRequirements = state.workRequirements?.filter(r => r.workOrderId !== prior.id);
+    state.revision++;
+  }
+  if (!next && state.workPlans?.some(plan => plan.workOrderId === prior?.id)) {
+    if (state === before) state = structuredClone(before);
+    state.workPlans = state.workPlans?.filter(plan => plan.workOrderId !== prior.id);
     state.revision++;
   }
   if (usage && !ordinaryImport) {

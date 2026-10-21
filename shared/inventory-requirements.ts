@@ -30,9 +30,9 @@ export function requirementLeaves(state: Pick<InventoryState, "items">, lines: {
 }
 
 /** Validate coverage using finished kits OR loose components, without counting both. */
-export function requirementsSatisfied(state: InventoryState, requirements: WorkRequirements, used: Allocation[]) {
+export function requirementsSatisfied(state: InventoryState, requirements: WorkRequirements, used: Allocation[], allowMixedExtras = false) {
   if (requirements.missing.length) return false;
-  if (used.some(l => used.some(other => l.itemId !== other.itemId && recipeContains(state, l.itemId, other.itemId))))
+  if (!allowMixedExtras && used.some(l => used.some(other => l.itemId !== other.itemId && recipeContains(state, l.itemId, other.itemId))))
     return false;
   const required = requirementLeaves(state, requirements.lines);
   const actual = requirementLeaves(state, used);

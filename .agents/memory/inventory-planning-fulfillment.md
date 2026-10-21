@@ -20,3 +20,9 @@ The installed serial is not known at import time: the technician may grab a rand
 **Why:** The user described this as the normal physical workflow, not an exceptional case.
 
 **How to apply:** Do not require installed-serial allocation during import or planning. Recording serial custody on receipt/transfer is separate from assigning an installed serial to a work order.
+
+Manual fulfillment/staging must work without a wizard. Future wizards streamline existing manual processes and make them accessible from one interface.
+
+**Why:** The user explicitly clarified this task's scope after the initial first-stage proposal.
+
+**How to apply:** Deliver the manual operations and reuse their underlying commands for later guided workflows; do not defer basic fulfillment functionality until wizard implementation.

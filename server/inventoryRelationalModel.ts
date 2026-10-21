@@ -12,6 +12,10 @@ export type EntityModel = {
 const text = (...keys: string[]): Columns => Object.fromEntries(keys.map(key => [key, "text"]));
 const line = { itemId: "text", quantity: "integer" };
 export const relationalEntities: EntityModel[] = [
+  { name: "inventory_work_plans", field: "workPlans", key: "workOrderId",
+    columns: { workOrderId: "integer", revision: "integer", ...text("updatedBy", "updatedAt") },
+    children: [{ name: "inventory_work_plan_lines", paths: ["lines"],
+      columns: { ...text("id", "itemId", "kind", "reason"), quantity: "integer" } }] },
   { name: "inventory_stock_discrepancies", field: "stockDiscrepancies",
     columns: { ...text("id", "warehouseId", "itemId", "sourceReceiptId", "actor", "occurredAt", "status", "itemSku", "itemName", "locationName", "resolvedBy", "resolvedAt", "method", "reason", "evidence"),
       workOrderId: "integer", quantity: "integer", usedQuantity: "integer", recordedAvailable: "integer" },
@@ -35,7 +39,7 @@ export const relationalEntities: EntityModel[] = [
     columns: { ...text("id", "equipment", "itemId"), typeId: "integer", systemTypeId: "integer", moduleTypeId: "integer" } },
   { name: "inventory_work_requirements", field: "workRequirements", key: "workOrderId",
     columns: { workOrderId: "integer" }, children: [
-      { name: "inventory_work_requirement_lines", paths: ["lines"], columns: line },
+      { name: "inventory_work_requirement_lines", paths: ["lines", "automaticLines"], columns: line },
       { name: "inventory_work_requirement_missing", paths: ["missing"], columns: text("equipment", "typeId") },
     ] },
   { name: "inventory_orders", field: "orders", columns: { ...text("id", "type", "vendorId", "sourceId", "destinationId", "orderNumber", "reference", "status", "notes", "createdAt", "archivedAt", "replacementFor") },
@@ -46,8 +50,8 @@ export const relationalEntities: EntityModel[] = [
       { name: "inventory_count_draft_lines", paths: ["draft.rows"], columns: text("itemId", "quantity", "serials") },
     ] },
   { name: "inventory_allocations", field: "allocations", key: "workOrderId",
-    columns: { workOrderId: "integer", ...text("mode", "status"), revision: "integer" }, json: ["dispositions"],
-    children: [{ name: "inventory_allocation_lines", paths: ["lines", "used"], columns: { ...line, warehouseId: "text" }, arrays: ["serials"] }] },
+    columns: { workOrderId: "integer", ...text("mode", "status"), revision: "integer", assignmentVersion: "integer" }, json: ["dispositions"],
+    children: [{ name: "inventory_allocation_lines", paths: ["lines", "used"], columns: { ...line, warehouseId: "text", reservationMode: "text" }, arrays: ["serials"] }] },
   { name: "inventory_receipts", field: "receipts", columns: text("id", "action", "reference", "warehouseId", "actor", "occurredAt", "reason", "holdId", "resolution", "externalReference", "kitHoldId", "sourceReceiptId"),
     json: ["holdDisposition", "kitConversion", "kitInspection"],
     children: [{ name: "inventory_receipt_lines", paths: ["lines", "components", "damaged", "closedShort"], columns: { ...line, warehouseId: "text", unidentifiedQuantity: "integer", reason: "text" }, arrays: ["serials", "expectedSerials"] },

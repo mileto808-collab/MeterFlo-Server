@@ -20,6 +20,7 @@ export function itemDeletionBlockers(state: InventoryState, id: string): string[
   const collections: Array<[unknown, string]> = [
     [state.typeLinks, "Linked to a system/module type. Remove its inventory link first."],
     [state.workRequirements, "Referenced by planned work-order requirements."],
+    [state.workPlans, "Referenced by manually planned work-order items."],
     [state.orders, "Linked to an order, including cancelled, completed, or cleared orders."],
     [state.counts, "Referenced by a cycle count or its saved draft."],
     [state.allocations, "Referenced by work-order reservations or usage history."],

@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
-import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, savedCountDraftSchema, categoryNameSchema, categoryKey, type InventoryState } from "../shared/inventory";
+import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, reservationSchema, savedCountDraftSchema, categoryNameSchema, categoryKey, type InventoryState } from "../shared/inventory";
+import { workPlanInputSchema } from "../shared/inventory-planning";
 import { z } from "zod";
 import { validateCustomerHandoffs } from "../shared/inventory-customer-handoffs";
 import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
@@ -139,11 +140,18 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   const requirements = z.array(z.object({
     workOrderId: z.number().int().positive(),
     lines: z.array(z.object({ itemId: z.string().min(1), quantity: z.number().int().positive() }).strict()),
+    automaticLines: z.array(z.object({ itemId: z.string().min(1), quantity: z.number().int().positive() }).strict()).optional(),
     missing: z.array(z.object({ equipment: z.enum(["system", "module"]), typeId: z.string().min(1) }).strict()),
   }).strict()).parse(s.workRequirements ?? []);
   if (new Set(requirements.map(r => r.workOrderId)).size !== requirements.length ||
-      requirements.some(r => !workOrderIds.includes(r.workOrderId) || r.lines.some(l => !s.items.some(i => i.id === l.itemId))))
+      requirements.some(r => !workOrderIds.includes(r.workOrderId) || [...r.lines, ...(r.automaticLines ?? [])].some(l => !s.items.some(i => i.id === l.itemId))))
     throw new Error("Inventory backup has invalid planned work-order requirements.");
+  const plans = z.array(workPlanInputSchema.extend({ updatedBy: z.string().optional(), updatedAt: z.string().datetime().optional() })).parse(s.workPlans ?? []);
+  if (new Set(plans.map(plan => plan.workOrderId)).size !== plans.length || plans.some(plan =>
+    !workOrderIds.includes(plan.workOrderId) || new Set(plan.lines.map(line => line.id)).size !== plan.lines.length ||
+    plan.lines.some(line => !s.items.some(item => item.id === line.itemId)) ||
+    new Set(plan.lines.filter(line => line.kind === "override").map(line => line.itemId)).size !== plan.lines.filter(line => line.kind === "override").length))
+    throw new Error("Inventory backup has invalid manual work-order plans.");
   z.array(warehouseSchema).parse(s.warehouses); z.array(itemSchema).parse(s.items); z.array(vendorSchema).parse(s.vendors);
   const categories = z.array(categoryNameSchema).parse(s.categories ?? []);
   if (new Set(categories.map(categoryKey)).size !== categories.length) throw new Error("Duplicate inventory categories in backup.");
@@ -152,7 +160,9 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
     !Array.isArray(s.returns) || !Array.isArray(s.counts) || typeof s.operations !== "object") throw new Error("Incomplete inventory backup.");
   for (const a of s.allocations) {
     if (!workOrderIds.includes(a.workOrderId)) throw new Error("Inventory backup refers to a missing work order.");
-    z.array(allocationSchema).parse(a.lines); z.array(allocationSchema).parse(a.used);
+    z.array(reservationSchema).parse(a.lines); z.array(allocationSchema).parse(a.used);
+    if (a.lines.some(line => line.reservationMode === "quantity" && line.serials.length))
+      throw new Error("Quantity reservations cannot contain assigned serials.");
   }
   validateOrderNumbers(s);
   for (const order of s.orders) if (order.archivedAt !== undefined) {

@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { InventoryState, WorkRequirements } from "../shared/inventory";
 import { deduplicateRequirements } from "../shared/inventory-requirements";
+import { effectivePlannedLines } from "../shared/inventory-planning";
 
 export async function workRequirements(client: Pick<PoolClient, "query">, projectId: number, state: InventoryState, work: any): Promise<WorkRequirements> {
   const ids: string[] = [], missing: WorkRequirements["missing"] = [];
@@ -17,10 +18,15 @@ export async function workRequirements(client: Pick<PoolClient, "query">, projec
     if (link && state.items.some(i => i.id === link.itemId && i.active)) ids.push(link.itemId);
     else missing.push({ equipment, typeId: String(value) });
   }
-  return { workOrderId: work.id, lines: deduplicateRequirements(state, ids), missing };
+  const automaticLines = deduplicateRequirements(state, ids);
+  const plan = state.workPlans?.find(plan => plan.workOrderId === work.id);
+  return { workOrderId: work.id, lines: effectivePlannedLines(automaticLines, plan?.lines ?? []), missing,
+    automaticLines, manualLines: plan?.lines ?? [], planRevision: plan?.revision ?? 0 };
 }
 
 export function setWorkRequirements(state: InventoryState, requirements: WorkRequirements) {
+  requirements = { workOrderId: requirements.workOrderId, lines: requirements.lines, missing: requirements.missing,
+    ...(requirements.automaticLines ? { automaticLines: requirements.automaticLines } : {}) };
   if (!requirements.lines.length && !requirements.missing.length) {
     if (state.workRequirements) state.workRequirements = state.workRequirements.filter(r => r.workOrderId !== requirements.workOrderId);
     return;

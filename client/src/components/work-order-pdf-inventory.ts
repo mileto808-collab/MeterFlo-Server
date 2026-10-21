@@ -51,8 +51,13 @@ export function buildWorkOrderInventoryHtml(enabled: boolean, snapshot?: WorkOrd
     return `<tr>${cell(description)}${cell(`${Number(row.quantity.toFixed(6))} ${item?.unit ?? "units"}`)}${hasBilling ? cell(typeof rate === "number" && Number.isFinite(rate) ? rate.toFixed(2) : "—") : ""}</tr>`;
   }).join("");
   const headers = ["Item / labor", "Quantity", ...(hasBilling ? ["Billing rate"] : [])];
+  const reservationSummary = allocation?.status === "reserved" && allocation.lines.length
+    ? `<p>Reserved, not consumed: ${allocation.lines.map(line => esc(`${items.get(line.itemId)?.sku ?? line.itemId} · ${line.quantity} at ${
+      snapshot.warehouses.find(warehouse => warehouse.id === line.warehouseId)?.name ?? line.warehouseId}${
+      line.reservationMode === "quantity" ? " (quantity hold; installed serial not selected)" : line.serials.length ? " (specific serials reserved)" : ""}`)).join("; ")}.</p>` : "";
   return `<section style="margin-bottom:10px;font-size:10px;">
     <h3 style="margin:0 0 6px;font-size:12px;">Inventory — ${actual ? "Recorded items & labor" : "Planned items & labor"}</h3>
+    ${reservationSummary}
     ${rows.length ? `<table style="width:100%;font-size:10px;border-collapse:collapse;table-layout:fixed;"><thead><tr>${headers.map(header =>
       `<th style="text-align:left;padding:4px;border-bottom:1px solid #aaa;">${esc(header)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>` : "<p>No inventory line items recorded.</p>"}
   </section>`;

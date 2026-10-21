@@ -1,4 +1,4 @@
-import type { Allocation, InventoryItem } from "./inventory";
+import type { Allocation, Reservation, InventoryItem } from "./inventory";
 import { inventoryComponentDetails } from "./inventory-component-details";
 import { requirementLeaves } from "./inventory-requirements";
 import { removalConfig, type RemovalWorkflow } from "./inventory-removal-policy";
@@ -46,7 +46,7 @@ export function refreshApprovedUse(current: ActualUseDraft[], requirements: Requ
 
 /** The stock representation is explicit: never debit both a finished kit and its parts. */
 export function plannedUseDrafts(requirements: Requirement[], items: InventoryItem[], warehouseId: string,
-  mode: PlannedStockMode, reservations: Allocation[] = []): ActualUseDraft[] {
+  mode: PlannedStockMode, reservations: Reservation[] = []): ActualUseDraft[] {
   const rows = mode === "components" ? requirementLeaves({ items }, requirements) : requirements;
   const quantities = new Map<string, number>();
   rows.forEach(row => {
@@ -59,7 +59,8 @@ export function plannedUseDrafts(requirements: Requirement[], items: InventoryIt
       if (quantity <= 0) break;
       const used = Math.min(quantity, reserved.quantity);
       result.push({ key: `planned-${reserved.warehouseId}-${itemId}`, itemId, warehouseId: reserved.warehouseId,
-        quantity: String(used), serials: "", reserved: true, maxQuantity: reserved.quantity, allowedSerials: reserved.serials });
+        quantity: String(used), serials: "", reserved: true, maxQuantity: reserved.quantity,
+        allowedSerials: reserved.reservationMode === "quantity" ? undefined : reserved.serials });
       quantity -= used;
     }
     if (quantity > 0) {
@@ -90,7 +91,7 @@ export function plannedInventoryLabels(requirements: Requirement[], items: Inven
   return [...labels.values()];
 }
 
-export function initialActualUse(allocation: { lines: Allocation[] } | null | undefined,
+export function initialActualUse(allocation: { lines: Reservation[] } | null | undefined,
   requirements: Requirement[] = [], items: InventoryItem[] = []): ActualUseDraft[] {
   if (requirements.length) {
     const mode = requirements.some(row => items.find(item => item.id === row.itemId)?.components.length &&
@@ -100,7 +101,7 @@ export function initialActualUse(allocation: { lines: Allocation[] } | null | un
   return (allocation?.lines ?? []).map((line, index) => ({
     key: `reserved-${line.warehouseId}-${line.itemId}-${index}`, itemId: line.itemId,
     warehouseId: line.warehouseId, quantity: "0", serials: "", reserved: true,
-    maxQuantity: line.quantity, allowedSerials: line.serials,
+    maxQuantity: line.quantity, allowedSerials: line.reservationMode === "quantity" ? undefined : line.serials,
   }));
 }
 
@@ -132,6 +133,6 @@ export function actualUseLinesAreValid(lines: ActualUseDraft[], items: Inventory
     if (deferEquipmentSerials && equipmentScan) return true;
     const serials = line.serials.split(/[\n,;]/).map(value => value.trim()).filter(Boolean);
     if (serials.length !== quantity || new Set(serials).size !== serials.length) return false;
-    return !line.reserved || serials.every(serial => (line.allowedSerials ?? []).includes(serial));
+    return !line.reserved || line.allowedSerials === undefined || serials.every(serial => line.allowedSerials!.includes(serial));
   });
 }

@@ -271,8 +271,8 @@ export function registerInventoryRoutes(app: Express) {
       throw Object.assign(new InventoryError("This work order is not assigned to you or your field group."), { status: 403 });
     const s = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
     const allocation = s.allocations.find(a => a.workOrderId === id) || null;
-    const { rows: labels } = await pool.query("SELECT label FROM public.work_order_statuses WHERE lower(code)=lower($1)", [wo.status]);
-    const canSelect = c.canViewInventory && ![String(wo.status).toLowerCase(), ...labels.map(l => String(l.label).toLowerCase())]
+    const { rows: labels } = await pool.query("SELECT code,label FROM public.work_order_statuses WHERE lower(code)=lower($1) OR lower(label)=lower($1)", [wo.status]);
+    const canSelect = c.canViewInventory && ![String(wo.status).toLowerCase(), ...labels.flatMap(l => [String(l.label).toLowerCase(), String(l.code).toLowerCase()])]
       .some(status => ["completed", "closed", "cancelled"].includes(status));
     const requirements = allocation?.status === "consumed"
       ? s.workRequirements?.find(r => r.workOrderId === id)
@@ -294,7 +294,12 @@ export function registerInventoryRoutes(app: Express) {
     const referencedWarehouses = new Set([...(allocation?.lines ?? []), ...(allocation?.used ?? []),
       ...(allocation?.dispositions ?? [])].map(line => line.warehouseId));
     return { enabled: !!c.project.inventoryEnabled, canSelect, canManageInventory: c.canViewInventory,
-      allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
+      allocation, editable: canSelect, workOrderStatus: wo.status, timezone: c.project.timezone ?? "UTC",
+      plan: s.workPlans?.find(plan => plan.workOrderId === id) ?? { workOrderId: id, revision: 0, lines: [] },
+      stagingReceipts: s.receipts.filter(receipt => receipt.action === "stageWorkOrder" && receipt.reference === `wo-${id}`),
+      reservationNeedsReview: allocation?.status === "reserved" && allocation.assignmentVersion !== undefined &&
+        allocation.assignmentVersion !== wo.assignment_version,
+      requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
       items: c.canViewInventory ? s.items : s.items.filter(item => referencedItems.has(item.id))
         .map(({ cost, billingRate, vendorId, ...item }) => item),
       warehouses: c.canViewInventory ? s.warehouses : s.warehouses.filter(w => referencedWarehouses.has(w.id))

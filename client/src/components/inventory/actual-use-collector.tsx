@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Requirement = { itemId: string; quantity: number };
+type Reservation = Allocation & { reservationMode?: "quantity" | "serial" };
 
 function recipeItemIds(itemId: string, items: InventoryItem[], ancestors = new Set<string>()): Set<string> {
   if (ancestors.has(itemId)) return new Set();
@@ -28,7 +29,7 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
   warehouses: Warehouse[];
   requirements?: Requirement[];
   missing?: Array<{ equipment: "system" | "module"; typeId: string }>;
-  reservations?: Allocation[];
+  reservations?: Reservation[];
   disabled?: boolean;
   fieldSourceId: string;
   sourceChoices: Warehouse[];
@@ -64,6 +65,8 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
   const labels = plannedInventoryLabels(requirements, items);
   const kitMode: PlannedStockMode = value.some(line => items.find(item => item.id === line.itemId)?.components.length) ? "kits" : "components";
   const sources = [...new Set(value.map(line => line.warehouseId).filter(Boolean))];
+  const reservationFor = (line: ActualUseDraft) => reservations.find(reservation =>
+    reservation.itemId === line.itemId && reservation.warehouseId === line.warehouseId);
   const changePlan = (warehouseId: string, mode: PlannedStockMode) =>
     onChange(plannedUseDrafts(requirements, items, warehouseId, mode, reservations));
   const reservedPlan = planned && reservations.length > 0;
@@ -122,43 +125,38 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
       </li>)}</ul>}
       {!!missing.length && <div className="mt-2 flex gap-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>Some equipment types have no item mapping: {missing.map(row => `${row.equipment} type ${row.typeId}`).join(", ")}.</span></div>}
       {planned && stockSource}
-      {value.filter(line => {
-        const item = items.find(item => item.id === line.itemId);
-        return item?.tracking === "serialized" && (!!item.components.length || item.equipment === "none");
-      }).map(line => <div key={line.key} className="space-y-1">
-          <Label htmlFor={`planned-kit-serial-${line.key}`}>{items.find(item => item.id === line.itemId)?.components.length ? "Kit serial" : `${items.find(item => item.id === line.itemId)?.name} serials`}</Label>
-          <Input id={`planned-kit-serial-${line.key}`} value={line.serials} disabled={disabled} placeholder="Scan the assembled kit label"
-            onChange={event => onChange(value.map(row => row.key === line.key ? { ...row, serials: event.target.value } : row))} />
-        </div>)}
-      {planned && <p className="text-xs text-muted-foreground">Stock is deducted at completion, not reserved here. Scan the new system/module serial in the next wizard step.</p>}
+      {planned && <p className="text-xs text-muted-foreground">These quantities guide actual-use capture. Reduce or remove items not installed. Stock is deducted only at completion; new system/module serials are captured in the next wizard step.</p>}
       {planned && value.some(line => line.reserved && Number(line.quantity) > (line.maxQuantity ?? 0)) &&
         <p role="alert" className="text-xs text-destructive">Planned quantity exceeds the reservation at this location. Update the reservation or choose another stock location.</p>}
     </section>}
 
-    {!planned && !missing.length && <section className="space-y-2" aria-label="Actual items used">
-      <div><h4 className="text-sm font-semibold">Actual items used</h4><p className="text-xs text-muted-foreground">Add what you install. Stock comes from the working location shown below; no reservation is created.</p></div>
-      {stockSource}
+    <section className="space-y-2" aria-label="Actual items used">
+      <div><h4 className="text-sm font-semibold">Actual items used</h4><p className="text-xs text-muted-foreground">Record what was physically installed. Planned quantities are a starting point only; reduce to zero or remove lines that were not used.</p></div>
+      {!planned && stockSource}
       {value.map((line, index) => {
         const item = items.find(entry => entry.id === line.itemId);
         const warehouse = warehouses.find(entry => entry.id === line.warehouseId);
         const quantity = Number(line.quantity);
         const serialCount = line.serials.split(/[\n,;]/).map(serial => serial.trim()).filter(Boolean).length;
+        const reservation = reservationFor(line);
+        const quantityHold = reservation?.reservationMode === "quantity";
+        const exactSerialHold = line.reserved && !quantityHold;
          const wizardEquipmentScan = item?.tracking === "serialized" && !item.components.length && ["system", "module"].includes(item.equipment);
          const invalidSerials = !wizardEquipmentScan && item?.tracking === "serialized" && quantity > 0 && (serialCount !== quantity ||
-          (line.reserved && line.serials.split(/[\n,;]/).map(serial => serial.trim()).filter(Boolean).some(serial => !(line.allowedSerials ?? []).includes(serial))));
+          (exactSerialHold && line.serials.split(/[\n,;]/).map(serial => serial.trim()).filter(Boolean).some(serial => !(line.allowedSerials ?? []).includes(serial))));
         return <div key={line.key} className="rounded-md border p-3">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0"><p className="break-words text-sm font-medium">{item?.name ?? line.itemId}</p><p className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId} · {line.reserved ? `Reserved · max ${line.maxQuantity}` : "Vehicle / accessible stock"}{item?.components.length ? " · kit" : ""}</p></div>
-            {!line.reserved && <Button type="button" size="icon" variant="ghost" aria-label={`Remove ${item?.name ?? "actual use line"}`} disabled={disabled} onClick={() => onChange(value.filter(entry => entry.key !== line.key))}><Trash2 className="h-4 w-4" /></Button>}
+            <div className="min-w-0"><p className="break-words text-sm font-medium">{item?.name ?? line.itemId}</p><p className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId} · {line.reserved ? `Reserved · max ${line.maxQuantity}${quantityHold ? " · quantity hold" : " · exact serials"}` : "Vehicle / accessible stock"}{item?.components.length ? " · kit" : ""}</p></div>
+            <Button type="button" size="icon" variant="ghost" aria-label={`Remove ${item?.name ?? "actual use line"} from actual use`} title="Remove from actual use; any reservation remains unchanged" disabled={disabled} onClick={() => onChange(value.filter(entry => entry.key !== line.key))}><Trash2 className="h-4 w-4" /></Button>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-[130px_1fr]">
             <div className="space-y-1"><Label htmlFor={`actual-use-qty-${line.key}`}>Used quantity</Label><Input id={`actual-use-qty-${line.key}`} type="number" inputMode="numeric" min="0" max={line.reserved ? line.maxQuantity : undefined} value={line.quantity} disabled={disabled} onChange={event => onChange(value.map(entry => entry.key === line.key ? { ...entry, quantity: event.target.value } : entry))} /></div>
              {item?.tracking === "serialized" && (!item.components.length && ["system", "module"].includes(item.equipment)
                ? <p className="self-center text-xs text-muted-foreground">Scan the new {item.equipment} serial in the next wizard step.</p>
-               : <div className="space-y-1"><Label htmlFor={`actual-use-serials-${line.key}`}>{item.components.length ? "Kit serial" : "Serials used"}</Label><Input id={`actual-use-serials-${line.key}`} value={line.serials} disabled={disabled} onChange={event => onChange(value.map(entry => entry.key === line.key ? { ...entry, serials: event.target.value } : entry))} placeholder={line.reserved ? "Reserved serials only" : "One serial per unit"} /><p className="text-xs text-muted-foreground">{line.reserved ? `Use only serials reserved here (${(line.allowedSerials ?? []).join(", ") || "none"}).` : "Separate serials with commas or new lines."}</p></div>)}
+                : <div className="space-y-1"><Label htmlFor={`actual-use-serials-${line.key}`}>{item.components.length ? "Kit serial" : "Actual serials used"}</Label><Input id={`actual-use-serials-${line.key}`} value={line.serials} disabled={disabled} onChange={event => onChange(value.map(entry => entry.key === line.key ? { ...entry, serials: event.target.value } : entry))} placeholder={exactSerialHold ? "Reserved serials only" : "One actual serial per unit"} /><p className="text-xs text-muted-foreground">{exactSerialHold ? `Use only serials reserved here (${(line.allowedSerials ?? []).join(", ") || "none"}).` : quantityHold ? "This quantity hold has no serial identity; scan the actual installed serials here." : "Separate actual serials with commas or new lines."}</p></div>)}
           </div>
           {!!item?.components.length && <details className="mt-2 text-xs"><summary className="cursor-pointer text-muted-foreground">View kit components</summary><ul className="mt-1 border-l pl-3 text-muted-foreground">{expandedComponents(item.id, Math.max(0, quantity || 0), items).map((component, componentIndex) => <li key={`${line.key}-component-${componentIndex}`} className="py-0.5">{component.label} · {component.quantity}</li>)}</ul></details>}
-        {invalidSerials && <p role="alert" className="mt-2 text-xs text-destructive">{line.reserved ? "Enter only reserved serials, matching the quantity." : "Enter one unique serial for each unit used."}</p>}
+        {invalidSerials && <p role="alert" className="mt-2 text-xs text-destructive">{exactSerialHold ? "Enter only reserved serials, matching the quantity." : "Enter one unique actual serial for each unit used."}</p>}
          {wizardEquipmentScan && quantity > 1 && <p role="alert" className="mt-2 text-xs text-destructive">Use one serialized {item?.equipment} per changeout.</p>}
         </div>;
       })}
@@ -167,6 +165,6 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
         <Button type="button" className="self-end" variant="outline" disabled={disabled || !newItem || !newWarehouse || !!overlappingLine || duplicateSameStockLine} onClick={addLine}><Plus className="mr-1 h-4 w-4" />Add</Button>
       </div>
       {(overlappingLine || duplicateSameStockLine) && <p role="status" className="text-xs text-amber-800 dark:text-amber-200">This item overlaps an existing kit recipe or stock line. Edit that line instead to avoid counting the same physical components twice.</p>}
-    </section>}
+    </section>
   </div>;
 }

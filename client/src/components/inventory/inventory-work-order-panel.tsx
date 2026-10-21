@@ -5,6 +5,8 @@ import type { Allocation, InventoryItem, Warehouse, WorkAllocation, WorkRequirem
 import { inventoryComponentDetails, type WorkKitComponentTrace } from "@shared/inventory-component-details";
 import { removalChoices, removalConfig, type RemovalRule, type RemovalPolicy, type RemovalWorkflow } from "@shared/inventory-removal-policy";
 import { locationTypeFor, locationTypeLabel, warehouseAccessible, type InventoryLocationType } from "@shared/inventory-location-types";
+import { WorkOrderPlanEditor, type WorkOrderPlan } from "@/components/inventory/work-order-plan-editor";
+import { WorkOrderStagingPanel } from "@/components/inventory/work-order-staging-panel";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -20,12 +22,18 @@ import { Loader2, PackageCheck, Plus, Trash2 } from "lucide-react";
 
 type WorkInventorySnapshot = {
   enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
-  locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements; canSelect?: boolean;
+  locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements & {
+    automaticLines?: Array<{ itemId: string; quantity: number }>;
+    manualLines?: Array<{ id: string; itemId: string; quantity: number; kind: "addition" | "override"; reason: string }>;
+    planRevision?: number;
+  }; plan?: WorkOrderPlan; canSelect?: boolean; editable?: boolean; workOrderStatus?: string;
+  stagingReceipts?: Array<{ id: string; reason: string; occurredAt: string; warehouseId: string; lines: Allocation[]; actor: string }>;
+  reservationNeedsReview?: boolean; timezone?: string;
   canManageInventory: boolean;
   componentTrace?: WorkKitComponentTrace[];
   removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
 };
-type DraftLine = Allocation;
+type DraftLine = Allocation & { reservationMode?: "quantity" | "serial" };
 
 export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = false }: {
   projectId: string | number; workOrderId: number; readingOnly?: boolean;
@@ -45,6 +53,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const [warehouseId, setWarehouseId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [serials, setSerials] = useState("");
+  const [reservationMode, setReservationMode] = useState<"quantity" | "serial">("quantity");
   const [used, setUsed] = useState<Record<string, number>>({});
   const [usedSerials, setUsedSerials] = useState<Record<string, string>>({});
   const [disposition, setDisposition] = useState<Record<string, string>>({});
@@ -61,7 +70,11 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const [draftTouched, setDraftTouched] = useState(false);
   const [staleAllocation, setStaleAllocation] = useState(false);
   const projectReadingOnly = data?.workflow?.wizardMode === "reading_only" || readingOnly;
-  const canAssign = data?.canManageInventory === true && hasPermission("inventory.assign") && data?.canSelect !== false && !projectReadingOnly;
+  const workOrderLocked = data?.editable === false || ["closed", "completed"].includes((data?.workOrderStatus ?? "").toLowerCase());
+  const canAssign = data?.canManageInventory === true && hasPermission("inventory.assign") && data?.canSelect !== false && !projectReadingOnly && !workOrderLocked;
+  const canPlan = data?.canManageInventory === true && hasPermission("inventory.assign") && data?.canSelect !== false && !workOrderLocked;
+  const canStage = data?.canManageInventory === true && data?.canSelect !== false && !workOrderLocked &&
+    hasPermission("inventory.transfer") && hasPermission("inventory.receive") && hasPermission("inventory.assign");
   const workMode = data?.workflow?.wizardMode === "user_choice" ? mode : projectReadingOnly ? "reading_only" : "changeout";
   const visibleEquipment = (["system", "module"] as const).filter(e => !["system", "module"].includes(data?.workflow?.equipment ?? "") || e === data?.workflow?.equipment);
 
@@ -136,7 +149,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       return;
     }
     if (checked.data.allocation) return;
-    mutation.mutate({ action: "assign", payload: { workOrderId, lines: [] } });
+    mutation.mutate({ action: "assign", payload: { workOrderId, revision: 0, lines: [] } });
   };
   const removeReservation = async (line: Allocation) => {
     if (mutation.isPending) return;
@@ -154,7 +167,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     }
     const remaining = (checked.data.allocation?.lines ?? []).filter(other =>
       !(other.warehouseId === line.warehouseId && other.itemId === line.itemId));
-    mutation.mutate({ action: "assign", payload: { workOrderId, lines: remaining } });
+    mutation.mutate({ action: "assign", payload: { workOrderId, revision: checked.data.allocation?.revision ?? 0, lines: remaining } });
   };
 
   if (isLoading) return <div className="space-y-3" aria-label="Loading work-order inventory"><div className="h-5 w-40 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /></div>;
@@ -166,10 +179,29 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     const qty = Number(quantity);
     const scanned = serials.split(/[\n,;]/).map(value => value.trim()).filter(Boolean);
     if (!itemId || !warehouseId || !Number.isInteger(qty) || qty < 1) return;
-    if (selectedItem?.tracking === "serialized" && scanned.length !== qty) {
+    if (selectedItem?.tracking === "serialized" && reservationMode === "serial" && scanned.length !== qty) {
       toast({ title: "Scan each meter", description: `Expected ${qty} unique serial number${qty === 1 ? "" : "s"}.`, variant: "destructive" }); return;
     }
-    const line = { itemId, warehouseId, quantity: qty, serials: selectedItem?.tracking === "serialized" ? scanned : [] };
+    const line: DraftLine = {
+      itemId, warehouseId, quantity: qty,
+      serials: selectedItem?.tracking === "serialized" && reservationMode === "serial" ? scanned : [],
+      ...(selectedItem?.tracking === "serialized" ? { reservationMode } : {}),
+    };
+    const existingDraft = lines.find(existing => existing.itemId === itemId && existing.warehouseId === warehouseId);
+    const reservationKey = `${warehouseId}/${itemId}`;
+    const existingSavedReservation = editingKey === reservationKey ? undefined :
+      (data?.allocation?.lines ?? []).find(existing => existing.itemId === itemId && existing.warehouseId === warehouseId);
+    const stagedMode = existingDraft?.reservationMode ?? (existingDraft?.serials.length ? "serial" : "quantity");
+    const savedMode = existingSavedReservation?.reservationMode ?? "serial";
+    if (selectedItem?.tracking === "serialized" &&
+      ((existingDraft && stagedMode !== reservationMode) || (existingSavedReservation && savedMode !== reservationMode))) {
+        toast({ title: "Reservation modes cannot be merged", description: "Edit or remove the existing line to replace its reservation style, or explicitly convert that line before saving. Quantity and exact-serial holds cannot share one item/location line.", variant: "destructive" });
+        return;
+    }
+    if (new Set([...(existingDraft?.serials ?? []), ...line.serials]).size !== (existingDraft?.serials.length ?? 0) + line.serials.length) {
+      toast({ title: "Duplicate serial", description: "Each selected serial must be unique.", variant: "destructive" });
+      return;
+    }
     setLines(current => {
       const at = current.findIndex(existing => existing.itemId === itemId && existing.warehouseId === warehouseId);
       return at < 0 ? [...current, line] : current.map((entry, index) => index === at ? {
@@ -206,7 +238,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       const prior = next.get(key);
       next.set(key, prior ? { ...prior, quantity: prior.quantity + line.quantity, serials: [...prior.serials, ...line.serials] } : line);
     });
-    mutation.mutate({ action: "assign", payload: { workOrderId, lines: [...next.values()] } }, {
+    mutation.mutate({ action: "assign", payload: { workOrderId, revision: latest.allocation?.revision ?? 0, lines: [...next.values()] } }, {
       onSuccess: () => { setLines([]); setEditingKey(null); setDraftTouched(false); setStaleAllocation(false); draftBase.current = null; draftLocationTypes.current.clear(); },
     });
   };
@@ -235,13 +267,14 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       const key = `${line.warehouseId}/${line.itemId}`;
       const qty = used[key] ?? line.quantity;
       if (qty <= 0) return [];
-      const ids = line.serials.length ? usedSerials[key]?.split(/[\n,;]/).map(value => value.trim()).filter(Boolean) ?? [] : [];
-      if (line.serials.length && (ids.length !== qty || ids.some(id => !line.serials.includes(id)))) {
-        toast({ title: "Scan assigned serials", description: `Enter ${qty} serial${qty === 1 ? "" : "s"} reserved to this work order.`, variant: "destructive" });
+      const serialized = items.find(item => item.id === line.itemId)?.tracking === "serialized";
+      const ids = serialized ? usedSerials[key]?.split(/[\n,;]/).map(value => value.trim()).filter(Boolean) ?? [] : [];
+      if (serialized && (ids.length !== qty || (line.serials.length > 0 && ids.some(id => !line.serials.includes(id))) || new Set(ids).size !== ids.length)) {
+        toast({ title: "Scan actual installed serials", description: `Enter ${qty} unique serial${qty === 1 ? "" : "s"} installed on the job${line.serials.length ? " from the reserved serials" : ""}.`, variant: "destructive" });
         invalid = true;
         return [];
       }
-      return [{ ...line, quantity: qty, serials: ids }];
+      return [{ itemId: line.itemId, warehouseId: line.warehouseId, quantity: qty, serials: ids }];
     });
     const dispositions = workMode === "reading_only" ? [] : visibleEquipment.flatMap(equipment => {
       const selected = removalChoices(latest!, equipment, "field").find(r => r.id === disposition[equipment]);
@@ -269,9 +302,13 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
         {canViewInventory && inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>Retry</Button>}
         {data.allocation && <Badge variant={data.allocation.mode ? "default" : "outline"}>{consumed ? "Consumed" : data.allocation.mode ? "Review complete" : "Reserved"}</Badge>}
       </div></div>
+    {data.reservationNeedsReview && <div role="status" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+      <p className="font-medium">Review reserved stock after reassignment</p>
+      <p className="mt-1 text-muted-foreground">The work-order assignment changed after these reservations or staging records were created. Check quantities, locations, and custody before relying on them. No stock has been moved automatically. This notice does not block changeout or completion; record actual installed items during the normal use review.</p>
+    </div>}
     <div className="space-y-4">
-      {projectReadingOnly ? <p className="text-sm text-muted-foreground">Reading-only projects do not reserve or consume replacement inventory and do not record removed equipment.</p> : <section className="space-y-2" aria-label="Planned requirements">
-        <p className="mb-2 text-sm font-medium">Planned requirements <span className="ml-1 text-xs font-normal text-muted-foreground">No reservation created</span></p>
+      {projectReadingOnly ? <p className="text-sm text-muted-foreground">Reading-only projects do not reserve or consume replacement inventory and do not record removed equipment.</p> : <section className="space-y-2" aria-label="Effective job requirements">
+        <p className="mb-2 text-sm font-medium">Effective job requirements <span className="ml-1 text-xs font-normal text-muted-foreground">Planning only · no reservation created</span></p>
         {(data.requirements?.lines ?? []).length ? <ul className="space-y-1.5 text-sm">
           {(data.requirements?.lines ?? []).map((line, index) => {
             const item = items.find(value => value.id === line.itemId);
@@ -288,7 +325,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
               </details>}
             </li>;
           })}
-        </ul> : <p className="text-xs text-muted-foreground">No items are mapped to the assigned equipment types.</p>}
+        </ul> : <p className="text-xs text-muted-foreground">No effective planned requirements are recorded.</p>}
         {!!data.requirements?.missing.length && <p className="mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200">Unmapped equipment types: {data.requirements.missing.map(row => `${row.equipment} ${row.typeId}`).join(", ")}</p>}
       </section>}
       {projectReadingOnly && data.allocation?.status === "reserved" && (!!data.allocation.used.length || !!data.allocation.dispositions.length) && <div role="alert" className="space-y-2 rounded-md border p-3 text-sm">
@@ -323,11 +360,12 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
         const warehouse = warehouses.find(value => value.id === line.warehouseId);
         return <div key={`${line.warehouseId}/${line.itemId}`} className="flex flex-wrap items-start justify-between gap-2 rounded-md border p-3">
           <div><div className="font-medium">{item?.name ?? line.itemId} <span className="font-mono text-xs text-muted-foreground">{item?.sku}</span></div>
-            <div className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId}{warehouse ? ` · ${locationTypeLabel(locationState, warehouse)}` : ""} · {line.quantity} {item?.unit ?? "units"}{line.serials.length > 0 ? ` · ${line.serials.join(", ")}` : ""}</div></div>
+            <div className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId}{warehouse ? ` · ${locationTypeLabel(locationState, warehouse)}` : ""} · {line.quantity} {item?.unit ?? "units"}{line.serials.length > 0 ? ` · ${line.serials.join(", ")}` : item?.tracking === "serialized" ? " · quantity hold, serials not selected" : ""}</div></div>
           {canAssign && data.allocation?.status === "reserved" && <div className="flex gap-1"><Button type="button" aria-label={`Edit ${item?.name ?? "item"} reservation`} variant="ghost" size="sm" onClick={() => {
             draftBase.current = allocationSignature; captureLocationTypes([line.warehouseId, ...(data.allocation?.lines ?? []).map(value => value.warehouseId)]); setDraftTouched(true); draftEditEpoch.current++;
             setEditingKey(`${line.warehouseId}/${line.itemId}`);
-            setItemId(line.itemId); setWarehouseId(line.warehouseId); setQuantity(String(line.quantity)); setSerials(line.serials.join("\n")); setLines([]);
+             setItemId(line.itemId); setWarehouseId(line.warehouseId); setQuantity(String(line.quantity)); setSerials(line.serials.join("\n"));
+             setReservationMode((line as DraftLine).reservationMode ?? "serial"); setLines([]);
           }}>Edit</Button><Button type="button" aria-label={`Remove ${item?.name ?? "item"} reservation`} variant="ghost" size="icon" disabled={mutation.isPending} onClick={() => void removeReservation(line)}><Trash2 className="h-4 w-4" /></Button></div>}
         </div>;
       })}</div> : <p className="text-sm text-muted-foreground">{consumed ? "No actual inventory use was recorded." : "No stock is reserved for this work order."}</p>}
@@ -344,15 +382,33 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       </details>}
       </section>}
 
+      <WorkOrderPlanEditor projectId={projectId} workOrderId={workOrderId} items={items} requirements={data.requirements} plan={data.plan} canPlan={canPlan} timezone={data.timezone ?? "UTC"} />
+      {workOrderLocked && <p role="status" className="rounded-md border border-muted-foreground/20 bg-muted/30 p-3 text-sm text-muted-foreground">This work order is closed or completed. Inventory planning and capture edits are read-only.</p>}
+      <WorkOrderStagingPanel
+        projectId={projectId}
+        workOrderId={workOrderId}
+        items={items}
+        warehouses={availableWarehouses}
+        allocation={data.allocation?.lines}
+        allocationRevision={data.allocation?.revision ?? 0}
+        receipts={data.stagingReceipts ?? []}
+        timezone={data.timezone ?? "UTC"}
+        canStage={canStage}
+      />
+
       {canAssign && data.allocation?.status !== "consumed" && <div className="space-y-3 border-t pt-4">
         {!data.allocation && <Button type="button" variant="outline" onClick={() => void createEmptyAssignment()} disabled={mutation.isPending}>Create empty assignment</Button>}
-        <p className="text-sm font-medium">Add reserved stock</p>
+        <div><p className="text-sm font-medium">Reserve stock</p><p className="mt-1 text-xs text-muted-foreground">A reservation holds available stock at a selected location. It is separate from planning, transfers, and actual installation.</p></div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1"><Label htmlFor={`wo-item-${workOrderId}`}>Meter / item</Label><Select value={itemId} onValueChange={value => { if (serials.trim() && itemId && value !== itemId && !window.confirm("Change the item and clear the serial text captured for the previous item?")) return; beginDraft(); if (itemId && value !== itemId) setSerials(""); setItemId(value); }}><SelectTrigger id={`wo-item-${workOrderId}`}><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1"><Label htmlFor={`wo-item-${workOrderId}`}>Meter / item</Label><Select value={itemId} onValueChange={value => { if (serials.trim() && itemId && value !== itemId && !window.confirm("Change the item and clear the serial text captured for the previous item?")) return; beginDraft(); if (itemId && value !== itemId) setSerials(""); setItemId(value); setReservationMode("quantity"); }}><SelectTrigger id={`wo-item-${workOrderId}`}><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-1"><Label htmlFor={`wo-warehouse-${workOrderId}`}>Stock location</Label><Select value={warehouseId} onValueChange={value => { if (serials.trim() && warehouseId && value !== warehouseId && !window.confirm("Change stock location and clear the serial text captured for the previous location?")) return; beginDraft(); captureLocationTypes([value]); if (warehouseId && value !== warehouseId) setSerials(""); setWarehouseId(value); }}><SelectTrigger id={`wo-warehouse-${workOrderId}`}><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{availableWarehouses.map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name} · {locationTypeLabel(locationState, warehouse)}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-1"><Label htmlFor={`wo-qty-${workOrderId}`}>Quantity</Label><Input id={`wo-qty-${workOrderId}`} inputMode="numeric" type="number" min="1" value={quantity} onChange={event => { beginDraft(); setQuantity(event.target.value); }} /></div>
         </div>
-        {selectedItem?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`wo-serials-${workOrderId}`}>Scan serials (one per line or comma)</Label><Input id={`wo-serials-${workOrderId}`} value={serials} onChange={event => { beginDraft(); setSerials(event.target.value); }} placeholder="Scan or enter serial numbers" /></div>}
+        {selectedItem?.tracking === "serialized" && <div className="space-y-3 rounded-md border p-3">
+          <div className="space-y-1"><Label>Serialized reservation style</Label><Select value={reservationMode} onValueChange={value => { beginDraft(); setReservationMode(value as "quantity" | "serial"); if (value === "quantity") setSerials(""); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="quantity">Quantity hold — no serials selected</SelectItem><SelectItem value="serial">Exact serials — scan each unit</SelectItem></SelectContent></Select>
+            <p className="text-xs text-muted-foreground">Quantity holds do not identify meters. Installed serials must still be captured during actual-use review.</p></div>
+          {reservationMode === "serial" && <div className="space-y-1"><Label htmlFor={`wo-serials-${workOrderId}`}>Scan serials (one per line or comma)</Label><Input id={`wo-serials-${workOrderId}`} value={serials} onChange={event => { beginDraft(); setSerials(event.target.value); }} placeholder="Scan or enter serial numbers" /></div>}
+        </div>}
         <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={addLine} disabled={!itemId || !warehouseId}><Plus className="mr-1 h-4 w-4" />{editingKey ? "Stage updated line" : "Add line"}</Button>
           <Button type="button" onClick={saveAssignment} disabled={!lines.length || mutation.isPending || allocationConflict}><PackageCheck className="mr-1 h-4 w-4" />Save reservations</Button></div>
         {lines.length > 0 && <p className="text-xs text-muted-foreground">{lines.length} line{lines.length === 1 ? "" : "s"} ready to reserve. Availability is validated by the project inventory service.</p>}
@@ -369,9 +425,9 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
               const key = `${line.warehouseId}/${line.itemId}`;
               return <div key={key} className="grid gap-2 sm:grid-cols-[1fr_140px] sm:items-center"><div className="text-sm">{item?.name ?? line.itemId} · {line.quantity} reserved{line.serials.length ? ` · ${line.serials.join(", ")}` : ""}</div><div className="space-y-1"><Label htmlFor={`used-${key}`}>Used quantity</Label><Input id={`used-${key}`} type="number" min="0" max={line.quantity} value={used[key] ?? line.quantity} onChange={event => { beginDraft(); setUsed(current => ({ ...current, [key]: Math.min(line.quantity, Math.max(0, Number(event.target.value) || 0)) })); }} /></div></div>;
             })}
-            {assigned.filter(line => line.serials.length > 0).map(line => {
+            {assigned.filter(line => items.find(item => item.id === line.itemId)?.tracking === "serialized").map(line => {
               const key = `${line.warehouseId}/${line.itemId}`;
-              return <div key={key} className="space-y-1"><Label htmlFor={`used-serial-${line.itemId}`}>Scan serials used · {items.find(item => item.id === line.itemId)?.name}</Label><Input id={`used-serial-${line.itemId}`} value={usedSerials[key] ?? ""} onChange={event => { beginDraft(); setUsedSerials(current => ({ ...current, [key]: event.target.value })); }} placeholder="Reserved serials only" /></div>;
+              return <div key={key} className="space-y-1"><Label htmlFor={`used-serial-${line.itemId}`}>Scan actual installed serials · {items.find(item => item.id === line.itemId)?.name}</Label><Input id={`used-serial-${line.itemId}`} value={usedSerials[key] ?? ""} onChange={event => { beginDraft(); setUsedSerials(current => ({ ...current, [key]: event.target.value })); }} placeholder={line.serials.length ? "Select from exact reserved serials" : "Scan installed serials"} /><p className="text-xs text-muted-foreground">A quantity reservation does not establish which meter was installed.</p></div>;
             })}
             {visibleEquipment.map(equipment => <div key={equipment} className="grid gap-2 sm:grid-cols-2">
               <div className="space-y-1"><Label htmlFor={`disp-${equipment}`}>Removed {equipment} meter serial</Label><Input id={`disp-${equipment}`} value={disposition[`${equipment}-serial`] ?? ""} onChange={event => { beginDraft(); setDisposition(current => ({ ...current, [`${equipment}-serial`]: event.target.value })); }} placeholder="Scan removed serial" /></div>

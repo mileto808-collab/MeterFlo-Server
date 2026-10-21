@@ -39,6 +39,8 @@ export async function processNextChangeout() {
       };
       if (!usage || (!usage.used?.length && usage.mode !== "reading_only")) {
         const requirements = await workRequirements(client, job.project_id, state, evidence.next);
+        if (requirements.manualLines?.length)
+          throw new Error("Actual usage needs review: manually planned items are demand, not proof of use. Confirm actual items, quantities and installed serials before posting.");
         if (requirements.missing.length) throw new Error("New equipment type mapping is missing. Correct the project inventory mapping and retry.");
         const source = resolveFieldStock(state, job.actor_id, true);
         if (!source.source) throw new Error("Field stock source needs warehouse review.");

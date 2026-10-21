@@ -10,10 +10,11 @@ import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventor
 import { countStockScopeMatches } from "./inventory-count-stock";
 import { normalizeInventoryLocations, warehouseAccessible, resolveWarehouseInput, applyLocationTypeCommand } from "./inventory-location-types";
 import { fieldStockSettingsSchema } from "./inventory-field-stock";
-import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
+import { allocationSchema, reservationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 import { InventoryError } from "./inventory-errors";
+import { updateWorkPlan, effectivePlannedLines } from "./inventory-planning";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
 import { fieldUseSplit, resolveStockDiscrepancySchema } from "./inventory-stock-discrepancies";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
@@ -369,12 +370,71 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
         moduleTypeId: input.equipment === "module" ? input.typeId : null };
       s.typeLinks = [...(s.typeLinks ?? []).filter(l => l.id !== id), link];
     } else s.typeLinks = (s.typeLinks ?? []).filter(l => l.id !== id);
+  } else if (a === "plan") {
+    updateWorkPlan(s, d, actor, now);
+  } else if (a === "stageWorkOrder") {
+    const input = z.object({ workOrderId: workId, revision: z.number().int().nonnegative(),
+      sourceId: identifier, destinationId: identifier, lines, reason: z.string().trim().min(10).max(1000),
+      physicallyConfirmed: z.literal(true) }).strict().parse(d);
+    assert(input.sourceId !== input.destinationId, "Choose a different staging location or vehicle.");
+    const source = access(input.sourceId), destination = access(input.destinationId);
+    const old = s.allocations.find(allocation => allocation.workOrderId === input.workOrderId);
+    assert(!old || old.status !== "consumed", "Completed usage cannot be staged again.");
+    assert((old?.revision ?? 0) === input.revision, "Reservations changed. Reload before staging; no stock moved.");
+    validateLines(s, input.lines);
+    const nextLines = structuredClone(old?.status === "reserved" ? old.lines : []);
+    for (const line of input.lines) {
+      const sourceHold = nextLines.find(hold => hold.warehouseId === input.sourceId && hold.itemId === line.itemId);
+      if (sourceHold) {
+        const exact = item(s, line.itemId).tracking === "serialized" && sourceHold.reservationMode !== "quantity";
+        const released = exact ? sourceHold.serials.filter(serial => line.serials.includes(serial)).length
+          : Math.min(sourceHold.quantity, line.quantity);
+        sourceHold.quantity -= released;
+        if (exact) sourceHold.serials = sourceHold.serials.filter(serial => !line.serials.includes(serial));
+      }
+      const destinationHold = nextLines.find(hold => hold.warehouseId === input.destinationId && hold.itemId === line.itemId);
+      assert(!destinationHold || !destinationHold.serials.length,
+        "Change the destination's exact-serial reservation to a quantity hold before staging additional stock.");
+      if (destinationHold) { destinationHold.quantity += line.quantity; destinationHold.reservationMode = "quantity"; }
+      else nextLines.push({ itemId: line.itemId, warehouseId: input.destinationId, quantity: line.quantity,
+        serials: [], reservationMode: "quantity" });
+    }
+    const allocation = { workOrderId: input.workOrderId, lines: nextLines.filter(line => line.quantity > 0),
+      used: [], dispositions: [], mode: null, status: "reserved" as const, revision: (old?.revision ?? 0) + 1 };
+    // Destination holds are installed only after the physical move. Remaining
+    // source holds continue protecting their quantities and exact serials.
+    const sourceOnly = { ...allocation, lines: allocation.lines.filter(line => line.warehouseId !== input.destinationId) };
+    if (old) s.allocations[s.allocations.indexOf(old)] = sourceOnly; else s.allocations.push(sourceOnly);
+    move(s, input.sourceId, input.lines, -1, undefined, { to: { kind: "transit", id: command.operationId } });
+    move(s, input.destinationId, input.lines, 1, undefined, { from: { kind: "transit", id: command.operationId } });
+    s.allocations[s.allocations.indexOf(sourceOnly)] = allocation;
+    for (const line of allocation.lines) {
+      const available = s.stock.find(stock => stock.warehouseId === line.warehouseId && stock.itemId === line.itemId)?.quantity ?? 0;
+      assert(available >= reserved(s, line.warehouseId, line.itemId), "Staging would over-reserve destination stock.");
+    }
+    receipt(`wo-${input.workOrderId}`, input.destinationId, input.lines,
+      `Physically staged from ${source.name} to ${destination.name}. ${input.reason}`);
   } else if (a === "assign") {
-    const { workOrderId, lines: input } = z.object({ workOrderId: workId, lines: allocations }).strict().parse(d);
+    const { workOrderId, lines: input, revision } = z.object({ workOrderId: workId,
+      revision: z.number().int().nonnegative().optional(), lines: z.array(reservationSchema).max(500) }).strict().parse(d);
     const old = s.allocations.find(a => a.workOrderId === workOrderId);
+    assert(revision === undefined || revision === (old?.revision ?? 0), "Reservations changed. Reload before saving; your edits were not applied.");
     assert(!old || old.status !== "consumed", "Reconcile completed stock before changing assignments.");
     const groups = new Map<string, StockLine[]>();
-    for (const l of input) { access(l.warehouseId); groups.set(l.warehouseId, [...(groups.get(l.warehouseId) || []), l]); }
+    for (const l of input) {
+      access(l.warehouseId);
+      const entry = item(s, l.itemId);
+      assert(l.reservationMode !== "quantity" || !l.serials.length, "Quantity reservations do not select serials.");
+      let serials = l.serials;
+      if (l.reservationMode === "quantity" && entry.tracking === "serialized") {
+        const held = new Set(s.allocations.filter(a => a.status === "reserved" && a.workOrderId !== workOrderId)
+          .flatMap(a => a.lines).filter(line => line.warehouseId === l.warehouseId && line.itemId === l.itemId).flatMap(line => line.serials));
+        serials = (s.stock.find(b => b.warehouseId === l.warehouseId && b.itemId === l.itemId)?.serials ?? [])
+          .filter(serial => !held.has(serial)).slice(0, l.quantity);
+      }
+      // Concrete serials exist only in this availability trial, never in a quantity hold.
+      groups.set(l.warehouseId, [...(groups.get(l.warehouseId) || []), { itemId: l.itemId, quantity: l.quantity, serials }]);
+    }
     // Test availability without altering the balances.
     const trial = structuredClone(s);
     for (const [w, ls] of groups) move(trial, w, ls, -1, workOrderId);
@@ -398,7 +458,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       access(l.warehouseId);
       validateLines(s, [l]);
       const assigned = allocation.lines.find(x => x.warehouseId === l.warehouseId && x.itemId === l.itemId);
-      if (assigned) assert(l.quantity <= assigned.quantity && l.serials.every(x => assigned.serials.includes(x)), "Used reserved items must match this work order's reservation.");
+      if (assigned) assert(l.quantity <= assigned.quantity &&
+        (assigned.reservationMode === "quantity" || l.serials.every(x => assigned.serials.includes(x))), "Used reserved items must match this work order's reservation.");
     }
     // Check unreserved actual selections against current custody, excluding only
     // this work order's own reservations. Preparation itself reserves nothing.
@@ -614,7 +675,10 @@ export function completeInventoryWorkOrder(original: InventoryState, workOrderId
   if (a.mode === "changeout") {
     a.dispositions = a.dispositions.map(d => resolveFieldDisposition(s, d));
     const requirements = s.workRequirements?.find(r => r.workOrderId === workOrderId);
-    assert(!requirements || requirementsSatisfied(s, requirements, a.used),
+    const plan = s.workPlans?.find(plan => plan.workOrderId === workOrderId);
+    const mandatory = requirements && plan ? { ...requirements,
+      lines: effectivePlannedLines(requirements.automaticLines ?? requirements.lines, plan.lines.filter(line => line.kind === "override")) } : requirements;
+    assert(!mandatory || requirementsSatisfied(s, mandatory, a.used, !!plan?.lines.some(line => line.kind === "addition")),
       "Resolve missing type-to-item links and record every required item or kit component before completion.");
     const split = fieldUseSplit(s, a.used, workOrderId);
     const groups = new Map<string, Allocation[]>();
