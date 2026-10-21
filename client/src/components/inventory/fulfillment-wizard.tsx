@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { acceptFulfillmentScans } from "@/lib/fulfillment-scans";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -76,6 +77,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [showUnavailable, setShowUnavailable] = useState(false);
   const [confirmHandoff, setConfirmHandoff] = useState(false);
   const [serialSearch, setSerialSearch] = useState<Record<string, string>>({});
+  const [scanNotices, setScanNotices] = useState<Record<string, string>>({});
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
@@ -154,6 +156,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useEffect(() => {
     if (!storageKey || !open) return;
     setConfirmHandoff(false);
+    setScanNotices({});
     setStorageReady(false);
     try {
       const saved = window.localStorage.getItem(storageKey);
@@ -485,6 +488,21 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setSelectionNotice("");
   };
   const setLineValue = (key: string, value: string, field: "quantities" | "serialText") => update({ [field]: { ...draft[field], [key]: value } });
+  const scanSerials = (key: string, text: string, commitLast = false) => {
+    if (pendingLock || createLock || !canPost) return;
+    const recorded = batchDemand.flatMap(row => draft.step === "stage" ? row.serials : row.deliveredSerials);
+    const otherLines = Object.entries(draft.serialText)
+      .filter(([other]) => other !== key && other.startsWith(`${draft.step}:`))
+      .flatMap(([, value]) => splitSerials(value));
+    const result = acceptFulfillmentScans(text, [...recorded, ...otherLines], commitLast);
+    setLineValue(key, result.text, "serialText");
+    setScanNotices(current => ({
+      ...current,
+      [key]: result.rejected.length
+        ? `Already scanned or recorded in this batch: ${result.rejected.slice(0, 3).join(", ")}${result.rejected.length > 3 ? ` (+${result.rejected.length - 3} more)` : ""}. Duplicate entries were not added.`
+        : "",
+    }));
+  };
   const availableStagedSerials = (row: typeof batchDemand[number]) =>
     [...new Set(row.serials.filter(serial => !row.deliveredSerials.includes(serial)))];
   const acceptStagedSerials = (itemId: string, selection?: { serial: string; checked: boolean }) => {
@@ -774,7 +792,26 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                       <div className="text-right text-xs"><span className="block text-muted-foreground">Remaining to {draft.step === "stage" ? "stage" : "handoff"}</span><strong className="font-mono text-base">{remaining}</strong><span className="ml-1">{row.item?.unit ?? "units"}</span></div></div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
                       <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "quantities")} placeholder="0" /></div>
-                      {row.item?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`serial-${key}`}>Custody serials</Label><Textarea id={`serial-${key}`} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "serialText")} placeholder={draft.step === "stage" ? "Scan source serials, one per unit" : "Scan serials already staged in this batch"} /><p className="text-xs text-muted-foreground">Enter exactly one unique serial per moved unit. This is custody only, never installed-equipment assignment.</p></div>}
+                      {row.item?.tracking === "serialized" && <div className="space-y-1">
+                        <Label htmlFor={`serial-${key}`}>Custody serials</Label>
+                        <p id={`scan-notice-${key}`} role="status" aria-live="polite" className="text-sm text-destructive">{scanNotices[key] ?? ""}</p>
+                        <Textarea id={`serial-${key}`} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}
+                          onChange={event => scanSerials(key, event.target.value)}
+                          onKeyDown={event => {
+                            const text = event.currentTarget.value;
+                            if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && text.split(/[\r\n,;\t]/).at(-1)?.trim())) {
+                              event.preventDefault();
+                              scanSerials(key, text, true);
+                            }
+                          }}
+                          onPaste={event => {
+                            event.preventDefault();
+                            const input = event.currentTarget;
+                            scanSerials(key, input.value.slice(0, input.selectionStart) + event.clipboardData.getData("text") + input.value.slice(input.selectionEnd), true);
+                          }}
+                          placeholder={draft.step === "stage" ? "Scan source serials, one per unit" : "Scan serials already staged in this batch"} />
+                        <p id={`scan-help-${key}`} className="text-xs text-muted-foreground">Scan with Enter or Tab, or paste a list. Repeated serials are rejected immediately. Enter exactly one unique serial per moved unit. This is custody only, never installed-equipment assignment.</p>
+                      </div>}
                     </div>
                     {row.item?.tracking === "serialized" && <p className="mt-2 break-words text-xs text-muted-foreground">{draft.step === "stage" ? "Already staged: " : "Already handed off: "}{(draft.step === "stage" ? row.serials : row.deliveredSerials).join(", ") || "none"}</p>}
                     {draft.step === "vehicle" && row.item?.tracking === "serialized" && <div className="mt-2 space-y-2">

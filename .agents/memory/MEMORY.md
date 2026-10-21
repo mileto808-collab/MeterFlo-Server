@@ -70,3 +70,4 @@
 - [Inventory planning intent](inventory-planning-fulfillment.md) — manual additions stay planned; future crew fulfillment must allow onsite selection of installed serials.
 - [Clean project copies](inventory-project-copy.md) — copy inventory setup only: Locations, Items, Categories and Vendors; no stock, operational history or location user assignments.
 - [Receiving pallet scope](receiving-pallet-scope.md) — optional receiving scan groups stay with receipt history; trusted serial-file import does not require pallet setup.
+- [Scanner commit boundary](scanner-commit-boundary.md) — commit on scan delimiters or paste; blur-time rewriting can disrupt visual acceptance and partial tokens need preservation.
