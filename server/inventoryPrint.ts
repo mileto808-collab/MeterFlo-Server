@@ -33,6 +33,8 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
   const origin = linkedOrder || record;
   const kitReceipt = kind === "receipt" && ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(record.action);
   const kitItem = kitReceipt ? state.items.find(i => i.id === record.reference) : undefined;
+  const fulfillment = kind === "receipt" && String(record.action).startsWith("fulfillment")
+    ? state.fulfillmentBatches?.find(batch => batch.id === record.reference) : undefined;
   const operationReference = kind === "receipt"
     ? inventoryReceiptOperationReference(record, inventoryReceiptContexts(state).get(record.id), workOrderLabels) : "";
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(reference)}</title><style>
@@ -49,6 +51,10 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
     <p>${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
     ${orderReference ? `<p><strong>Order number / reference: ${escape(orderReference)}</strong></p>` :
       kitReceipt ? `<p>Kit / component: ${escape(kitItem ? `${kitItem.sku} · ${kitItem.name}` : "Unavailable product")}</p>` :
+      fulfillment ? `<p>Fulfillment batch: <strong>${escape(fulfillment.name)}</strong> · ${escape(fulfillment.mode === "crew" ? "Shared crew pool" : "Individually scheduled work")}</p>
+        <p>Work orders: ${fulfillment.workOrders.map(work => escape(workOrderLabels[String(work.workOrderId)] || work.label)).join(", ")}</p>
+        <p>Warehouse: ${escape(warehouse(fulfillment.sourceId))} · Staging: ${escape(warehouse(fulfillment.stagingId))} · Vehicle: ${escape(warehouse(fulfillment.vehicleId))}</p>
+        <p>Physical custody only. Serials on this receipt are not installed-serial assignments.</p>` :
       kind === "receipt" && record.reference ? `<p>Operation reference: ${escape(operationReference)}</p>` : ""}
     <p>Date: ${escape(inventoryDateTime(record.createdAt || record.occurredAt, timezone))} · Actor: ${escape(actorLabel(record.actor))}</p>
     <p>From: ${escape(warehouse(origin.sourceId))} · To: ${escape(warehouse(origin.destinationId || record.warehouseId))}</p>

@@ -18,6 +18,7 @@ import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inve
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
 import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
 import { guardPendingInstallationUse } from "./changeoutService";
+import { prepareFulfillment } from "./inventoryFulfillment";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -63,6 +64,11 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
     for (const a of s.allocations) if (a.status === "reserved") for (const l of a.lines) {
       const key = stockKey(l); totals.set(key, (totals.get(key) || 0) + l.quantity);
     }
+    for (const batch of s.fulfillmentBatches ?? []) if (batch.status === "active" && batch.mode === "crew")
+      for (const line of batch.lines) {
+        const key = stockKey({ warehouseId: batch.stagingId, itemId: line.itemId });
+        totals.set(key, (totals.get(key) ?? 0) + line.stagedQuantity - line.deliveredQuantity);
+      }
     return totals;
   };
   const reservedBefore = reservations(before), reservedAfter = reservations(after);
@@ -74,7 +80,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies", "fulfillmentBatches"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -116,6 +122,19 @@ export async function postInventory(projectId: number, command: InventoryCommand
     if (!p?.inventory_enabled) throw new InventoryError("Inventory is disabled for this project.");
     if (p.is_active === false) throw new InventoryError("Reactivate this project before posting inventory.");
     const before = await lockInventory(client, projectId);
+    let fulfillmentBatch: import("../shared/inventory-fulfillment").FulfillmentBatch | undefined;
+    if (command.action.startsWith("fulfillment")) {
+      const user = await storage.getUser(actor);
+      if (!user || user.isLocked) throw Object.assign(new InventoryError("Sign in required."), { status: 403 });
+      if (before.operations[command.operationId]) {
+        for (const permission of ["inventory.assign", "inventory.receive", "inventory.transfer", "workOrders.view"])
+          if (!await storage.hasPermission(user, permission))
+            throw Object.assign(new InventoryError("Fulfillment permission required."), { status: 403 });
+      } else {
+        if (p.wizard_mode === "reading_only") throw new InventoryError("Reading-only projects do not stage replacement inventory.");
+        fulfillmentBatch = await prepareFulfillment(client, projectId, before, command.action, command.data, user, admin);
+      }
+    }
     if (command.action === "fieldSettings") {
       const user = await storage.getUser(actor);
       if (!user || user.isLocked || !await storage.hasPermission(user, inventoryPermissions.configure) ||
@@ -208,7 +227,7 @@ export async function postInventory(projectId: number, command: InventoryCommand
           throw Object.assign(new InventoryError("Manage inventory location types and access permission required to create locations or change their type or user assignments."), { status: 403 });
       }
     }
-    const result = applyInventoryCommand(before, command, actor, admin, undefined, { manageLocations: canManageLocations });
+    const result = applyInventoryCommand(before, command, actor, admin, undefined, { manageLocations: canManageLocations, fulfillmentBatch });
     if (!result.replay && ["assign", "stageWorkOrder"].includes(command.action)) {
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       const { rows: [work] } = await client.query(`SELECT assignment_version FROM "${project.database_name}".work_orders WHERE id=$1`, [command.data.workOrderId]);
@@ -252,12 +271,19 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     if (!ordinaryImport && importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
     if (p && !next && (await client.query("SELECT 1 FROM public.inventory_state WHERE project_id=$1", [p.id])).rowCount) {
       const state = await lockInventory(client, p.id);
+      if (state.fulfillmentBatches?.some(batch => batch.workOrders.some(w => w.workOrderId === prior?.id)))
+        throw new InventoryError("A work order with fulfillment history cannot be deleted. Keep it for custody and staging traceability.");
       if (state.workPlans?.some(plan => plan.workOrderId === prior?.id))
         throw new InventoryError("Enable inventory before deleting a work order with saved inventory planning. Clear its plan and reconcile any reservations first.");
     }
     return;
   }
   const { rows: statuses } = await client.query("SELECT code,label FROM public.work_order_statuses");
+  if (!next) {
+    const state = await lockInventory(client, p.id);
+    if (state.fulfillmentBatches?.some(batch => batch.workOrders.some(w => w.workOrderId === prior?.id)))
+      throw new InventoryError("A work order with fulfillment history cannot be deleted. Keep it for custody and staging traceability.");
+  }
   const completedStatus = (status: unknown) => String(status).toLowerCase() === "completed" ||
     statuses.some(s => String(s.code).toLowerCase() === String(status).toLowerCase() && String(s.label).toLowerCase() === "completed");
   const completed = completedStatus(next?.status), previouslyCompleted = completedStatus(prior?.status);

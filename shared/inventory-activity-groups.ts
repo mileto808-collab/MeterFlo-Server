@@ -43,6 +43,8 @@ export function inventoryActivityGroups(state: InventoryState, labels: Inventory
   state.receipts.forEach((receipt, index) => {
     const keys = [`receipt:${receipt.id}`, ...(contexts.get(receipt.id)?.removed ?? []).map(record => `return:${record.id}`)];
     const order = orders.get(receipt.reference);
+    if (receipt.action.startsWith("fulfillment") && state.fulfillmentBatches?.some(batch => batch.id === receipt.reference))
+      keys.push(`fulfillment:${receipt.reference}`);
     if (order) {
       keys.push(`order:${order.id}`);
       if (order.replacementFor) keys.push(`order:${order.replacementFor}`);
@@ -85,8 +87,11 @@ export function inventoryActivityGroups(state: InventoryState, labels: Inventory
     const count = receipts.find(receipt => counts.has(receipt.reference) && receipt.action.startsWith("count"));
     const kitReceipt = receipts.find(receipt => ["assemble", "disassemble", "verifyVendorKit", "resolveKitHold"].includes(receipt.action));
     const kitItem = kitReceipt ? state.items.find(item => item.id === kitReceipt.reference) : undefined;
+    const fulfillment = state.fulfillmentBatches?.find(batch => receipts.some(receipt =>
+      receipt.action.startsWith("fulfillment") && receipt.reference === batch.id));
     const workOrders = workOrderIds.length === 1 ? `Work order ${inventoryWorkOrderLabel(workOrderIds[0], labels)}` : `${workOrderIds.length} work orders`;
-    const title = handoff ? `Customer return batch · ${handoff.lines.length} equipment ${handoff.reference ? `· ${handoff.reference}` : ""}` :
+    const title = fulfillment ? `Fulfillment · ${fulfillment.name} · ${workOrders}` :
+      handoff ? `Customer return batch · ${handoff.lines.length} equipment ${handoff.reference ? `· ${handoff.reference}` : ""}` :
       removed.length ? `${removed.length === 1 ? `Removed ${removed[0].equipment} · ${removed[0].serial}` : `Removed equipment batch · ${removed.length} items`} · ${workOrders}` :
       order ? `${orderLabel(order)} · ${order.type}` :
       count ? inventoryCountReference(state.counts, count.reference) :

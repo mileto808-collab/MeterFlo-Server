@@ -1,0 +1,177 @@
+const { chromium, expect } = require("@playwright/test");
+const fs = require("node:fs/promises");
+const assert = require("node:assert/strict");
+(async () => {
+  if (!process.env.WORKSPACE_UI_SANDBOX_CONFIG) throw new Error("Owned sandbox required.");
+  const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
+  const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
+  const baseURL = require("./support/workspace-ui-base.cjs")();
+  const admin = await browser.newContext({ baseURL });
+  const prep = await browser.newContext({ baseURL });
+  const root = `/api/projects/${fixture.projectId}`, inventory = `${root}/inventory`;
+  const request = async (method, path, data, context = prep) => {
+    const response = await context.request.fetch(path, { method, data });
+    assert.ok(response.ok(), `${method} ${path}: ${response.status()} ${await response.text()}`);
+    return response.json();
+  };
+  const command = (action, data, context = prep, operationId = crypto.randomUUID()) =>
+    request("POST", `${inventory}/commands`, { action, data, operationId }, context);
+  const rejected = async (action, data, status = 409) => {
+    const response = await prep.request.post(`${inventory}/commands`, { data: { operationId: crypto.randomUUID(), action, data } });
+    assert.equal(response.status(), status, await response.text());
+  };
+  try {
+    await request("POST", "/api/auth/local/login", fixture, admin);
+    const permissions = ["workOrders.view", "inventory.view", "inventory.maintain", "inventory.assign",
+      "inventory.transfer", "inventory.receive", "inventory.purchase"];
+    const role = await request("POST", "/api/subroles", { key: `fulfill_${crypto.randomUUID().slice(0, 8)}`,
+      label: "Owned fulfillment worker", baseRole: "user", permissions }, admin);
+    const credentials = { username: `fulfill-${crypto.randomUUID().slice(0, 8)}`, password: `Aa1!${crypto.randomUUID()}` };
+    const user = await request("POST", "/api/users", { ...credentials, firstName: "Owned", lastName: "Warehouse",
+      role: "user", subroleId: role.id, projectIds: [fixture.projectId] }, admin);
+    const group = await request("POST", "/api/user-groups", { name: `Fulfillment crew ${crypto.randomUUID().slice(0, 8)}`,
+      projectIds: [fixture.projectId] }, admin);
+    await request("POST", "/api/auth/local/login", credentials);
+    await command("warehouse", { id: "fulfill-source", code: "FUL-SRC", name: "Fulfillment warehouse", type: "physical", address: "100 Test Road" }, admin);
+    await command("warehouse", { id: "fulfill-stage", code: "FUL-STG", name: "Crew staging shelf", type: "physical",
+      locationTypeId: "57e15eca-f991-4328-a091-000000000003", address: "100 Test Road" }, admin);
+    await command("warehouse", { id: "fulfill-vehicle", code: "FUL-VAN", name: "Crew vehicle", type: "vehicle",
+      vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO", userIds: [user.id] }, admin);
+    await command("item", { id: "fulfill-meter", sku: "FUL-METER", name: "Fulfillment meter", tracking: "serialized", equipment: "system" });
+    await command("vendor", { id: "fulfill-vendor", name: "Fulfillment vendor" });
+    await command("order", { id: "fulfill-po", type: "purchase", vendorId: "fulfill-vendor", destinationId: "fulfill-source",
+      lines: [{ itemId: "fulfill-meter", quantity: 8 }] });
+    await command("release", { orderId: "fulfill-po" });
+    await command("receive", { orderId: "fulfill-po", lines: [{ itemId: "fulfill-meter", quantity: 8,
+      serials: ["F-A", "F-B", "F-C", "F-D", "F-E", "F-F", "F-G", "F-H"] }] });
+    const services = await request("GET", "/api/service-types", undefined, admin);
+    const createWork = async (label, scheduled = false) => {
+      const work = await request("POST", `${root}/work-orders`, { customerWoId: label,
+        customerName: "Fulfillment customer", serviceType: services[0].code, route: "789", zone: "2233",
+        status: scheduled ? "Scheduled" : "Open", ...(scheduled ? { assignedUserId: user.id,
+          scheduledAt: new Date(Date.now() + 86400000).toISOString() } : { assignedGroupId: group.name }) }, admin);
+      await command("plan", { workOrderId: work.id, revision: 0,
+        lines: [{ id: crypto.randomUUID(), itemId: "fulfill-meter", kind: "addition", quantity: 1, reason: "Customer replacement" }] });
+      return work;
+    };
+    const crewWork = [await createWork("FUL-CREW-1"), await createWork("FUL-CREW-2")];
+    const scheduled = await createWork("FUL-SCHEDULED", true);
+    let discovery = await request("GET", `${inventory}/fulfillment`);
+    assert.equal(discovery.orders.filter(order => crewWork.some(work => work.id === order.workOrderId)).length, 2);
+    const fields = { name: "Owned crew pull", mode: "crew", sourceId: "fulfill-source", stagingId: "fulfill-stage", vehicleId: "fulfill-vehicle" };
+    const selection = crewWork.map(work => ({ workOrderId: work.id,
+      assignmentVersion: discovery.orders.find(order => order.workOrderId === work.id).assignmentVersion }));
+    const batchId = crypto.randomUUID(), operationId = crypto.randomUUID();
+    const createPayload = { id: batchId, ...fields, workOrders: selection };
+    await command("fulfillmentCreate", createPayload, prep, operationId);
+    const replay = await command("fulfillmentCreate", createPayload, prep, operationId);
+    assert.equal(replay.state.fulfillmentBatches.filter(batch => batch.id === batchId).length, 1);
+    await rejected("fulfillmentCreate", { ...createPayload, id: crypto.randomUUID() });
+    const batch = async () => (await request("GET", `${inventory}/fulfillment`)).batches.find(batch => batch.id === batchId);
+    assert.equal((await batch()).lines.length, 2);
+    const page = await prep.newPage();
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto(`${baseURL}/projects/${fixture.projectId}/inventory`);
+    const launch = async () => {
+      await page.getByRole("button", { name: "Start Inventory", exact: true }).filter({ visible: true }).click();
+      await page.getByRole("button", { name: /Fulfill \/ Stage Work Orders/ }).click();
+    };
+    await launch();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Resume saved batch", exact: false }).click();
+    await dialog.getByRole("button", { name: "Resume batch", exact: true }).click();
+    await expect(dialog.getByText("Scan stock as it is pulled")).toBeVisible();
+    await dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter").fill("2");
+    await dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter").fill("F-A\nF-B");
+    await dialog.getByLabel(/reason/i).first().fill("Physically pulled and scanned at the warehouse");
+    await dialog.getByRole("checkbox").first().check();
+    await fs.mkdir("generated-artifacts/inventory-fulfillment", { recursive: true });
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport);
+      await expect(dialog.getByRole("button", { name: "Record physical pull", exact: true })).toBeVisible();
+      await expect.poll(async () => {
+        const rect = await dialog.boundingBox();
+        return !!rect && rect.x >= -1 && rect.y >= -1 && rect.x + rect.width <= viewport.width + 1 && rect.y + rect.height <= viewport.height + 1;
+      }, { message: "The whole dialog, including header and footer, must stay inside the viewport." }).toBe(true);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true);
+      await page.screenshot({ path: `generated-artifacts/inventory-fulfillment/${viewport.width}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    // Lose the response AFTER the server records the move. Reload must recover that same identity.
+    let intercepted = false;
+    await page.route(`**${inventory}/commands`, async route => {
+      if (!intercepted && route.request().postDataJSON().action === "fulfillmentMove") {
+        intercepted = true;
+        await route.fetch(); await route.abort("failed");
+      } else await route.continue();
+    });
+    await dialog.getByRole("button", { name: "Record physical pull", exact: true }).click();
+    await expect.poll(async () => (await batch()).lines.reduce((sum, line) => sum + line.stagedQuantity, 0)).toBe(2);
+    await page.reload();
+    await launch();
+    await expect(dialog.getByText("Scan stock as it is pulled")).toBeVisible();
+    await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).pending,
+      `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${fixture.projectId}`)).toBe(null);
+    let state = (await request("GET", inventory)).state;
+    assert.equal(state.receipts.filter(receipt => receipt.reference === batchId && receipt.action === "fulfillmentMove").length, 1);
+    assert.equal(state.allocations.some(a => crewWork.some(w => w.id === a.workOrderId)), false);
+    const current = await batch();
+    let handoffId = crypto.randomUUID();
+    const handoff = { id: batchId, revision: current.revision, phase: "vehicle",
+      lines: [{ itemId: "fulfill-meter", quantity: 2, serials: ["F-B", "F-A"] }],
+      reason: "Physically counted and handed to the crew vehicle", physicallyConfirmed: true };
+    await dialog.getByRole("button", { name: "Continue to vehicle handoff", exact: true }).click();
+    await dialog.getByTestId("fulfillment-move-quantity-vehicle-fulfill-meter").fill("2");
+    await dialog.getByTestId("fulfillment-custody-serials-vehicle-fulfill-meter").fill("F-B\nF-A");
+    await dialog.getByLabel("Physical move reason", { exact: true }).fill(handoff.reason);
+    await dialog.getByRole("checkbox").first().check();
+    const posted = page.waitForRequest(req => req.url().endsWith(`${inventory}/commands`) && req.method() === "POST" && req.postDataJSON().data.phase === "vehicle");
+    await dialog.getByRole("button", { name: "Record vehicle handoff", exact: true }).click();
+    const actualHandoff = (await posted).postDataJSON();
+    handoffId = actualHandoff.operationId;
+    await expect(dialog.getByText("Vehicle handoff complete", { exact: true })).toBeVisible();
+    await command(actualHandoff.action, actualHandoff.data, prep, handoffId);
+    assert.equal((await batch()).status, "completed");
+    const print = await prep.request.get(`${inventory}/print/receipt/${handoffId}`);
+    assert.equal(print.status(), 200);
+    assert.match(await print.text(), /Owned crew pull/); assert.match(await print.text(), /FUL-CREW-1/);
+    const workAfter = await request("GET", `${root}/work-orders/${crewWork[0].id}`);
+    assert.equal(workAfter.assigned_group_id, group.name);
+    discovery = await request("GET", `${inventory}/fulfillment`);
+    const scheduledCandidate = discovery.orders.find(order => order.workOrderId === scheduled.id);
+    assert.ok(scheduledCandidate.eligible);
+    await dialog.getByRole("button", { name: "Back to saved batches", exact: true }).click();
+    await dialog.getByRole("button", { name: "Scheduled installer work", exact: false }).click();
+    await dialog.locator("label").filter({ hasText: "FUL-SCHEDULED" }).getByRole("checkbox").check();
+    await dialog.getByLabel("Batch name", { exact: true }).fill("Owned scheduled pull");
+    for (const [label, option] of [["Warehouse source", "Fulfillment warehouse"], ["Staging destination", "Crew staging shelf"], ["Vehicle", "Crew vehicle"]]) {
+      await dialog.getByLabel(label, { exact: true }).click();
+      await page.getByRole("option", { name: new RegExp(option) }).click();
+    }
+    await dialog.getByRole("button", { name: "Review batch", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create saved batch", exact: true }).click();
+    await expect(dialog.getByText("Scan stock as it is pulled", { exact: true })).toBeVisible();
+    discovery = await request("GET", `${inventory}/fulfillment`);
+    const scheduledId = discovery.batches.find(batch => batch.name === "Owned scheduled pull").id;
+    const stageId = crypto.randomUUID();
+    await command("fulfillmentMove", { id: scheduledId, revision: 1, phase: "stage",
+      lines: [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-C"] }],
+      reason: "Scheduled installer equipment physically staged", physicallyConfirmed: true }, prep, stageId);
+    state = (await request("GET", inventory)).state;
+    assert.deepEqual(state.allocations.find(a => a.workOrderId === scheduled.id).lines[0].serials, []);
+    await request("PATCH", `${root}/work-orders/${scheduled.id}`, { status: "Open", assignedUserId: null, assignedGroupId: group.name }, admin);
+    await rejected("fulfillmentMove", { id: scheduledId, revision: 2, phase: "vehicle",
+      lines: [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-C"] }],
+      reason: "Must not deliver for an obsolete assignment", physicallyConfirmed: true });
+    await command("fulfillmentClose", { id: scheduledId, revision: 2, reason: "Assignment changed; release staged stock for warehouse review" });
+    state = (await request("GET", inventory)).state;
+    assert.equal(state.stock.find(stock => stock.warehouseId === "fulfill-stage" && stock.itemId === "fulfill-meter").quantity, 1);
+    assert.equal(state.allocations.find(a => a.workOrderId === scheduled.id).lines.length, 0);
+    await request("PUT", `/api/subroles/${role.id}/permissions`, { permissions: ["workOrders.view", "inventory.view"] }, admin);
+    await rejected("fulfillmentClose", { id: scheduledId, revision: 3, reason: "Permission revoked during an open wizard" }, 403);
+    assert.deepEqual(errors, []);
+    console.log("PASS normal-role crew and scheduled discovery, duplicate demand guard, recoverable physical staging, exactly-once handoff, readable print, reassignment safety, release semantics, permissions and responsive wizard.");
+  } finally { await prep.close(); await admin.close(); await browser.close(); }
+})().catch(error => { console.error(error); process.exit(1); });

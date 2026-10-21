@@ -107,6 +107,11 @@ export function inventoryToRelational(input: InventoryState, projectId: number):
     const key = JSON.stringify([line.warehouseId, line.itemId]);
     reserved.set(key, (reserved.get(key) ?? 0) + line.quantity);
   }
+  for (const batch of state.fulfillmentBatches ?? []) if (batch.status === "active" && batch.mode === "crew")
+    for (const line of batch.lines) {
+      const key = JSON.stringify([batch.stagingId, line.itemId]);
+      reserved.set(key, (reserved.get(key) ?? 0) + line.stagedQuantity - line.deliveredQuantity);
+    }
   tables.set("inventory_quantities", { columns: { project_id: "integer", warehouse_id: "text", item_id: "text", quantity: "integer", reserved: "integer", serials: "jsonb", revision: "integer", _position: "integer" },
     keys: ["warehouse_id", "item_id"], rows: state.stock.map((stock, index) => ({
       project_id: projectId, warehouse_id: stock.warehouseId, item_id: stock.itemId, quantity: stock.quantity,

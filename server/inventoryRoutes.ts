@@ -28,6 +28,9 @@ import { workRequirements } from "./inventoryRequirements";
 import { workKitComponentTrace } from "../shared/inventory-component-details";
 import { warehouseAccessible } from "../shared/inventory-location-types";
 import { removalConfig } from "../shared/inventory-removal-policy";
+import { fulfillmentOrders } from "./inventoryFulfillment";
+import { normalizeInventoryLocations } from "../shared/inventory-location-types";
+import { readRelationalInventory } from "./inventoryRelational";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -57,7 +60,7 @@ export function registerInventoryRoutes(app: Express) {
       const canViewInventory = await storage.hasPermission(user, inventoryPermissions.view);
       if (!canViewInventory && !(workOrderRead && await storage.hasPermission(user, "workOrders.view")))
         return res.status(403).json({ message: "Inventory view permission required." });
-      const permissions = (await storage.getUserEffectivePermissions(user)).filter(p => p.startsWith("inventory."));
+      const permissions = (await storage.getUserEffectivePermissions(user)).filter(p => p.startsWith("inventory.") || p === "workOrders.view");
       res.locals.inventory = { user, admin, project, permissions, canViewInventory };
       res.set("Cache-Control", "no-store"); next();
     } catch { res.status(503).json({ message: "Inventory access could not be verified." }); }
@@ -71,7 +74,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   };
   const snapshot = async (res: any) => {
-    const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin, c.permissions.includes(inventoryPermissions.count), c.permissions);
+    const c = res.locals.inventory, state = inventoryVisibleState(normalizeInventoryLocations(await inventoryState(c.project.id)), c.user.id, c.admin, c.permissions.includes(inventoryPermissions.count), c.permissions);
     const { rows: users } = await pool.query(`SELECT u.id,u.username FROM public.users u
       WHERE NOT coalesce(u.is_locked,false) AND
       (EXISTS(SELECT 1 FROM public.user_projects up WHERE up.user_id=u.id AND up.project_id=$1)
@@ -87,6 +90,25 @@ export function registerInventoryRoutes(app: Express) {
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth());
+  app.get(`${base}/fulfillment`, handler(async (_req, res) => {
+    const c = res.locals.inventory;
+    if (!c.project.inventoryEnabled) throw new InventoryError("Project inventory is disabled.");
+    if (!await storage.hasPermission(c.user, "workOrders.view"))
+      throw Object.assign(new InventoryError("Work-order view permission required."), { status: 403 });
+    const connection = await pool.connect();
+    try {
+      await connection.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const state = normalizeInventoryLocations(await readRelationalInventory(connection, c.project.id, { readOnly: true }));
+      const orders = await fulfillmentOrders(connection, c.project.id, state, c.user);
+      // Batch history contains customer work identities: apply the same work visibility.
+      const allIds = [...new Set((state.fulfillmentBatches ?? []).flatMap(b => b.workOrders.map(w => w.workOrderId)))];
+      const visible = allIds.length ? new Set((await fulfillmentOrders(connection, c.project.id, state, c.user, allIds)).map(w => w.workOrderId)) : new Set<number>();
+      const batches = (state.fulfillmentBatches ?? []).filter(b => b.workOrders.every(w => visible.has(w.workOrderId)));
+      await connection.query("COMMIT");
+      return { orders, batches, timezone: c.project.timezone ?? "UTC" };
+    } catch (error) { await connection.query("ROLLBACK"); throw error; }
+    finally { connection.release(); }
+  }));
   app.get(`${base}/type-links`, handler(async (_req, res) => {
     const c = res.locals.inventory;
     const [state, systemTypes, moduleTypes] = await Promise.all([

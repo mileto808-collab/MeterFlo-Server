@@ -21,7 +21,8 @@ function fixture() {
 
 test("live cutover uses shared warehouses and assigned vehicles without losing old assignments", () => {
   const state = fixture();
-  assert.equal(state.locationTypes!.length, 2);
+  assert.equal(state.locationTypes!.length, 3);
+  assert.ok(state.locationTypes!.some(type => type.name === "Staging" && type.kind === "physical" && type.accessPolicy === "shared"));
   assert.equal(state.warehouses[0].locationTypeId, defaultLocationTypeId("physical"));
   assert.equal(warehouseAccessible(state, state.warehouses[0], "other-member", false), true);
   assert.equal(warehouseAccessible(state, state.warehouses[1], "other-member", false), false);
@@ -98,7 +99,7 @@ test("backup adapters retain modern policies and restore pre-type physical locat
   const modern = fixture();
   validateInventoryBackup({ state: modern, movements: [], enabled: true }, []);
   const tables = inventoryToRelational(modern, 1);
-  assert.equal(tables.get("inventory_location_types")!.rows.length, 2);
+  assert.equal(tables.get("inventory_location_types")!.rows.length, 3);
   const decoded = inventoryFromRelational(new Map([...tables].map(([name, table]) => [name, structuredClone(table.rows)])), modern.revision, Object.keys(modern));
   assert.deepEqual(decoded.locationTypes, modern.locationTypes);
   const legacy = structuredClone(modern);
@@ -117,7 +118,7 @@ test("full-system legacy public rows are upgraded before their NOT NULL/FK const
   const backup = { mainDatabase: { inventory_state: [{ project_id: 1, state }], inventory_warehouses: [{ project_id: 1, id: "main" }] } as Record<string, any[]>,
     projectDatabases: [{ projectId: 1, inventory: { state } }] };
   prepareLocationTypeRestore(backup);
-  assert.equal(backup.mainDatabase.inventory_location_types.length, 2);
+  assert.equal(backup.mainDatabase.inventory_location_types.length, 3);
   assert.equal(backup.mainDatabase.inventory_warehouses.length, 2);
   assert.ok(backup.mainDatabase.inventory_warehouses.every(row => row.location_type_id));
   const restored = backup.projectDatabases[0].inventory.state;

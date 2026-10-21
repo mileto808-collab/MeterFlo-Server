@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, reservationSchema, savedCountDraftSchema, categoryNameSchema, categoryKey, type InventoryState } from "../shared/inventory";
 import { workPlanInputSchema } from "../shared/inventory-planning";
+import { fulfillmentBatchSchema } from "../shared/inventory-fulfillment";
 import { z } from "zod";
 import { validateCustomerHandoffs } from "../shared/inventory-customer-handoffs";
 import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
@@ -70,6 +71,29 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Saved shipment draft references an unrelated receipt.");
   }
   const s = backup.state;
+  const batches = z.array(fulfillmentBatchSchema).parse(s.fulfillmentBatches ?? []);
+  if (new Set(batches.map(batch => batch.id)).size !== batches.length) throw new Error("Duplicate fulfillment batch identity.");
+  for (const batch of batches) {
+    if (new Set(batch.workOrders.map(w => w.workOrderId)).size !== batch.workOrders.length ||
+      batch.workOrders.some(w => !workOrderIds.includes(w.workOrderId)) ||
+      [batch.sourceId, batch.stagingId, batch.vehicleId].some(id => !s.warehouses.some(w => w.id === id)) ||
+      new Set([batch.sourceId, batch.stagingId, batch.vehicleId]).size !== 3 ||
+      new Set(batch.lines.map(line => `${line.workOrderId}/${line.itemId}`)).size !== batch.lines.length)
+      throw new Error("Invalid fulfillment work-order or location references.");
+    for (const line of batch.lines) {
+      const item = s.items.find(item => item.id === line.itemId);
+      if (!item || item.kind === "labor" || !batch.workOrders.some(w => w.workOrderId === line.workOrderId) ||
+        line.deliveredQuantity > line.stagedQuantity || line.stagedQuantity > line.quantity ||
+        (item.tracking === "serialized" ? line.stagedSerials.length !== line.stagedQuantity ||
+          line.deliveredSerials.length !== line.deliveredQuantity : line.stagedSerials.length || line.deliveredSerials.length) ||
+        new Set(line.stagedSerials).size !== line.stagedSerials.length ||
+        new Set(line.deliveredSerials).size !== line.deliveredSerials.length ||
+        line.deliveredSerials.some(serial => !line.stagedSerials.includes(serial)))
+        throw new Error("Invalid fulfillment custody or quantities.");
+    }
+    if (batch.status === "completed" && batch.lines.some(line => line.deliveredQuantity !== line.quantity))
+      throw new Error("Completed fulfillment has outstanding quantities.");
+  }
   const fieldSettings = z.array(fieldStockSettingsSchema).max(1).parse(s.fieldSettings ?? []);
   for (const setting of fieldSettings)
     if (setting.sourceMode === "project_warehouse" && !s.warehouses.some(w => w.id === setting.warehouseId && w.type === "physical"))

@@ -15,6 +15,7 @@ import { allocationSchema, reservationSchema, dispositionSchema, itemSchema, sto
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 import { InventoryError } from "./inventory-errors";
 import { updateWorkPlan, effectivePlannedLines } from "./inventory-planning";
+import { applyFulfillmentMove, fulfillmentBatchSchema, fulfillmentReserved } from "./inventory-fulfillment";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
 import { fieldUseSplit, resolveStockDiscrepancySchema } from "./inventory-stock-discrepancies";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
@@ -35,7 +36,7 @@ export const canonicalInventoryJson = (value: unknown): string => JSON.stringify
 export function reserved(s: InventoryState, warehouseId: string, itemId: string, except?: number) {
   return s.allocations.filter(a => a.status === "reserved" && a.workOrderId !== except)
     .flatMap(a => a.lines).filter(l => l.warehouseId === warehouseId && l.itemId === itemId)
-    .reduce((n, l) => n + l.quantity, 0);
+    .reduce((n, l) => n + l.quantity, 0) + fulfillmentReserved(s, warehouseId, itemId);
 }
 export function warehouseAccess(s: InventoryState, id: string, actor: string, admin: boolean) {
   const w = s.warehouses.find(w => w.id === id);
@@ -94,7 +95,10 @@ function move(s: InventoryState, warehouseId: string, input: StockLine[], sign: 
     if (sign < 0) {
       assert(b.quantity - reserved(s, warehouseId, l.itemId, except) >= l.quantity, "Insufficient available stock.");
       const held = s.allocations.filter(a => a.status === "reserved" && a.workOrderId !== except).flatMap(a => a.lines)
-        .filter(a => a.warehouseId === warehouseId && a.itemId === l.itemId).flatMap(a => a.serials);
+        .filter(a => a.warehouseId === warehouseId && a.itemId === l.itemId).flatMap(a => a.serials)
+        .concat((s.fulfillmentBatches ?? []).filter(batch => batch.status === "active" && batch.mode === "crew" && batch.stagingId === warehouseId)
+          .flatMap(batch => batch.lines.filter(line => line.itemId === l.itemId)
+            .flatMap(line => line.stagedSerials.filter(serial => !line.deliveredSerials.includes(serial)))));
       assert(l.serials.every(x => b.serials.includes(x) && !held.includes(x)), "Serial unavailable or reserved elsewhere.");
       b.serials = b.serials.filter(x => !l.serials.includes(x));
     } else {
@@ -137,7 +141,7 @@ function kitCycles(s: InventoryState) {
   };
   for (const i of s.items) visit(i.id, []);
 }
-export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString(), capabilities: { manageLocations?: boolean } = {}) {
+export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString(), capabilities: { manageLocations?: boolean; fulfillmentBatch?: import("./inventory-fulfillment").FulfillmentBatch } = {}) {
   if (shipmentActions.includes(command.action) || ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(command.action))
     assert(new TextEncoder().encode(JSON.stringify(command.data)).length <= 8 * 1024 * 1024, "Shipment data exceeds the 8 MiB limit; no changes were posted.");
   if (command.action === "countSaveDraft" || command.action === "countPost")
@@ -370,6 +374,20 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
         moduleTypeId: input.equipment === "module" ? input.typeId : null };
       s.typeLinks = [...(s.typeLinks ?? []).filter(l => l.id !== id), link];
     } else s.typeLinks = (s.typeLinks ?? []).filter(l => l.id !== id);
+  } else if (a === "fulfillmentCreate") {
+    assert(capabilities.fulfillmentBatch, "Fulfillment demand must be verified against current work orders.");
+    const batch = fulfillmentBatchSchema.parse(capabilities.fulfillmentBatch);
+    assert(!(s.fulfillmentBatches ?? []).some(b => b.id === batch.id), "Batch identity already exists.");
+    access(batch.sourceId); access(batch.stagingId); access(batch.vehicleId);
+    (s.fulfillmentBatches ??= []).push(batch);
+    receipt(batch.id, batch.stagingId, [], `Fulfillment batch · ${batch.name}`);
+  } else if (a === "fulfillmentMove" || a === "fulfillmentClose") {
+    applyFulfillmentMove(s, a, d, command.operationId, {
+      access,
+      move: (warehouseId, input, sign, transitId) => move(s, warehouseId, input, sign, undefined,
+        sign < 0 ? { to: { kind: "transit", id: transitId } } : { from: { kind: "transit", id: transitId } }),
+      receipt,
+    });
   } else if (a === "plan") {
     updateWorkPlan(s, d, actor, now);
   } else if (a === "stageWorkOrder") {

@@ -10,6 +10,9 @@ export const locationTypeSchema = z.object({
   accessPolicy: z.enum(["shared", "assigned"]), revision: z.number().int().positive(),
 }).strict();
 export type InventoryLocationType = z.infer<typeof locationTypeSchema>;
+export const defaultStagingTypeId = "57e15eca-f991-4328-a091-000000000003";
+export const isStagingType = (type: InventoryLocationType | undefined) =>
+  type?.kind === "physical" && (type.id === defaultStagingTypeId || locationTypeKey(type.name) === "staging");
 const defaults = {
   physical: "57e15eca-f991-4328-a091-000000000001",
   vehicle: "57e15eca-f991-4328-a091-000000000002",
@@ -20,6 +23,7 @@ export function initialLocationTypes(legacyPhysicalPolicy: "shared" | "assigned"
   return [
     { id: defaults.physical, name: "Warehouse", kind: "physical", accessPolicy: legacyPhysicalPolicy, revision: 1 },
     { id: defaults.vehicle, name: "Vehicle", kind: "vehicle", accessPolicy: "assigned", revision: 1 },
+    { id: defaultStagingTypeId, name: "Staging", kind: "physical", accessPolicy: "shared", revision: 1 },
   ];
 }
 type LocationState = Pick<InventoryState, "locationTypes">;
@@ -43,6 +47,9 @@ export function normalizeInventoryLocations(input: InventoryState, legacyPhysica
   const state = structuredClone(input);
   state.locationTypes = state.locationTypes === undefined ? initialLocationTypes(legacyPhysicalPolicy)
     : z.array(locationTypeSchema).parse(state.locationTypes);
+  if (!state.locationTypes.some(type => type.id === defaultStagingTypeId || locationTypeKey(type.name) === "staging"))
+    state.locationTypes.push({ id: defaultStagingTypeId, name: "Staging",
+      kind: "physical", accessPolicy: "shared", revision: 1 });
   if (new Set(state.locationTypes.map(type => type.id)).size !== state.locationTypes.length ||
       new Set(state.locationTypes.map(type => locationTypeKey(type.name))).size !== state.locationTypes.length)
     throw new InventoryError("Location type IDs and names must be unique within this project.");

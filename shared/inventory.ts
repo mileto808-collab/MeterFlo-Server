@@ -76,7 +76,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
-    "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
+    "fulfillmentCreate", "fulfillmentMove", "fulfillmentClose", "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy"]),
   data: z.record(z.unknown()),
 }).strict();
@@ -112,6 +112,7 @@ export type EquipmentReturn = Disposition & { id: string; workOrderId: number; s
   history?: Array<{ operationId: string; actor: string; occurredAt: string; outcome: string; reason: string; ruleId?: string; ruleRevision?: number; ruleName?: string;
     recipient?: string; reference?: string; previousStatus?: string; physicallyPresent?: boolean; handoffId?: string }> };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  fulfillmentBatches?: import("./inventory-fulfillment").FulfillmentBatch[];
   customerHandoffs?: import("./inventory-customer-handoffs").CustomerHandoff[];
   fieldSettings?: FieldStockSettings[];
   locationTypes?: InventoryLocationType[];
@@ -142,7 +143,7 @@ export const commandPermission = (action: InventoryCommand["action"]) =>
   ["assemble", "disassemble"].includes(action) ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :
   action === "resolveStockDiscrepancy" ? inventoryPermissions.resolveExceptions :
-  action === "stageWorkOrder" ? inventoryPermissions.transfer :
+  action === "stageWorkOrder" || action.startsWith("fulfillment") ? inventoryPermissions.transfer :
   ["plan", "assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;
 
 // Legacy free-text category values remain selectable without a destructive migration.

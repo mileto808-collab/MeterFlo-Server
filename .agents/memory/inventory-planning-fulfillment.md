@@ -26,3 +26,9 @@ Manual fulfillment/staging must work without a wizard. Future wizards streamline
 **Why:** The user explicitly clarified this task's scope after the initial first-stage proposal.
 
 **How to apply:** Deliver the manual operations and reuse their underlying commands for later guided workflows; do not defer basic fulfillment functionality until wizard implementation.
+
+The user approved a Staging-location approach for the shared stock pool. The fulfillment wizard must cover warehouse pulling, physical staging, and transfer to a vehicle—not stop after planning or staging.
+
+**Why:** The user explicitly requested the warehouse worker be able to handle the whole process in one guided workflow.
+
+**How to apply:** Keep shared crew pools distinct from individually scheduled reservations. Treat Staging as physical custody, never installation, and retain onsite selection of actual installed serials.

@@ -18,6 +18,7 @@ export function inventoryAuditReferences(state: InventoryState): Map<string, str
   const refs = new Map<string, string>();
   for (const row of state.warehouses) refs.set(row.id, `${row.code} · ${row.name}`);
   for (const row of state.items) refs.set(row.id, `${row.sku} · ${row.name}`);
+  for (const row of state.fulfillmentBatches ?? []) refs.set(row.id, `Fulfillment · ${row.name}`);
   for (const row of state.vendors) refs.set(row.id, row.name);
   for (const row of state.orders) refs.set(row.id, orderLabel(row));
   for (const row of state.counts) refs.set(row.id, inventoryCountReference(state.counts, row.id));
@@ -35,7 +36,7 @@ export function inventoryAuditEntity(
 ): string | undefined {
   const refs = inventoryAuditReferences(state);
   if (refs.has(operationId)) return refs.get(operationId);
-  for (const kind of ["orders", "counts", "items", "warehouses", "vendors", "allocations", "returns", "shipmentHolds", "kitAssemblies", "kitHolds", "shipmentDrafts"]) {
+  for (const kind of ["fulfillmentBatches", "orders", "counts", "items", "warehouses", "vendors", "allocations", "returns", "shipmentHolds", "kitAssemblies", "kitHolds", "shipmentDrafts"]) {
     const change = changes.find(c => c.field.startsWith(`${kind}/`));
     if (!change) continue;
     const id = change.field.slice(kind.length + 1), value = (change.after ?? change.before) as any;
