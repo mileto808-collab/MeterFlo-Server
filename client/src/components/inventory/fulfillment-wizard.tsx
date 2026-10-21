@@ -483,6 +483,29 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setSelectionNotice("");
   };
   const setLineValue = (key: string, value: string, field: "quantities" | "serialText") => update({ [field]: { ...draft[field], [key]: value } });
+  const acceptStagedSerials = (itemId: string) => {
+    if (draft.step !== "vehicle" || !batchCanReleaseRemainder || !canPost || busy || pendingLock || createLock) return;
+    const row = batchDemand.find(row => row.itemId === itemId && row.item?.tracking === "serialized");
+    if (!row) return;
+    const available = [...new Set(row.serials.filter(serial => !row.deliveredSerials.includes(serial)))];
+    if (!available.length) return;
+    const key = quantityKey("vehicle", itemId);
+    const existing = splitSerials(draft.serialText[key] ?? "");
+    if (existing.some(serial => !available.includes(serial))) {
+      setError("The scan box contains a serial that is not available in this batch's staged stock. Review those entries before accepting the displayed serials. Your entries were kept.");
+      return;
+    }
+    const serials = [...new Set([...existing, ...available])];
+    if (serials.length > vehicleRemaining(row)) {
+      setError("Staged quantities and serials no longer agree. Refresh the batch before accepting serials. Your entries were kept.");
+      return;
+    }
+    setError("");
+    update({
+      serialText: { ...draft.serialText, [key]: serials.join("\n") },
+      quantities: { ...draft.quantities, [key]: String(serials.length) },
+    });
+  };
   const startResume = (batch: FulfillmentBatch) => update({ batchId: batch.id, mode: "resume",
     step: batch.lines.some(line => line.quantity > line.stagedQuantity) ? "stage" : "vehicle" });
   const printReceipt = (id: string) => window.open(`/api/projects/${projectId}/inventory/print/receipt/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
@@ -741,7 +764,17 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                       {row.item?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`serial-${key}`}>Custody serials</Label><Textarea id={`serial-${key}`} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "serialText")} placeholder={draft.step === "stage" ? "Scan source serials, one per unit" : "Scan serials already staged in this batch"} /><p className="text-xs text-muted-foreground">Enter exactly one unique serial per moved unit. This is custody only, never installed-equipment assignment.</p></div>}
                     </div>
                     {row.item?.tracking === "serialized" && <p className="mt-2 break-words text-xs text-muted-foreground">{draft.step === "stage" ? "Already staged: " : "Already handed off: "}{(draft.step === "stage" ? row.serials : row.deliveredSerials).join(", ") || "none"}</p>}
-                    {draft.step === "vehicle" && row.item?.tracking === "serialized" && <p className="mt-1 break-words text-xs text-muted-foreground">Available staged serials: {row.serials.filter(serial => !row.deliveredSerials.includes(serial)).join(", ") || "none"}</p>}
+                    {draft.step === "vehicle" && row.item?.tracking === "serialized" && <div className="mt-2 space-y-2">
+                      <p className="break-words text-xs text-muted-foreground">Available staged serials: {row.serials.filter(serial => !row.deliveredSerials.includes(serial)).join(", ") || "none"}</p>
+                      {row.serials.some(serial => !row.deliveredSerials.includes(serial)) && <>
+                        <Button type="button" variant="outline" size="sm" className="h-auto min-h-9 w-full whitespace-normal sm:w-auto"
+                          data-testid={`fulfillment-accept-staged-${row.itemId}`} disabled={busy || pendingLock || createLock || !canPost}
+                          onClick={() => acceptStagedSerials(row.itemId)}>
+                          <Check className="mr-2 h-4 w-4 shrink-0" />Accept displayed serials ({new Set(row.serials.filter(serial => !row.deliveredSerials.includes(serial))).size})
+                        </Button>
+                        <p className="text-xs text-muted-foreground">Visually verify the listed units, then accept to fill the scan box and quantity. Existing matching scans are kept without duplicates. Edit the list for a partial handoff. This does not move stock; physical handoff confirmation is still required.</p>
+                      </>}
+                    </div>}
                   </div>;
                 })}
                 {!batchDemand.length && <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No physical lines are currently available in this batch.</div>}

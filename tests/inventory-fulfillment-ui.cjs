@@ -270,8 +270,39 @@ const assert = require("node:assert/strict");
       lines: [{ itemId: "fulfill-meter", quantity: 2, serials: ["F-B", "F-A"] }],
       reason: "Physically counted and handed to the crew vehicle", physicallyConfirmed: true };
     await dialog.getByRole("button", { name: "Continue to vehicle handoff", exact: true }).click();
-    await dialog.getByTestId("fulfillment-move-quantity-vehicle-fulfill-meter").fill("2");
-    await dialog.getByTestId("fulfillment-custody-serials-vehicle-fulfill-meter").fill("F-B\nF-A");
+    const handoffQuantity = dialog.getByTestId("fulfillment-move-quantity-vehicle-fulfill-meter");
+    const handoffSerials = dialog.getByTestId("fulfillment-custody-serials-vehicle-fulfill-meter");
+    const acceptSerials = dialog.getByTestId("fulfillment-accept-staged-fulfill-meter");
+    await handoffQuantity.fill("1");
+    await handoffSerials.fill("F-UNKNOWN");
+    await acceptSerials.click();
+    await expect(dialog.getByText(/scan box contains a serial that is not available/)).toBeVisible();
+    await expect(handoffSerials).toHaveValue("F-UNKNOWN");
+    await expect(handoffQuantity).toHaveValue("1");
+    await handoffSerials.fill("F-B");
+    await acceptSerials.click();
+    await expect(handoffSerials).toHaveValue("F-B\nF-A");
+    await expect(handoffQuantity).toHaveValue("2");
+    await acceptSerials.click();
+    await expect(handoffSerials).toHaveValue("F-B\nF-A");
+    await expect(handoffQuantity).toHaveValue("2");
+    await expect(dialog.getByLabel("Physical move reason", { exact: true })).toHaveValue("");
+    await expect(dialog.getByRole("checkbox").first()).not.toBeChecked();
+    assert.equal((await batch()).lines.reduce((sum, line) => sum + line.deliveredQuantity, 0), 0, "Visual acceptance alone does not post a handoff.");
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await expect.poll(async () => {
+        const rect = await dialog.boundingBox();
+        return !!rect && rect.x >= -1 && rect.x + rect.width <= viewport.width + 1;
+      }).toBe(true);
+      await acceptSerials.scrollIntoViewIfNeeded();
+      await expect.poll(async () => {
+        const rect = await acceptSerials.boundingBox();
+        return !!rect && rect.x >= 0 && rect.x + rect.width <= viewport.width;
+      }).toBe(true);
+      await page.screenshot({ path: `generated-artifacts/inventory-fulfillment/accept-serials-${viewport.width}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     await dialog.getByLabel("Physical move reason", { exact: true }).fill(handoff.reason);
     await dialog.getByRole("checkbox").first().check();
     const posted = page.waitForRequest(req => req.url().endsWith(`${inventory}/commands`) && req.method() === "POST" && req.postDataJSON().data.phase === "vehicle");
