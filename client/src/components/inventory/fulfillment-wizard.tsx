@@ -75,6 +75,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [selectionNotice, setSelectionNotice] = useState("");
   const [showUnavailable, setShowUnavailable] = useState(false);
   const [confirmHandoff, setConfirmHandoff] = useState(false);
+  const [serialSearch, setSerialSearch] = useState<Record<string, string>>({});
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
@@ -167,6 +168,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useEffect(() => {
     if (open) setShowUnavailable(false);
   }, [open]);
+  useEffect(() => { setSerialSearch({}); }, [open, draft.batchId, draft.step]);
   useEffect(() => {
     if (!storageKey || !storageReady) return;
     try { window.localStorage.setItem(storageKey, JSON.stringify(draft)); }
@@ -483,19 +485,24 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setSelectionNotice("");
   };
   const setLineValue = (key: string, value: string, field: "quantities" | "serialText") => update({ [field]: { ...draft[field], [key]: value } });
-  const acceptStagedSerials = (itemId: string) => {
+  const availableStagedSerials = (row: typeof batchDemand[number]) =>
+    [...new Set(row.serials.filter(serial => !row.deliveredSerials.includes(serial)))];
+  const acceptStagedSerials = (itemId: string, selection?: { serial: string; checked: boolean }) => {
     if (draft.step !== "vehicle" || !batchCanReleaseRemainder || !canPost || busy || pendingLock || createLock) return;
     const row = batchDemand.find(row => row.itemId === itemId && row.item?.tracking === "serialized");
     if (!row) return;
-    const available = [...new Set(row.serials.filter(serial => !row.deliveredSerials.includes(serial)))];
+    const available = availableStagedSerials(row);
     if (!available.length) return;
+    if (selection && !available.includes(selection.serial)) return;
     const key = quantityKey("vehicle", itemId);
     const existing = splitSerials(draft.serialText[key] ?? "");
     if (existing.some(serial => !available.includes(serial))) {
-      setError("The scan box contains a serial that is not available in this batch's staged stock. Review those entries before accepting the displayed serials. Your entries were kept.");
+      setError("The scan box contains a serial that is not available in this batch's staged stock. Review those entries before choosing or accepting staged serials. Your entries were kept.");
       return;
     }
-    const serials = [...new Set([...existing, ...available])];
+    const serials = [...new Set(selection
+      ? selection.checked ? [...existing, selection.serial] : existing.filter(serial => serial !== selection.serial)
+      : [...existing, ...available])];
     if (serials.length > vehicleRemaining(row)) {
       setError("Staged quantities and serials no longer agree. Refresh the batch before accepting serials. Your entries were kept.");
       return;
@@ -756,6 +763,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                   const source = sourceAvailability.find(balance => balance.itemId === row.itemId);
                   const moveLimit = draft.step === "stage" ? Math.min(remaining, source?.available ?? 0) : remaining;
                   const key = quantityKey(draft.step, row.itemId);
+                  const availableSerials = availableStagedSerials(row);
+                  const capturedSerials = new Set(splitSerials(draft.serialText[key] ?? ""));
+                  const matchingSerials = availableSerials.filter(serial => serial.toLowerCase().includes((serialSearch[row.itemId] ?? "").trim().toLowerCase()));
+                  const serialSelectionLocked = busy || pendingLock || createLock || !canPost || !batchCanReleaseRemainder;
                   return <div key={row.itemId} className="rounded-lg border p-3 sm:p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{row.item?.name}</p><p className="text-xs text-muted-foreground">{row.item?.sku} · {row.item?.unit ?? "units"}</p></div>
                       <div className="text-right text-xs"><span className="block text-muted-foreground">Remaining to {draft.step === "stage" ? "stage" : "handoff"}</span><strong className="font-mono text-base">{remaining}</strong><span className="ml-1">{row.item?.unit ?? "units"}</span></div></div>
@@ -765,14 +776,32 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                     </div>
                     {row.item?.tracking === "serialized" && <p className="mt-2 break-words text-xs text-muted-foreground">{draft.step === "stage" ? "Already staged: " : "Already handed off: "}{(draft.step === "stage" ? row.serials : row.deliveredSerials).join(", ") || "none"}</p>}
                     {draft.step === "vehicle" && row.item?.tracking === "serialized" && <div className="mt-2 space-y-2">
-                      <p className="break-words text-xs text-muted-foreground">Available staged serials: {row.serials.filter(serial => !row.deliveredSerials.includes(serial)).join(", ") || "none"}</p>
-                      {row.serials.some(serial => !row.deliveredSerials.includes(serial)) && <>
+                      <p className="break-words text-xs text-muted-foreground">Available staged serials: {availableSerials.join(", ") || "none"}</p>
+                      {availableSerials.length > 0 && <>
                         <Button type="button" variant="outline" size="sm" className="h-auto min-h-9 w-full whitespace-normal sm:w-auto"
-                          data-testid={`fulfillment-accept-staged-${row.itemId}`} disabled={busy || pendingLock || createLock || !canPost}
+                          data-testid={`fulfillment-accept-staged-${row.itemId}`} disabled={serialSelectionLocked}
                           onClick={() => acceptStagedSerials(row.itemId)}>
-                          <Check className="mr-2 h-4 w-4 shrink-0" />Accept displayed serials ({new Set(row.serials.filter(serial => !row.deliveredSerials.includes(serial))).size})
+                          <Check className="mr-2 h-4 w-4 shrink-0" />Accept displayed serials ({availableSerials.length})
                         </Button>
-                        <p className="text-xs text-muted-foreground">Visually verify the listed units, then accept to fill the scan box and quantity. Existing matching scans are kept without duplicates. Edit the list for a partial handoff. This does not move stock; physical handoff confirmation is still required.</p>
+                        <p className="text-xs text-muted-foreground">Visually verify the listed units, then accept all or choose individual units below for a partial handoff. Existing matching scans are kept without duplicates. This does not move stock; physical handoff confirmation is still required.</p>
+                        <details className="min-w-0 rounded-lg border p-3" data-testid={`fulfillment-serial-picker-${row.itemId}`}>
+                          <summary className="min-h-9 cursor-pointer text-sm font-medium">Choose staged serials for a partial handoff</summary>
+                          <div className="mt-2 space-y-2">
+                            <Label htmlFor={`serial-search-${row.itemId}`}>Search staged serials for {row.item?.name}</Label>
+                            <Input id={`serial-search-${row.itemId}`} type="search" disabled={serialSelectionLocked}
+                              value={serialSearch[row.itemId] ?? ""} onChange={event => setSerialSearch(current => ({ ...current, [row.itemId]: event.target.value }))}
+                              placeholder="Find a staged serial…" />
+                            <p className="text-xs text-muted-foreground" role="status">{availableSerials.filter(serial => capturedSerials.has(serial)).length} selected / {availableSerials.length} available · {matchingSerials.length} matching</p>
+                            <div className="max-h-52 space-y-1 overflow-y-auto overscroll-contain">
+                              {matchingSerials.map(serial => <label key={serial} className="flex min-h-11 cursor-pointer items-center gap-3 rounded border px-3 py-2 text-sm">
+                                <Checkbox aria-label={`Hand off staged serial ${serial}`} checked={capturedSerials.has(serial)} disabled={serialSelectionLocked}
+                                  onCheckedChange={checked => acceptStagedSerials(row.itemId, { serial, checked: checked === true })} />
+                                <span className="min-w-0 break-all font-mono">{serial}</span>
+                              </label>)}
+                              {!matchingSerials.length && <p className="py-2 text-sm text-muted-foreground">No staged serials match this search.</p>}
+                            </div>
+                          </div>
+                        </details>
                       </>}
                     </div>}
                   </div>;
