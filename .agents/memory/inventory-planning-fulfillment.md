@@ -32,3 +32,9 @@ The user approved a Staging-location approach for the shared stock pool. The ful
 **Why:** The user explicitly requested the warehouse worker be able to handle the whole process in one guided workflow.
 
 **How to apply:** Keep shared crew pools distinct from individually scheduled reservations. Treat Staging as physical custody, never installation, and retain onsite selection of actual installed serials.
+
+Keep the current fulfillment workflow for now, including required recording of pickups. Do not introduce unrecorded direct-from-Staging field use.
+
+**Why:** After discussing stock-aware replenishment, optional vehicle handoff, and Returns locations, the user said, “Lets keep it the same for now. Forced recording pickups is better.”
+
+**How to apply:** Preserve recorded staging and vehicle handoffs. Further replenishment changes, vehicle-free workflows, and a dedicated Returns type remain proposals requiring approval.
