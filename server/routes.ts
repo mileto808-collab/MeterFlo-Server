@@ -39,6 +39,8 @@ import { importedVisitScheduling, mapSqlImportRow, schedulingDto, validateVisitS
 import bcrypt from "bcryptjs";
 import { BOOTSTRAP_ADMIN_USERNAME, bootstrapAdminHash } from "./bootstrapAdmin";
 import { registerProjectPackageRoutes } from "./project-packages/routes";
+import { copyCleanProjectInventory } from "./inventoryProjectCopy";
+import { deleteProjectCompletely } from "./projectDeletion";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { pendingProjectFileCleanups, retryProjectFileCleanup, ProjectDeletionCleanupPending } from "./projectDeletion";
@@ -1804,6 +1806,7 @@ export async function registerRoutes(
 
   // Copy project endpoint - creates a new project with same settings
   app.post("/api/projects/:id/copy", isAuthenticated, projectRoutingWriteBoundary, async (req: any, res) => {
+    let createdProjectId: number | undefined;
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -1818,6 +1821,10 @@ export async function registerRoutes(
       const sourceProject = await storage.getProject(sourceProjectId);
       if (!sourceProject) {
         return res.status(404).json({ message: "Source project not found" });
+      }
+      if (sourceProject.inventoryEnabled &&
+          (!await storage.isAdminUser(currentUser) || !await storage.hasPermission(currentUser, permissionKeys.INVENTORY_CONFIGURE))) {
+        return res.status(403).json({ message: "Administrator and inventory configuration permission required to copy an inventory-enabled project." });
       }
       
       // Create new project with copied settings (convert nulls to undefined for proper typing)
@@ -1838,6 +1845,7 @@ export async function registerRoutes(
           : "automatic";
       const newProjectData = {
         name: `Copy of ${sourceProject.name}`,
+        inventoryEnabled: sourceProject.inventoryEnabled ?? false,
         description: sourceProject.description ?? undefined,
         customerEmail: sourceProject.customerEmail ?? undefined,
         phone: sourceProject.phone ?? undefined,
@@ -1873,6 +1881,7 @@ export async function registerRoutes(
       };
       
       const newProject = await storage.createProjectWithFullData(newProjectData);
+      createdProjectId = newProject.id;
       
       // Create database schema for new project
       const schemaName = await createProjectSchema(newProject.name, newProject.id);
@@ -1890,11 +1899,18 @@ export async function registerRoutes(
           name: holiday.name,
         });
       }
+      if (sourceProject.inventoryEnabled) await copyCleanProjectInventory(sourceProjectId, newProject.id);
       
       const updatedProject = await storage.getProject(newProject.id);
       res.status(201).json(updatedProject);
     } catch (error) {
       console.error("Error copying project:", error);
+      if (createdProjectId !== undefined) {
+        try { await deleteProjectCompletely(createdProjectId, await getProjectFilesPath()); }
+        catch {
+          return res.status(500).json({ message: "Project copy failed. The incomplete copy requires administrator cleanup.", projectId: createdProjectId });
+        }
+      }
       res.status(500).json({ message: "Failed to copy project" });
     }
   });

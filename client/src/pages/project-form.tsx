@@ -392,7 +392,9 @@ export default function ProjectForm() {
     },
     onSuccess: (newProject: Project) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "Project copied successfully" });
+      toast({ title: "Success", description: newProject.inventoryEnabled
+        ? "Project copied with Locations, Items, Categories and Vendors. Stock and inventory history start empty; location user assignments are cleared."
+        : "Project copied successfully" });
       setLocation(`/projects/${newProject.id}/edit`);
     },
     onError: (error: Error) => {
@@ -401,7 +403,7 @@ export default function ProjectForm() {
         setTimeout(() => { window.location.href = "/login"; }, 500);
         return;
       }
-      toast({ title: "Error", description: "Failed to copy project", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to copy project", variant: "destructive" });
     },
   });
 

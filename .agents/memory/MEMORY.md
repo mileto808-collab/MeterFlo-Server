@@ -68,3 +68,4 @@
 - [Operational log cleanup](log-maintenance-scope.md) — failed imports are manual-only; protect retry/replay state; new retention categories require explicit opt-in.
 - [Field changeout priorities](field-changeout-priorities.md) — field-first completion, backend inventory reconciliation, shared Open-order claiming and interruption-safe wizard captures.
 - [Inventory planning intent](inventory-planning-fulfillment.md) — manual additions stay planned; future crew fulfillment must allow onsite selection of installed serials.
+- [Clean project copies](inventory-project-copy.md) — copy inventory setup only: Locations, Items, Categories and Vendors; no stock, operational history or location user assignments.
