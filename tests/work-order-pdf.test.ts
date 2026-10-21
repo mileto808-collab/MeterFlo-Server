@@ -7,7 +7,7 @@ import { getProjectEquipmentVisibility } from "../shared/project-equipment-scope
 import type { WorkOrderPrintInventory } from "../client/src/components/work-order-pdf-inventory";
 
 // Exercise the real print click handler and report template. Stub only React
-// hooks/UI wrappers and the browser/PDF download boundary; no app auth is changed.
+// hooks/UI wrappers and the browser print-window boundary; no app auth is changed.
 const bundle = await build({
   entryPoints: ["client/src/components/work-order-pdf.tsx"],
   bundle: true, write: false, format: "iife", globalName: "PdfComponent",
@@ -19,8 +19,8 @@ const bundle = await build({
       builder.onResolve({ filter: /^(react|@tanstack\/react-query|html2pdf\.js|lucide-react|@\/components\/ui\/.*)$/ },
         args => ({ path: args.path, namespace: "pdf-boundaries" }));
       builder.onLoad({ filter: /.*/, namespace: "pdf-boundaries" }, args => {
-        if (args.path === "react") return { contents: "export const useState = value => [value, () => {}];" };
-        if (args.path === "@tanstack/react-query") return { contents: "export const useQuery = () => ({data: inventorySnapshot, refetch: async () => ({data: inventorySnapshot, isError: inventoryFailed})});" };
+        if (args.path === "react") return { contents: "export const useState = value => [value, next => stateUpdates.push(next)];" };
+        if (args.path === "@tanstack/react-query") return { contents: "export const useQuery = () => ({data: inventorySnapshot, refetch: async () => { events.push('fetch'); return {data: inventorySnapshot, isError: inventoryFailed}; }});" };
         if (args.path === "html2pdf.js") return { contents: "export default () => capturePdf();" };
         const exports = args.path === "lucide-react" ? ["Loader2", "Printer"]
           : args.path.endsWith("/dialog") ? ["Dialog", "DialogContent", "DialogDescription", "DialogFooter", "DialogHeader", "DialogTitle"]
@@ -40,50 +40,29 @@ function find(node: any, testId: string): any {
   }
 }
 
-async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[0], workOrder: object, files: string[] = [], inventorySnapshot?: WorkOrderPrintInventory, inventoryFailed = false) {
+async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[0], workOrder: object, files: string[] = [], inventorySnapshot?: WorkOrderPrintInventory, inventoryFailed = false, blocked = false) {
   let html = "";
-  let options: any;
-  let saved = false;
-  const nodes = new Map<string, any>();
+  let opened = 0, closed = false, printCalls = 0;
+  let printAction: (() => void) | undefined;
+  const events: string[] = [], stateUpdates: unknown[] = [];
   const document = {
-    createElement(tag: string) {
-      const attributes: Record<string, string> = {};
-      return {
-        style: { cssText: "" }, innerHTML: "",
-        setAttribute(key: string, value: string) { attributes[key] = value; },
-        attributes,
-        ...(tag === "iframe" ? { contentDocument: {
-          open() {}, close() {},
-          write(value: string) { html = value; },
-          querySelectorAll() { return []; },
-          getElementById(id: string) { return id === "pdf-content" ? { id, html } : null; },
-        } } : {}),
-      };
-    },
-    body: {
-      appendChild(node: any) {
-        const attribute = Object.keys(node.attributes)[0];
-        nodes.set(`[${attribute}]`, node);
-      },
-      querySelector(selector: string) { return nodes.get(selector); },
-      removeChild(node: any) {
-        for (const [key, value] of nodes) if (value === node) nodes.delete(key);
-      },
+    title: "", open() {}, close() {}, body: { textContent: "" },
+    write(value: string) { html = value; },
+    getElementById() {
+      return { addEventListener(event: string, callback: () => void) {
+        assert.equal(event, "click"); printAction = callback;
+      } };
     },
   };
+  const popup = { document, opener: {} as unknown, closed: false,
+    close() { closed = true; }, focus() {}, print() { printCalls++; } };
   const context = vm.createContext({
-    inventorySnapshot, inventoryFailed,
-    document, window: { location: { origin: "https://pdf-fixture.invalid" } },
+    inventorySnapshot, inventoryFailed, stateUpdates, events,
+    document, window: { location: { origin: "https://pdf-fixture.invalid" },
+      open() { events.push("open"); opened++; return blocked ? null : popup; } },
     console, setTimeout: (callback: () => void) => callback(),
     requestAnimationFrame: (callback: () => void) => callback(),
-    capturePdf() {
-      const worker = {
-        set(value: any) { options = value; return worker; },
-        from(value: any) { assert.equal(value.id, "pdf-content"); return worker; },
-        async save() { saved = true; },
-      };
-      return worker;
-    },
+    capturePdf() { throw new Error("Printing must never trigger a PDF download."); },
   });
   vm.runInContext(bundle.outputFiles[0].text, context);
   const props = {
@@ -97,9 +76,9 @@ async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[
   };
   const tree = context.PdfComponent.WorkOrderPdf(props);
   await find(tree, "button-generate-pdf").props.onClick();
-  assert.equal(saved, !inventoryFailed, "printing must save successfully, or stop on inventory failure");
-  assert.equal(nodes.size, 0, "print iframe and overlay are cleaned up");
-  return { html, options };
+  assert.equal(printCalls, 0, "Preview must not automatically open the native print dialog.");
+  if (!inventoryFailed && !blocked) assert.equal(opened, 1);
+  return { html, opened, closed, popup, printAction, stateUpdates, events, printCalls: () => printCalls };
 }
 
 test("real print handler includes unreserved kit components and rejects failed inventory refresh", async () => {
@@ -114,7 +93,9 @@ test("real print handler includes unreserved kit components and rejects failed i
   for (const text of ["Print kit", "Print labor", "Print seal", "1.5 hours", "Planned items & labor"]) assert.ok(printed.html.includes(text), text);
   assert.doesNotMatch(printed.html, /background-color:\s*#|border-left:|Reserved stock|Consumed inventory|Reservation record/);
   const failed = await print({}, record, [], undefined, true);
-  assert.equal(failed.html, "", "a failed inventory refresh must not produce an incomplete PDF");
+  assert.doesNotMatch(failed.html, /id="pdf-content"|Print \/ Save PDF/, "a failed inventory refresh must not produce an incomplete report");
+  assert.equal(failed.closed, true, "a failed inventory refresh closes the loading preview");
+  assert.deepEqual(failed.events, ["open", "fetch"], "open synchronously before the inventory request");
 });
 
 test("billing-only line items retain ordinary work-order information in an uncolored report", async () => {
@@ -153,7 +134,7 @@ const record = Object.freeze({
   oldGps: "40,-74", newGps: "41,-75",
 });
 
-test("print handler uses effective scope and retains common report content and PDF options", async () => {
+test("print handler retains effective scope and opens a browser preview with native print controls", async () => {
   for (const settings of [
     { wizardMode: "changeout", changeoutEquipmentType: "system", readingEquipmentType: "module" },
     { wizardMode: "changeout", changeoutEquipmentType: "module" },
@@ -166,7 +147,7 @@ test("print handler uses effective scope and retains common report content and P
     { wizardMode: "user_choice", changeoutEquipmentType: "module", readingEquipmentType: "module" },
     {},
   ]) {
-    const { html, options } = await print(settings, record, ["fixture-photo.jpg"]);
+    const { html, printAction, printCalls, popup } = await print(settings, record, ["fixture-photo.jpg"]);
     const visibility = getProjectEquipmentVisibility(settings);
     assert.doesNotMatch(html, /background-color:\s*#|border-left:|#7c3aed/);
     assert.equal(html.includes("LEGACY-OLD-SYSTEM"), visibility.showSystem);
@@ -177,12 +158,31 @@ test("print handler uses effective scope and retains common report content and P
       "40,-74", "41,-75", "Time Tracking", "1m 0s", "Captured Photos", "fixture-photo.jpg"]) {
       assert.ok(html.includes(common), common);
     }
-    assert.equal(options.filename, "WorkOrder_PRINT-FIXTURE.pdf");
-    assert.equal(options.jsPDF.format, "a4");
-    assert.equal(options.jsPDF.orientation, "portrait");
-    assert.equal(options.html2canvas.scale, 2);
-    assert.deepEqual(Array.from(options.margin), [8, 8, 8, 8]);
+    assert.match(html, /Print \/ Save PDF/);
+    assert.match(html, /@page\s*\{[^}]*size:\s*A4 portrait;[^}]*margin:\s*8mm;/);
+    assert.match(html, /@media print/);
+    assert.equal(popup.opener, null);
+    assert.ok(printAction);
+    printAction();
+    assert.equal(printCalls(), 1, "Only the preview button opens the native print dialog.");
   }
+});
+
+test("blocked popups show an actionable error without a download or inventory request", async () => {
+  const result = await print({}, record, [], { enabled: true } as WorkOrderPrintInventory, false, true);
+  assert.equal(result.html, "");
+  assert.deepEqual(result.events, ["open"]);
+  assert.ok(result.stateUpdates.some(value => typeof value === "string" && /allow.*pop|pop.*allow/i.test(value)));
+});
+
+test("print preview escapes untrusted work-order and attachment text and rejects SVG signatures", async () => {
+  const attack = `<img src=x onerror="window.__unsafe=true"><script>window.__unsafe=true</script>`;
+  const { html } = await print({}, { ...record, customerName: attack, notes: attack, signatureName: attack,
+    signatureData: "data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+" }, [`${attack}.jpg`]);
+  assert.doesNotMatch(html, /<script|onerror="|data:image\/svg/i);
+  assert.match(html, /&lt;img/);
+  assert.match(html, /script-src 'none'/);
+  assert.match(html, /object-src 'none'/);
 });
 
 test("print with only hidden equipment keeps GPS and common sections without irrelevant headings", async () => {

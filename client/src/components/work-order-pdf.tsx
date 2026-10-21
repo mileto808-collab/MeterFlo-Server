@@ -1,5 +1,4 @@
 import { useState } from "react";
-import html2pdf from "html2pdf.js";
 import { Button } from "@/components/ui/button";
 import { Loader2, Printer } from "lucide-react";
 import {
@@ -44,6 +43,27 @@ interface WorkOrderPdfProps {
 }
 
 type PhotoOption = "thumbnails" | "list" | "none";
+
+const htmlEscapeMap: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "\"": "&quot;",
+  "'": "&#39;",
+};
+
+const escapeHtml = (value: unknown): string => String(value ?? "").replace(/[&<>"']/g, (character) => htmlEscapeMap[character]);
+
+const safePrintName = (value: unknown): string => {
+  const cleaned = String(value ?? "").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^[_\-.]+|[_\-.]+$/g, "").slice(0, 100);
+  return cleaned || "WorkOrder";
+};
+
+const isSafeRasterDataUrl = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^data:image\/(?:png|jpe?g|gif|webp|bmp);base64,[a-z0-9+/=\s]+$/i.test(value);
+
+const printCsp = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src 'self' data:; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 export function WorkOrderPdf({
   workOrder,
@@ -119,19 +139,21 @@ export function WorkOrderPdf({
 
   const buildPdfContent = (selectedPhotoOption: PhotoOption, inventorySnapshot = inventoryWorkOrder): string => {
     const woId = workOrder.customerWoId || `WO-${workOrder.id}`;
+    const projectSegment = encodeURIComponent(String(projectId));
+    const workOrderSegment = encodeURIComponent(String(workOrder.id));
     
     let photosHtml = "";
     if (selectedPhotoOption === "thumbnails" && imageFiles.length > 0) {
       const thumbnailsHtml = imageFiles.slice(0, 6).map((filename) => `
         <div style="text-align: center; display: inline-block; margin: 5px; page-break-inside: avoid;">
           <img
-            src="${window.location.origin}/api/projects/${projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(filename)}/download?mode=view"
-            alt="${filename}"
+            src="${escapeHtml(window.location.origin)}/api/projects/${projectSegment}/work-orders/${workOrderSegment}/files/${encodeURIComponent(filename)}/download?mode=view"
+            alt="${escapeHtml(filename)}"
             style="width: 120px; height: 90px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc;"
             crossorigin="anonymous"
           />
           <p style="margin: 4px 0 0 0; font-size: 9px; color: #666; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            ${filename}
+            ${escapeHtml(filename)}
           </p>
         </div>
       `).join("");
@@ -149,7 +171,7 @@ export function WorkOrderPdf({
       `;
     } else if (selectedPhotoOption === "list" && imageFiles.length > 0) {
       const listHtml = imageFiles.map((filename, index) => `
-        <li style="margin: 2px 0; font-size: 11px;">${index + 1}. ${filename}</li>
+        <li style="margin: 2px 0; font-size: 11px;">${index + 1}. ${escapeHtml(filename)}</li>
       `).join("");
       
       photosHtml = `
@@ -162,8 +184,8 @@ export function WorkOrderPdf({
       `;
     }
 
-    const signatureImageUrl = signatureFile 
-      ? `${window.location.origin}/api/projects/${projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(signatureFile)}/download?mode=view`
+    const signatureImageUrl = signatureFile
+      ? `${window.location.origin}/api/projects/${projectSegment}/work-orders/${workOrderSegment}/files/${encodeURIComponent(signatureFile)}/download?mode=view`
       : null;
 
     const signatureHtml = (signatureFile || workOrder.signatureData || workOrder.signatureName) ? `
@@ -172,13 +194,13 @@ export function WorkOrderPdf({
         ${signatureImageUrl ? `
           <div style="margin-bottom: 8px;">
             <img
-              src="${signatureImageUrl}"
+              src="${escapeHtml(signatureImageUrl)}"
               alt="Signature"
               style="max-width: 200px; max-height: 80px; border: 1px solid #ccc;"
               crossorigin="anonymous"
             />
           </div>
-        ` : workOrder.signatureData ? `
+        ` : isSafeRasterDataUrl(workOrder.signatureData) ? `
           <div style="margin-bottom: 8px;">
             <img
               id="pdf-signature-img"
@@ -190,7 +212,7 @@ export function WorkOrderPdf({
         ` : ""}
         ${workOrder.signatureName ? `
           <p style="margin: 0; font-size: 11px;">
-            <strong>Signed by:</strong> ${workOrder.signatureName}
+            <strong>Signed by:</strong> ${escapeHtml(workOrder.signatureName)}
           </p>
         ` : ""}
       </div>
@@ -199,7 +221,7 @@ export function WorkOrderPdf({
     const notesHtml = workOrder.notes ? `
       <div style="margin-bottom: 10px; page-break-inside: avoid;">
         <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Notes</h3>
-        <p style="margin: 0; white-space: pre-wrap; font-size: 11px;">${workOrder.notes}</p>
+        <p style="margin: 0; white-space: pre-wrap; font-size: 11px;">${escapeHtml(workOrder.notes)}</p>
       </div>
     ` : "";
 
@@ -210,11 +232,11 @@ export function WorkOrderPdf({
           <tbody>
             <tr>
               <td style="font-weight: bold; width: 100px; padding: 2px 0;">Start Time:</td>
-              <td style="padding: 2px 0;">${formatDateTime(timeTracking.startTime)}</td>
+              <td style="padding: 2px 0;">${escapeHtml(formatDateTime(timeTracking.startTime))}</td>
               <td style="font-weight: bold; width: 100px; padding: 2px 0;">End Time:</td>
-              <td style="padding: 2px 0;">${formatDateTime(timeTracking.endTime)}</td>
+              <td style="padding: 2px 0;">${escapeHtml(formatDateTime(timeTracking.endTime))}</td>
               <td style="font-weight: bold; width: 80px; padding: 2px 0;">Duration:</td>
-              <td style="padding: 2px 0; font-weight: bold;">${formatElapsedTime(timeTracking.startTime, timeTracking.endTime)}</td>
+              <td style="padding: 2px 0; font-weight: bold;">${escapeHtml(formatElapsedTime(timeTracking.startTime, timeTracking.endTime))}</td>
             </tr>
           </tbody>
         </table>
@@ -228,7 +250,7 @@ export function WorkOrderPdf({
         <div style="margin-bottom: 12px; border-bottom: 2px solid #333; padding-bottom: 8px;">
           <h1 style="margin: 0; font-size: 20px; font-weight: bold;">Work Order Report</h1>
           <p style="margin: 5px 0 0 0; color: #666;">
-            ${woId}${projectName ? ` | Project: ${projectName}` : ""} | Generated: ${new Date().toLocaleString()}
+            ${escapeHtml(woId)}${projectName ? ` | Project: ${escapeHtml(projectName)}` : ""} | Generated: ${escapeHtml(new Date().toLocaleString())}
           </p>
         </div>
 
@@ -242,37 +264,37 @@ export function WorkOrderPdf({
                     <tbody>
                       <tr>
                         <td style="font-weight: bold; width: 100px; padding: 2px 0;">Customer ID:</td>
-                        <td style="padding: 2px 0;">${workOrder.customerId || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.customerId || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Name:</td>
-                        <td style="padding: 2px 0;">${workOrder.customerName || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.customerName || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Address:</td>
-                        <td style="padding: 2px 0;">${workOrder.address || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.address || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">City/State/Zip:</td>
                         <td style="padding: 2px 0;">
-                          ${[workOrder.city, workOrder.state, workOrder.zip].filter(Boolean).join(", ") || "-"}
+                          ${escapeHtml([workOrder.city, workOrder.state, workOrder.zip].filter(Boolean).join(", ") || "-")}
                         </td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Phone:</td>
-                        <td style="padding: 2px 0;">${workOrder.phone || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.phone || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Email:</td>
-                        <td style="padding: 2px 0;">${workOrder.email || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.email || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Route:</td>
-                        <td style="padding: 2px 0;">${workOrder.route || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.route || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Zone:</td>
-                        <td style="padding: 2px 0;">${workOrder.zone || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.zone || "-")}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -285,42 +307,42 @@ export function WorkOrderPdf({
                     <tbody>
                       <tr>
                         <td style="font-weight: bold; width: 100px; padding: 2px 0;">Status:</td>
-                        <td style="padding: 2px 0;">${workOrder.status || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.status || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Service Type:</td>
-                        <td style="padding: 2px 0;">${getServiceTypeLabel(workOrder.serviceType)}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(getServiceTypeLabel(workOrder.serviceType))}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Priority:</td>
-                        <td style="padding: 2px 0;">${workOrder.priority || "-"}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(workOrder.priority || "-")}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Trouble Code:</td>
-                        <td style="padding: 2px 0;">${getTroubleLabel(workOrder.trouble)}</td>
+                        <td style="padding: 2px 0;">${escapeHtml(getTroubleLabel(workOrder.trouble))}</td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Assigned To:</td>
                         <td style="padding: 2px 0;">
-                          ${(workOrder as any).assignedUserDisplay || getAssignedUserName(workOrder.assignedUserId) || "-"}
+                          ${escapeHtml((workOrder as any).assignedUserDisplay || getAssignedUserName(workOrder.assignedUserId) || "-")}
                         </td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Scheduled:</td>
                         <td style="padding: 2px 0;">
-                          ${workOrder.scheduledAt ? formatDateTime(workOrder.scheduledAt) : "-"}
+                          ${escapeHtml(workOrder.scheduledAt ? formatDateTime(workOrder.scheduledAt) : "-")}
                         </td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Completed:</td>
                         <td style="padding: 2px 0;">
-                          ${workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}
+                          ${escapeHtml(workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-")}
                         </td>
                       </tr>
                       <tr>
                         <td style="font-weight: bold; padding: 2px 0;">Completed By:</td>
                         <td style="padding: 2px 0;">
-                          ${(workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy) || "-"}
+                          ${escapeHtml((workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy) || "-")}
                         </td>
                       </tr>
                     </tbody>
@@ -343,9 +365,9 @@ export function WorkOrderPdf({
           <table style="width: 100%; font-size: 10px; color: #666;">
             <tbody>
               <tr>
-                <td>Created: ${workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"} by ${workOrder.createdBy || "-"}</td>
+                <td>Created: ${escapeHtml(workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-")} by ${escapeHtml(workOrder.createdBy || "-")}</td>
                 <td style="text-align: right;">
-                  Last Updated: ${workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"} by ${workOrder.updatedBy || "-"}
+                  Last Updated: ${escapeHtml(workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-")} by ${escapeHtml(workOrder.updatedBy || "-")}
                 </td>
               </tr>
             </tbody>
@@ -355,133 +377,74 @@ export function WorkOrderPdf({
     `;
   };
 
-  const renderPdfInIframe = async (htmlContent: string, filename: string, signatureData?: string): Promise<void> => {
-    const overlay = document.createElement("div");
-    overlay.setAttribute("data-pdf-overlay", "true");
-    overlay.style.cssText = `
-      position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.95);
-      z-index: 2147483646;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-family: Arial, sans-serif;
-      font-size: 16px;
-    `;
-    overlay.innerHTML = `
-      <div style="text-align: center;">
-        <div style="margin-bottom: 12px;">
-          <svg style="animation: spin 1s linear infinite; width: 32px; height: 32px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
-            <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
-          </svg>
-        </div>
-        <div>Generating PDF...</div>
-      </div>
-      <style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
-    `;
-    document.body.appendChild(overlay);
+  const writePreviewLoading = (previewWindow: Window) => {
+    const previewDocument = previewWindow.document;
+    previewDocument.open();
+    previewDocument.write(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${printCsp}"><title>Preparing print preview</title><style>body{font:16px system-ui,sans-serif;margin:0;padding:32px;color:#263238;background:#f1f4f3}</style></head><body>Preparing work order print preview…</body></html>`);
+    previewDocument.close();
+  };
 
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute("data-pdf-iframe", "true");
-    iframe.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 210mm;
-      height: 297mm;
-      border: 0;
-      background: white;
-      z-index: 2147483645;
-      pointer-events: none;
-    `;
-    iframe.setAttribute("aria-hidden", "true");
-    document.body.appendChild(iframe);
+  const renderPrintPreview = (previewWindow: Window, htmlContent: string, filename: string, signatureData?: string) => {
+    const previewDocument = previewWindow.document;
+    const title = safePrintName(filename.replace(/\.pdf$/i, ""));
+    previewDocument.open();
+    previewDocument.write(`<!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <meta http-equiv="Content-Security-Policy" content="${printCsp}">
+          <title>${escapeHtml(title)}</title>
+          <style>
+            * { box-sizing: border-box; }
+            @page { size: A4 portrait; margin: 8mm; }
+            html, body { margin: 0; min-height: 100%; }
+            body { background: #e9eeec; color: #1e2926; font: 14px system-ui, sans-serif; }
+            .preview-toolbar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: center; padding: 12px; background: #253d36; box-shadow: 0 2px 8px rgba(20, 35, 30, .18); }
+            .preview-print-button { border: 0; border-radius: 6px; padding: 10px 18px; color: #15342a; background: #f4f8f5; font: 600 14px system-ui, sans-serif; cursor: pointer; }
+            .preview-print-button:focus-visible { outline: 3px solid #91c8ad; outline-offset: 2px; }
+            #pdf-content { width: min(194mm, calc(100vw - 32px)) !important; max-width: 100%; margin: 24px auto; box-shadow: 0 4px 24px rgba(20, 35, 30, .15); }
+            @media print {
+              html, body { background: #fff; }
+              .preview-toolbar { display: none !important; }
+              #pdf-content { width: 194mm !important; max-width: none; margin: 0; box-shadow: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <header class="preview-toolbar">
+            <button id="print-preview-button" class="preview-print-button" type="button">Print / Save PDF</button>
+          </header>
+          ${htmlContent}
+        </body>
+      </html>`);
+    previewDocument.close();
 
-    try {
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!iframeDoc) {
-        throw new Error("Could not access iframe document");
-      }
-
-      iframeDoc.open();
-      iframeDoc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <style>
-              * { box-sizing: border-box; }
-              body { margin: 0; padding: 0; background: white; }
-            </style>
-          </head>
-          <body>${htmlContent}</body>
-        </html>
-      `);
-      iframeDoc.close();
-
-      if (signatureData) {
-        const signatureImg = iframeDoc.getElementById("pdf-signature-img") as HTMLImageElement | null;
-        if (signatureImg) {
-          signatureImg.src = signatureData.replace(/\s+/g, "");
-        }
-      }
-
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      if (iframeDoc.fonts) {
-        await iframeDoc.fonts.ready;
-      }
-
-      const images = iframeDoc.querySelectorAll("img");
-      if (images.length > 0) {
-        await Promise.all(
-          Array.from(images).map(
-            (img) =>
-              new Promise<void>((resolve) => {
-                if (img.complete) {
-                  resolve();
-                } else {
-                  img.onload = () => resolve();
-                  img.onerror = () => resolve();
-                }
-              })
-          )
-        );
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      const contentElement = iframeDoc.getElementById("pdf-content");
-      if (!contentElement) {
-        throw new Error("PDF content element not found in iframe");
-      }
-
-      const opt = {
-        margin: [8, 8, 8, 8] as [number, number, number, number],
-        filename,
-        image: { type: "jpeg" as const, quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: "mm" as const, format: "a4" as const, orientation: "portrait" as const },
-        pagebreak: { mode: ["css", "legacy"] },
-      };
-
-      await html2pdf().set(opt).from(contentElement).save();
-    } finally {
-      const existingOverlay = document.body.querySelector('[data-pdf-overlay]');
-      const existingIframe = document.body.querySelector('[data-pdf-iframe]');
-      if (existingOverlay) document.body.removeChild(existingOverlay);
-      if (existingIframe) document.body.removeChild(existingIframe);
+    if (isSafeRasterDataUrl(signatureData)) {
+      const signatureImage = previewDocument.getElementById("pdf-signature-img") as HTMLImageElement | null;
+      if (signatureImage) signatureImage.src = signatureData.replace(/\s+/g, "");
     }
+    previewDocument.getElementById("print-preview-button")?.addEventListener("click", () => {
+      previewWindow.focus();
+      previewWindow.print();
+    });
   };
 
   const handleGeneratePdf = async () => {
-    setIsGenerating(true);
     setPrintError(null);
+    let previewWindow: Window | null = null;
 
     try {
+      // Open synchronously inside the click gesture so popup blockers do not
+      // reject the preview while fresh inventory is loading.
+      previewWindow = window.open("", "_blank");
+      if (!previewWindow) {
+        throw new Error("Print preview was blocked. Allow pop-ups for this site, then retry.");
+      }
+      previewWindow.opener = null;
+      writePreviewLoading(previewWindow);
+      setIsGenerating(true);
+
       let inventorySnapshot = inventoryWorkOrder;
       if (inventoryEnabled) {
         const result = await refetchInventory();
@@ -489,21 +452,27 @@ export function WorkOrderPdf({
         inventorySnapshot = result.data;
       }
       const woId = workOrder.customerWoId || `WO-${workOrder.id}`;
-      const filename = `WorkOrder_${woId}.pdf`;
+      const filename = `WorkOrder_${safePrintName(woId)}.pdf`;
       const htmlContent = buildPdfContent(photoOption, inventorySnapshot);
-      
-      await renderPdfInIframe(htmlContent, filename, workOrder.signatureData);
+      renderPrintPreview(previewWindow, htmlContent, filename, workOrder.signatureData);
+      setShowDialog(false);
     } catch (err) {
-      console.error("PDF generation error:", err);
-      setPrintError(err instanceof Error ? err.message : "PDF could not be generated. Please retry.");
+      if (previewWindow && !previewWindow.closed) previewWindow.close();
+      console.error("Print preview error:", err);
+      setPrintError(err instanceof Error ? err.message : "Print preview could not be prepared. Please retry.");
       setShowDialog(true);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleOpenDialog = async () => {
+  const handleOpenDialog = () => {
     setPrintError(null);
+    if (!imageFiles.length) {
+      setShowDialog(false);
+      void handleGeneratePdf();
+      return;
+    }
     setShowDialog(true);
   };
 
@@ -520,7 +489,7 @@ export function WorkOrderPdf({
         {isGenerating ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Generating...
+            Preparing...
           </>
         ) : (
           <>
@@ -533,9 +502,9 @@ export function WorkOrderPdf({
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>PDF Options</DialogTitle>
+            <DialogTitle>Print Preview Options</DialogTitle>
             <DialogDescription>
-              Choose how photos should be included in the PDF.
+              Choose how photos should appear in the print preview.
             </DialogDescription>
           </DialogHeader>
 
@@ -584,7 +553,7 @@ export function WorkOrderPdf({
             </Button>
             <Button type="button" disabled={isGenerating} onClick={handleGeneratePdf} data-testid="button-generate-pdf">
               <Printer className="mr-2 h-4 w-4" />
-              Generate PDF
+              Open Print Preview
             </Button>
           </DialogFooter>
         </DialogContent>
