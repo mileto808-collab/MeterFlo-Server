@@ -20,3 +20,15 @@ Reducing a move quantity must not automatically delete already captured serials 
 **Why:** Scans are evidence of physical units being handled; workers must choose which entries to remove rather than having the software silently discard them.
 
 **How to apply:** Cap new scans at the requested quantity, but preserve existing captures when that quantity is reduced. Show the excess count and require an explicit correction before posting the move.
+
+Keep serial-scan safety and progress consistent across Inventory, not just Fulfill / Stage.
+
+**Why:** The user explicitly requested the same expected/scanned/remaining counts, duplicate rejection, quantity caps and completion feedback wherever Inventory requires serial scans.
+
+**How to apply:** Reuse shared scan processing and progress controls while retaining workflow-specific custody validation, Good/Damaged buckets, pallet membership and trusted serial-file import. Cycle counts use the entered actual quantity as their target, never the theoretical stock balance; an unknown actual count must not prevent recording discoveries.
+
+Verify bulk scanning through actual browser paste events, not parser tests alone.
+
+**Why:** A single-line input can strip pasted line separators and turn several otherwise valid serials into one concatenated identity before validation ever sees them.
+
+**How to apply:** Preserve clipboard token boundaries through the input boundary and assert the individual identities in saved receipt evidence, including duplicates and over-target entries in the same paste.

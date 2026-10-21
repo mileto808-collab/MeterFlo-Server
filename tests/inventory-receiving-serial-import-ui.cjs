@@ -95,7 +95,21 @@ const sampleSerials = Array.from({ length: 50 }, (_, i) => `MF26${String(i + 1).
       };
       const a1 = `A1-${suffix}`, a2 = `A2-${suffix}`, b1 = `B1-${suffix}`, b2 = `B2-${suffix}`;
       await createPallet(`PAL-A-${suffix}`, 2); await scan(a1);
-      await createPallet(`PAL-B-${suffix}`, 2); await scan(b1); await scan(b2);
+      const goodProgress = child.getByLabel("Good serial entry", { exact: true }).getByTestId("serial-scan-progress").first();
+      await expect(goodProgress).toContainText("Scanned 1 /");
+      await scan(a1);
+      await expect(goodProgress).toContainText("Scanned 1 /");
+      await expect(child.getByRole("alert")).toContainText("already in the movement");
+      await createPallet(`PAL-B-${suffix}`, 2);
+      await child.getByRole("textbox", { name: `Good serial scanner for ${itemName}`, exact: true }).evaluate((input, text) => {
+        const clipboardData = new DataTransfer(); clipboardData.setData("text", text);
+        input.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+      }, `${b1}\n${b2}\n${b1}\nPASTE-EXTRA-${suffix}`);
+      await expect(child.getByLabel(`Scan progress for PAL-B-${suffix}`)).toContainText("0 left to scan");
+      await child.getByRole("button", { name: /^Good\s/ }).click();
+      await scan(`EXTRA-${suffix}`);
+      await expect(child.getByRole("alert")).toContainText(/fully scanned|target reached/);
+      await expect(goodProgress).toContainText("Scanning complete");
       await expect(child.getByLabel("Pallet counts")).toContainText(`PAL-A-${suffix}: 1 / 2 scanned · 1 missing`);
       await child.getByRole("button", { name: "Done", exact: true }).click();
       await parent.getByRole("button", { name: "Review movement", exact: true }).click();

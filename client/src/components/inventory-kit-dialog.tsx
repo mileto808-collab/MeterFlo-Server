@@ -7,6 +7,8 @@ import { isLaborItem } from "@shared/inventory-pricing";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SerialScanProgress } from "@/components/inventory/serial-scan-field";
+import { acceptSerialScans } from "@/lib/serial-scans";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, PackageCheck, ScanLine, Trash2 } from "lucide-react";
@@ -80,13 +82,15 @@ function SerialScanner({ label, serials, target, disabled, onAdd, onRemove, onPe
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const commit = () => {
-    const serial = value.trim();
-    if (!serial) return;
-    if (allowedSerials && !allowedSerials.includes(serial)) { setError(`${serial} is not in the recorded identity set.`); return; }
-    if (serials.includes(serial) || takenSerials?.includes(serial)) { setError(`${serial} is already committed in this set.`); return; }
-    if (serials.length >= target) { setError("The required serial count is complete."); return; }
-    onAdd(serial); setValue(""); setError(""); onPending(false);
+  const commit = (raw = value) => {
+    if (!raw.trim() || disabled) return;
+    const invalid = raw.split(/[\r\n,;\t]/).map(serial => serial.trim())
+      .filter(serial => serial.length > 100 || (allowedSerials && !allowedSerials.includes(serial)));
+    const result = acceptSerialScans(raw, [...serials, ...(takenSerials ?? []), ...invalid], true, Math.max(0, target - serials.length));
+    for (const serial of result.text.split("\n").filter(Boolean)) onAdd(serial);
+    setValue(""); onPending(false);
+    setError([result.rejected.length ? `Duplicate or unavailable serials rejected: ${result.rejected.join(", ")}.` : "",
+      result.excess ? "The required serial count is complete. Extra scans rejected." : ""].filter(Boolean).join(" "));
   };
   useEffect(() => {
     if (open && !phone()) requestAnimationFrame(() => inputRef.current?.focus());
@@ -100,14 +104,14 @@ function SerialScanner({ label, serials, target, disabled, onAdd, onRemove, onPe
     <Dialog open={open} onOpenChange={next => { if (!next && value.trim()) { setError("Commit this scan or explicitly discard it before closing."); return; } if (!next) setOpen(false); }}>
       <DialogContent className="flex max-h-[min(88dvh,580px)] w-[calc(100vw-1rem)] max-w-lg flex-col gap-3 p-4 sm:p-6" onOpenAutoFocus={event => { event.preventDefault(); if (!phone()) requestAnimationFrame(() => inputRef.current?.focus()); }} onEscapeKeyDown={event => { event.preventDefault(); event.stopPropagation(); if (value.trim()) setError("Commit this scan or explicitly discard it before closing."); else setOpen(false); }} onPointerDownOutside={event => event.preventDefault()}>
         <DialogHeader><DialogTitle>{label} scanner</DialogTitle><DialogDescription>Scan one identity at a time. Enter or Tab commits the current scan; uncommitted text is not counted.</DialogDescription></DialogHeader>
-        <p className="rounded border bg-muted/30 p-2 font-mono text-sm tabular-nums" aria-live="polite">{serials.length} of {target} committed</p>
+        <SerialScanProgress scanned={serials.length} expected={target} />
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <Label htmlFor="inventory-kit-serial" className="sr-only">{label} serial</Label>
-        <Input ref={inputRef} id="inventory-kit-serial" className="h-12 font-mono" autoComplete="off" maxLength={100} value={value} placeholder="Tap to scan or type serial" onChange={event => { setValue(event.target.value); setError(""); onPending(!!event.target.value); }} onKeyDown={event => {
+        <Input ref={inputRef} id="inventory-kit-serial" className="h-12 font-mono" autoComplete="off" maxLength={100} value={value} placeholder="Tap to scan or type serial" onChange={event => { setValue(event.target.value); setError(""); onPending(!!event.target.value); }} onPaste={event => { event.preventDefault(); commit(event.clipboardData.getData("text")); }} onKeyDown={event => {
           if ((event.key === "Enter" || event.key === "Tab") && event.currentTarget.value.trim()) { event.preventDefault(); commit(); }
         }} />
         <div className="min-h-0 flex-1 overflow-auto rounded border"><p className="sticky top-0 border-b bg-background px-2 py-1 text-xs text-muted-foreground">Recent scans</p><ol className="space-y-1 p-2 font-mono text-xs">{serials.slice(-40).map((serial, index) => <li key={`${serial}-${index}`}>{serials.length - Math.min(40, serials.length) + index + 1}. {serial}</li>)}</ol></div>
-        <DialogFooter className="flex-wrap"><Button type="button" variant="outline" disabled={!value.trim()} onClick={commit}><Check className="mr-2 h-4 w-4" />Commit scan</Button>{value.trim() && <Button type="button" variant="destructive" onClick={() => { setValue(""); setError(""); onPending(false); setOpen(false); }}>Discard uncommitted</Button>}<Button type="button" disabled={!!value.trim()} onClick={() => setOpen(false)}>Done</Button></DialogFooter>
+        <DialogFooter className="flex-wrap"><Button type="button" variant="outline" disabled={!value.trim()} onClick={() => commit()}><Check className="mr-2 h-4 w-4" />Commit scan</Button>{value.trim() && <Button type="button" variant="destructive" onClick={() => { setValue(""); setError(""); onPending(false); setOpen(false); }}>Discard uncommitted</Button>}<Button type="button" disabled={!!value.trim()} onClick={() => setOpen(false)}>Done</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   </section>;

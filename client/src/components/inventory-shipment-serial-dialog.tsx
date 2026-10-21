@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SerialScanProgress } from "@/components/inventory/serial-scan-field";
 import { Label } from "@/components/ui/label";
 import type { ShipmentAction, ShipmentEntry } from "@/lib/inventory-shipment-guidance";
 import { SerialFileImport, type SerialImportResult } from "@/components/inventory/serial-file-import";
@@ -23,7 +24,7 @@ type Props = {
   expectedReferences: string[];
   validation: string;
   onRawChange: (key: string, value: string) => void;
-  onCommit: (bucket: Bucket, input: HTMLInputElement) => boolean;
+  onCommit: (bucket: Bucket, input: HTMLInputElement, raw?: string) => number;
   onPatch: (change: Partial<ShipmentEntry>) => void;
   onImport: (bucket: Bucket, serials: string[], useCount: boolean) => SerialImportResult;
   onClose: () => void;
@@ -91,11 +92,12 @@ export function InventoryShipmentSerialDialog({
     inputRefs.current[bucket]?.focus();
   }, [bucket, activeReferenceTab, viewOnly, entry.goodSerials.length, entry.damagedSerials.length, entry.goodQuantity, entry.damagedQuantity]);
 
-  const commit = (selectedBucket: Bucket, input: HTMLInputElement) => {
+  const commit = (selectedBucket: Bucket, input: HTMLInputElement, raw?: string) => {
     const before = entry[selectedBucket].length;
-    if (!onCommit(selectedBucket, input)) return;
+    const added = onCommit(selectedBucket, input, raw);
+    if (!added) return;
     const goal = target(selectedBucket);
-    let nextBucket: Bucket | null = before + 1 < goal ? selectedBucket :
+    let nextBucket: Bucket | null = before + added < goal ? selectedBucket :
       selectedBucket === "goodSerials" && entry.damagedSerials.length < Number(entry.damagedQuantity) ? "damagedSerials" : null;
     if (nextBucket) {
       setBucket(nextBucket);
@@ -197,6 +199,8 @@ export function InventoryShipmentSerialDialog({
             </div>
           </div>
         </fieldset> : <section className="space-y-2 rounded-md border p-3" aria-label={`${bucket === "goodSerials" ? "Good" : "Known damaged"} serial entry`}>
+          <SerialScanProgress scanned={serials.length} expected={target(bucket)} />
+          {activePallet && <div aria-label={`Scan progress for ${activePallet.label}`}><p className="text-xs font-medium">{activePallet.label}</p><SerialScanProgress scanned={activePallet.serials.length} expected={activePallet.expectedQuantity} /></div>}
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">{bucket === "goodSerials" ? "Good serials" : "Known damaged serials"}</h3>
             <span className="font-mono text-xs text-muted-foreground">{serials.length} committed{activePallet ? ` · showing ${activePallet.label}` : ""}</span>
@@ -214,6 +218,14 @@ export function InventoryShipmentSerialDialog({
                 value={rawBuffers[keys[bucket]] ?? ""}
                 placeholder="Scan or type, then Enter / Tab"
                 onChange={event => onRawChange(keys[bucket], event.target.value)}
+                onPaste={event => {
+                  event.preventDefault();
+                  const input = event.currentTarget;
+                  const value = input.value.slice(0, input.selectionStart ?? input.value.length) +
+                    event.clipboardData.getData("text") + input.value.slice(input.selectionEnd ?? input.value.length);
+                  onRawChange(keys[bucket], value);
+                  commit(bucket, input, value);
+                }}
                 onKeyDown={event => {
                   if (event.key === "Enter" || (event.key === "Tab" && event.currentTarget.value.length > 0)) {
                     event.preventDefault();

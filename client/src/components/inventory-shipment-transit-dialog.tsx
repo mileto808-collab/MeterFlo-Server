@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SerialScanProgress } from "@/components/inventory/serial-scan-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -52,23 +53,25 @@ export function InventoryShipmentTransitDialog({ state, liveState, order, items,
     ...Object.entries(scanned).filter(([, values]) => values.length > 0).map(([id]) => id),
   ].filter(id => !liveRowIds.has(id)))];
   const lineFor = (id: string) => rows.find(row => row.item?.id === id);
-  const addScan = (itemId: string) => {
-    const value = serialDraft[itemId] ?? "";
-    const serial = value.trim();
+  const addScan = (itemId: string, value = serialDraft[itemId] ?? "") => {
     const row = lineFor(itemId);
-    const committed = scanned[itemId] ?? [];
-    if (!serial || serial.length > 100) { setError("Enter a nonblank serial up to 100 characters."); return false; }
-    if (!row?.serials.includes(serial) || committed.includes(serial) ||
-        Object.values(scanned).some(list => list.includes(serial))) {
-      setError("Only a distinct, unresolved identity actually dispatched on this order can be written off."); return false;
+    if (!row) return false;
+    const committed = [...(scanned[itemId] ?? [])];
+    const all = new Set(Object.values(scanned).flat());
+    const issues: string[] = [];
+    for (const serial of value.split(/[\r\n,;\t]/).map(value => value.trim()).filter(Boolean)) {
+      if (serial.length > 100 || !row.serials.includes(serial) || all.has(serial)) {
+        issues.push(`${serial}: only a distinct, unresolved dispatched identity can be written off.`); continue;
+      }
+      if (committed.length >= Math.min(10000, Number(quantities[itemId] ?? "0"))) {
+        issues.push("Scan target reached. Extra scans rejected."); continue;
+      }
+      committed.push(serial); all.add(serial);
     }
-    if (committed.length >= Math.min(10000, Number(quantities[itemId] ?? "0"))) {
-      setError("The lost quantity is already fully identified; adjust it explicitly before adding another serial."); return false;
-    }
-    setScanned(current => ({ ...current, [itemId]: [...committed, serial] }));
+    setScanned(current => ({ ...current, [itemId]: committed }));
     setSerialDraft(current => ({ ...current, [itemId]: "" }));
-    setError("");
-    if (committed.length + 1 >= Number(quantities[itemId] ?? "0")) {
+    setError(issues.join(" "));
+    if (committed.length >= Number(quantities[itemId] ?? "0")) {
       const index = rows.findIndex(candidate => candidate.item?.id === itemId);
       const next = rows.slice(index + 1).find(candidate => candidate.item?.tracking === "serialized" &&
         (scanned[candidate.item.id]?.length ?? 0) < Number(quantities[candidate.item.id] ?? "0"));
@@ -148,7 +151,7 @@ export function InventoryShipmentTransitDialog({ state, liveState, order, items,
           return <section key={item.id} className="space-y-2 rounded-md border p-3">
             <div className="flex justify-between gap-2"><div><p className="font-medium">{item.name}</p><p className="font-mono text-xs text-muted-foreground">{item.sku}</p></div><p className="text-xs text-muted-foreground">{row.quantity} in transit</p></div>
             <div className="max-w-32 space-y-1"><Label htmlFor={`loss-qty-${item.id}`} className="text-xs">Lost quantity</Label><Input id={`loss-qty-${item.id}`} className="h-9 text-center font-mono" type="number" min="0" max={row.quantity} value={quantities[item.id] ?? "0"} onChange={event => setQuantities(current => ({ ...current, [item.id]: event.target.value }))} /></div>
-            {item.tracking === "serialized" && qty > 0 && <div className="space-y-1"><Label htmlFor={`loss-scan-${item.id}`} className="text-xs">Actual unresolved serials · {(scanned[item.id] ?? []).length}/{qty}</Label><div className="flex gap-2"><Input ref={node => { scanRefs.current[item.id] = node; }} id={`loss-scan-${item.id}`} className="h-9 font-mono" maxLength={100} value={serialDraft[item.id] ?? ""} placeholder="Scan dispatched identity" onChange={event => setSerialDraft(current => ({ ...current, [item.id]: event.target.value }))} onKeyDown={event => {
+            {item.tracking === "serialized" && qty > 0 && <div className="space-y-1"><Label htmlFor={`loss-scan-${item.id}`} className="text-xs">Actual unresolved serials · {(scanned[item.id] ?? []).length}/{qty}</Label><SerialScanProgress scanned={(scanned[item.id] ?? []).length} expected={qty} /><div className="flex gap-2"><Input ref={node => { scanRefs.current[item.id] = node; }} id={`loss-scan-${item.id}`} className="h-9 font-mono" maxLength={100} value={serialDraft[item.id] ?? ""} placeholder="Scan dispatched identity" onChange={event => setSerialDraft(current => ({ ...current, [item.id]: event.target.value }))} onPaste={event => { event.preventDefault(); addScan(item.id, event.clipboardData.getData("text")); }} onKeyDown={event => {
               if (event.key === "Enter") { event.preventDefault(); addScan(item.id); return; }
               if (event.key === "Tab" && (serialDraft[item.id] ?? "").length > 0) { event.preventDefault(); addScan(item.id); }
             }} /><Button size="sm" variant="outline" aria-label={`Commit lost serial for ${item.name}`} onClick={() => addScan(item.id)}><ScanLine className="h-4 w-4" /></Button></div>

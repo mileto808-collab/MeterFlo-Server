@@ -12,6 +12,7 @@ import { fulfillmentReserved, type FulfillmentBatch } from "@shared/inventory-fu
 import { locationTypeFor, warehouseAccessible, isStagingType } from "@shared/inventory-location-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SerialScanProgress } from "./serial-scan-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { acceptFulfillmentScans } from "@/lib/fulfillment-scans";
@@ -920,17 +921,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                       <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-wizard-needs-input={!scanTarget || enteredQuantity > moveLimit ? "true" : undefined} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "quantities")} placeholder="0" /></div>
                       {row.item?.tracking === "serialized" && <div className="space-y-1">
                         <Label htmlFor={`serial-${key}`}>Custody serials</Label>
-                        <div data-testid={`fulfillment-scan-progress-${draft.step}-${row.itemId}`} className={`rounded-md border p-2 ${scanComplete ? "border-green-600/50 bg-green-500/10" : "bg-muted/30"}`}>
-                          <div className="flex flex-wrap justify-between gap-2 text-sm font-medium">
-                            <span>Scanned {scannedCount} / {scanTarget}</span>
-                            <span>{tooManyScans ? `${capturedSerials.size - scanTarget} extra` : `${Math.max(0, scanTarget - scannedCount)} left to scan`}</span>
-                          </div>
-                          <progress aria-label={`${row.item?.name ?? row.itemId} custody scan progress`} className="mt-1 h-2 w-full accent-primary" max={Math.max(1, scanTarget)} value={Math.min(scannedCount, scanTarget)} />
-                          <p role="status" aria-live="polite" className={`min-h-10 text-xs ${tooManyScans ? "text-destructive" : scanComplete ? "font-semibold text-green-700 dark:text-green-400" : "text-muted-foreground"}`}>
-                            {tooManyScans ? "Remove extra serials or increase the move quantity. Your captured serials have been kept."
-                              : scanComplete ? "Scanning complete — all required serials captured."
-                              : scanTarget ? "Scan the next barcode, then press Enter or Tab." : "Set a positive whole move quantity before scanning."}
-                          </p>
+                        <div data-testid={`fulfillment-scan-progress-${draft.step}-${row.itemId}`}>
+                          <SerialScanProgress scanned={tooManyScans ? capturedSerials.size : scannedCount} expected={scanTarget || null} />
                         </div>
                         <p id={`scan-notice-${key}`} role="status" aria-live="polite" className="text-sm text-destructive">{scanNotices[key] ?? ""}</p>
                         <Textarea id={`serial-${key}`} data-wizard-needs-input={scanTarget > 0 && !scanComplete ? "true" : undefined} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}

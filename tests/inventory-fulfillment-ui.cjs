@@ -230,7 +230,7 @@ const assert = require("node:assert/strict");
       await expect(input).toHaveValue("F-A\nF-B\n");
       await expect(progress).toContainText("Scanned 2 / 2");
       await expect(progress).toContainText("0 left to scan");
-      await expect(progress.getByRole("status")).toHaveText("Scanning complete — all required serials captured.");
+      await expect(progress.getByRole("status")).toContainText("Scanning complete — all required serials captured.");
       await input.pressSequentially("F-B");
       await input.press("Tab");
       await expect(input).toHaveValue("F-A\nF-B\n");
@@ -238,7 +238,7 @@ const assert = require("node:assert/strict");
       await quantity.fill("1");
       await expect(input).toHaveValue("F-A\nF-B\n");
       await expect(progress).toContainText("1 extra");
-      await expect(progress.getByRole("status")).toContainText("Your captured serials have been kept.");
+      await expect(progress.getByRole("status")).toContainText("Keep these captures");
       await quantity.fill("2");
       await input.evaluate(element => {
         element.setSelectionRange(element.value.length, element.value.length);

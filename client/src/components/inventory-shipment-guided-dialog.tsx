@@ -155,15 +155,24 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       action === "dispatch" && legacyAllowed.length > 0 && !legacyAllowed.includes(serial) ? "This order retains a legacy serial restriction; choose an allowed identity." : "";
   };
   const scanCommit = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", raw: string) => {
-    const serial = raw.trim(), row = values(item.id);
-    const issue = serialIssue(item, bucket, serial);
-    if (issue) { setValidation(issue); return false; }
-    patch(item.id, { [bucket]: [...row[bucket], serial],
-      ...(action === "receive" && row.activePalletId ? {
-        pallets: row.pallets?.map(pallet => pallet.id === row.activePalletId ? { ...pallet, serials: [...pallet.serials, serial] } : pallet),
-      } : {}) });
-    setValidation("");
-    return true;
+    const original = values(item.id);
+    const row = { ...original, [bucket]: [...original[bucket]], pallets: original.pallets?.map(pallet => ({ ...pallet, serials: [...pallet.serials] })) };
+    const movementSerials = new Set(Object.values(entries).flatMap(entry => [...entry.goodSerials, ...entry.damagedSerials]));
+    const problems: string[] = [];
+    let added = 0;
+    for (const serial of raw.split(/[\r\n,;\t]/).map(value => value.trim()).filter(Boolean)) {
+      const pallet = action === "receive" ? row.pallets?.find(pallet => pallet.id === row.activePalletId) : undefined;
+      const issue = serialIssue(item, bucket, serial, row, movementSerials) ||
+        (pallet && pallet.serials.length >= pallet.expectedQuantity ? "Pallet scan target reached. Select another pallet or correct its expected quantity." : "");
+      if (issue) { problems.push(`${serial}: ${issue}`); continue; }
+      row[bucket].push(serial);
+      movementSerials.add(serial);
+      pallet?.serials.push(serial);
+      added++;
+    }
+    if (added) patch(item.id, { [bucket]: row[bucket], pallets: row.pallets });
+    setValidation(problems.join(" ") || (added ? "" : "Scan is blank."));
+    return added;
   };
   const importSerials = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", serials: string[], useCount: boolean) => {
     const row = { ...values(item.id), [bucket]: [...values(item.id)[bucket]] };
@@ -181,10 +190,10 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       ...(useCount ? { [quantityKey]: String(row[bucket].length) } : {}) });
     return { added, rejected };
   };
-  const commitChildScannerInput = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", input: HTMLInputElement) => {
-    if (!scanCommit(item, bucket, input.value)) return false;
+  const commitChildScannerInput = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", input: HTMLInputElement, raw = input.value) => {
+    const accepted = scanCommit(item, bucket, raw);
     setScanBuffers(current => ({ ...current, [`${item.id}-${bucket}`]: "" }));
-    return true;
+    return accepted;
   };
   const openSerialDialog = (item: InventoryItem, viewOnly: boolean, opener: HTMLElement) => {
     serialOpenerRef.current = opener;
@@ -428,7 +437,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         expectedReferences={action === "accept" ? unresolvedTransferSerials(state, order, item.id) : []}
         validation={validation}
         onRawChange={(key, value) => setScanBuffers(current => ({ ...current, [key]: value }))}
-        onCommit={(bucket, input) => commitChildScannerInput(item, bucket, input)}
+        onCommit={(bucket, input, raw) => commitChildScannerInput(item, bucket, input, raw)}
         onImport={(bucket, serials, useCount) => importSerials(item, bucket, serials, useCount)}
         onPatch={change => patch(item.id, change)}
         onClose={closeSerialDialog}

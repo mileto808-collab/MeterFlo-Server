@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SerialScanProgress } from "@/components/inventory/serial-scan-field";
+import { acceptSerialScans } from "@/lib/serial-scans";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/queryClient";
@@ -147,19 +149,20 @@ export function InventoryVendorKitDialog({ state, projectId, onClose, onSaved, o
       setDiscardOpen(true);
     } else resetDraft(nextReceiptId, nextItemId);
   };
-  const commitScan = (componentId: string) => {
-    const serial = (scanInputs[componentId] ?? "").trim();
-    if (!serial || !kit) return;
+  const commitScan = (componentId: string, raw = scanInputs[componentId] ?? "") => {
+    if (!raw.trim() || !kit || locked) return;
     const current = componentSerials[componentId] ?? [];
     const target = (kit.components.find(line => line.itemId === componentId)?.quantity ?? 0) * quantityNumber;
-    if (current.includes(serial)) { setError(`${serial} is already scanned for this component.`); return; }
-    if (current.length >= target) { setError("The required serial count is complete."); return; }
+    const invalid = raw.split(/[\r\n,;\t]/).map(value => value.trim()).filter(value => value.length > 100);
+    const result = acceptSerialScans(raw, [...Object.values(componentSerials).flat(), ...invalid], true, Math.max(0, target - current.length));
+    const added = result.text.split("\n").filter(Boolean);
     // These identities arrived INSIDE the purchased kit, not as loose stock.
     // The server checks current stock, transit, installed, held and return custody.
-    setComponentSerials(values => ({ ...values, [componentId]: [...(values[componentId] ?? []), serial] }));
+    setComponentSerials(values => ({ ...values, [componentId]: [...(values[componentId] ?? []), ...added] }));
     setScanInputs(values => ({ ...values, [componentId]: "" }));
     setReviewing(false);
-    setError("");
+    setError([result.rejected.length ? `Duplicate or invalid serials rejected: ${result.rejected.join(", ")}.` : "",
+      result.excess ? "The required serial count is complete. Extra scans rejected." : ""].filter(Boolean).join(" "));
   };
   const buildPayload = () => {
     if (!source || !kit) throw new Error("Choose a received purchase source and a defined kit.");
@@ -400,10 +403,12 @@ export function InventoryVendorKitDialog({ state, projectId, onClose, onSaved, o
                     <Input id={`vendor-kit-scan-${recipe.itemId}`} data-testid={`vendor-kit-scan-${recipe.itemId}`} autoComplete="off" maxLength={100}
                       className="h-10 min-w-0 flex-1 font-mono" placeholder="Scan actual component serial" disabled={locked}
                       value={scanInputs[recipe.itemId] ?? ""} onChange={event => setScanInputs(value => ({ ...value, [recipe.itemId]: event.target.value }))}
-                      onKeyDown={event => { if (event.key === "Enter" && event.currentTarget.value.trim()) { event.preventDefault(); commitScan(recipe.itemId); } }} />
+                      onPaste={event => { event.preventDefault(); commitScan(recipe.itemId, event.clipboardData.getData("text")); }}
+                      onKeyDown={event => { if ((event.key === "Enter" || event.key === "Tab") && event.currentTarget.value.trim()) { event.preventDefault(); commitScan(recipe.itemId); } }} />
                     <Button type="button" variant="outline" size="sm" className="h-10 shrink-0" disabled={locked || !scanInputs[recipe.itemId]?.trim() || serials.length >= required}
                       aria-label={`Commit ${part.name} serial scan`} onClick={() => commitScan(recipe.itemId)}><ScanLine className="mr-1.5 h-4 w-4" /><span className="hidden sm:inline">Commit</span></Button>
                   </div>
+                  <SerialScanProgress scanned={serials.length} expected={required} />
                   {!!serials.length && <ul aria-label={`${part.name} scanned serials`} className="max-h-24 space-y-1 overflow-y-auto rounded border bg-muted/20 p-2">
                     {serials.map((serial, index) => <li key={`${serial}-${index}`} className="flex items-center gap-2 font-mono text-xs"><span className="min-w-0 flex-1 break-all">{index + 1}. {serial}</span>
                       <button type="button" className="rounded p-1 hover:bg-muted" aria-label={`Remove ${part.name} serial ${serial}`} disabled={locked}

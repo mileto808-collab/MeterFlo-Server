@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import type { Allocation, InventoryItem, StockLine, Warehouse } from "@shared/inventory";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SerialScanField } from "./serial-scan-field";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -363,7 +364,7 @@ export function WorkOrderStagingPanel({
         </div>
         {selectedItem?.tracking === "serialized" && <div className="space-y-1">
           <Label htmlFor={`stage-serials-${workOrderId}`}>Serials in physical custody transfer</Label>
-          <Input id={`stage-serials-${workOrderId}`} value={serialText} disabled={formLocked} onChange={event => { beginEdit(); setSerialText(event.target.value); }} placeholder="Scan one serial per unit" />
+          <SerialScanField id={`stage-serials-${workOrderId}`} expected={quantity} blockedSerials={lines.flatMap(line => line.serials)} value={serialText} disabled={formLocked} onChange={value => { beginEdit(); setSerialText(value); }} placeholder="Scan one serial per unit" />
           <p className="text-xs text-muted-foreground">These scans record custody during the move; they do not assign installed-meter identity to the work order.</p>
         </div>}
         {!!lines.length && <ul className="space-y-2">{lines.map(line => {

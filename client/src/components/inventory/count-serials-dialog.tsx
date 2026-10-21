@@ -3,7 +3,8 @@ import { ListOrdered, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { SerialScanField, serialTokens } from "./serial-scan-field";
+import { acceptSerialScans } from "@/lib/serial-scans";
 import type { InventoryItem } from "@shared/inventory";
 
 type CountSerialsDialogProps = {
@@ -12,6 +13,7 @@ type CountSerialsDialogProps = {
   serials: string;
   open: boolean;
   disabled: boolean;
+  blockedSerials?: string[];
   onOpenChange: (open: boolean) => void;
   onSerialsChange: (serials: string) => void;
 };
@@ -21,21 +23,25 @@ function enteredSerialCount(value: string) {
 }
 
 export function CountSerialsDialog({
-  item, actualQuantity, serials, open, disabled, onOpenChange, onSerialsChange,
+  item, actualQuantity, serials, open, disabled, blockedSerials = [], onOpenChange, onSerialsChange,
 }: CountSerialsDialogProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
-  const serialsRef = useRef<HTMLTextAreaElement>(null);
   const [scanValue, setScanValue] = useState("");
+  const [notice, setNotice] = useState("");
   const count = enteredSerialCount(serials);
 
-  const addSerial = () => {
-    if (!scanValue.length || disabled) return;
-    const separator = serials.length > 0 && !/\n$/.test(serials) ? "\n" : "";
-    onSerialsChange(`${serials}${separator}${scanValue}\n`);
+  const addSerial = (raw = scanValue) => {
+    if (!raw.length || disabled) return;
+    const existing = new Set(serialTokens(serials)).size;
+    const target = actualQuantity.trim() && Number.isSafeInteger(Number(actualQuantity)) && Number(actualQuantity) >= 0 ? Number(actualQuantity) : Infinity;
+    const invalid = serialTokens(raw).filter(serial => serial.length > 100);
+    const result = acceptSerialScans(`${serials}\n${raw}`, [...blockedSerials, ...invalid], true, Math.max(target, existing));
+    onSerialsChange(result.text);
+    setNotice([result.rejected.length ? `Duplicate serials rejected: ${result.rejected.join(", ")}.` : "",
+      result.excess ? "Scan target reached. Extra scans rejected." : ""].filter(Boolean).join(" "));
     setScanValue("");
     requestAnimationFrame(() => {
-      if (serialsRef.current) serialsRef.current.scrollTop = serialsRef.current.scrollHeight;
       scanInputRef.current?.focus();
     });
   };
@@ -66,13 +72,12 @@ export function CountSerialsDialog({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6">
           <div className="space-y-2">
             <label htmlFor={`serial-review-${item.id}`} className="text-sm font-medium">Serials, one per line</label>
-            <Textarea
-              ref={serialsRef}
+            <SerialScanField
               id={`serial-review-${item.id}`}
               aria-label="Serials, one per line"
               value={serials}
               disabled={disabled}
-              onChange={event => onSerialsChange(event.target.value)}
+              expected={actualQuantity} requireTarget={false} blockedSerials={blockedSerials} onChange={onSerialsChange}
               className="min-h-44 resize-y font-mono text-sm leading-6"
               spellCheck={false}
               autoCapitalize="off"
@@ -93,8 +98,9 @@ export function CountSerialsDialog({
                 value={scanValue}
                 disabled={disabled}
                 onChange={event => setScanValue(event.target.value)}
-                onKeyDown={event => {
-                  if (event.key === "Enter" || event.key === "\r") {
+              onPaste={event => { event.preventDefault(); addSerial(event.clipboardData.getData("text")); }}
+              onKeyDown={event => {
+                  if (event.key === "Enter" || event.key === "\r" || (event.key === "Tab" && scanValue.trim())) {
                     event.preventDefault();
                     addSerial();
                   }
@@ -106,13 +112,14 @@ export function CountSerialsDialog({
                 autoCorrect="off"
                 spellCheck={false}
               />
-              <Button type="button" onClick={addSerial} disabled={disabled || !scanValue.length} className="shrink-0">
+              <Button type="button" onClick={() => addSerial()} disabled={disabled || !scanValue.length} className="shrink-0">
                 <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 Add serial
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">HID scanners: use an Enter suffix. Each scan adds a new line and leaves this field ready for the next scan.</p>
           </div>
+          {notice && <p role="alert" className="text-sm text-destructive">{notice}</p>}
         </div>
 
         <DialogFooter className="shrink-0 border-t bg-background px-5 py-3 sm:px-6">

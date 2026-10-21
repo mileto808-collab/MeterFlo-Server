@@ -1,0 +1,90 @@
+import { useEffect, useRef, useState, type TextareaHTMLAttributes } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { acceptSerialScans } from "@/lib/serial-scans";
+
+export const serialTokens = (value: string) => value.split(/[\r\n,;\t]/).map(token => token.trim()).filter(Boolean);
+function targetCount(value: string | number | null | undefined) {
+  if (value == null || String(value).trim() === "") return null;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : null;
+}
+
+export function SerialScanProgress({ scanned, expected }: { scanned: number; expected: string | number | null | undefined }) {
+  const target = targetCount(expected);
+  const complete = target !== null && target > 0 && scanned === target;
+  const extra = target !== null && scanned > target;
+  return <div className={`rounded-md border p-2 text-xs ${extra ? "border-destructive text-destructive" : complete ? "border-green-600/50 bg-green-500/10" : "bg-muted/30"}`}
+    data-testid="serial-scan-progress" role="status" aria-live="polite" aria-atomic="true">
+    <div className="flex flex-wrap justify-between gap-2 font-medium tabular-nums">
+      <span>Scanned {scanned} / {target ?? "—"}</span>
+      <span>{target === null ? "Expected count not set" : extra ? `${scanned - target} extra` : `${Math.max(0, target - scanned)} left to scan`}</span>
+    </div>
+    {target !== null && target > 0 && <div role="progressbar" aria-label="Serial scans" aria-valuemin={0} aria-valuemax={target} aria-valuenow={Math.min(target, scanned)} className="mt-2 h-1.5 overflow-hidden rounded bg-muted">
+      <div className={`h-full ${complete ? "bg-green-600" : "bg-primary"}`} style={{ width: `${Math.min(100, scanned / target * 100)}%` }} />
+    </div>}
+    <p className="mt-1">{extra ? "Quantity was reduced. Keep these captures until you explicitly remove the extra serials or correct the quantity."
+      : complete ? "Scanning complete — all required serials captured."
+        : target === null ? "Enter a whole quantity to set the expected scan count."
+          : target === 0 ? "No serials required for this quantity." : "Scan one unique serial per unit."}</p>
+  </div>;
+}
+
+type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange" | "onPaste" | "onKeyDown"> & {
+  value: string; onChange: (value: string) => void; expected: string | number | null | undefined;
+  blockedSerials?: string[]; requireTarget?: boolean;
+};
+
+/** Text and array-backed consumers share scanner commits while retaining unfinished text locally. */
+export function SerialScanField({ value, onChange, expected, blockedSerials = [], requireTarget = true, ...props }: Props) {
+  const [text, setText] = useState(value);
+  const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState("");
+  const emitted = useRef(value);
+  const fieldId = useRef(props.id);
+  useEffect(() => {
+    // Array-backed parents may normalize delimiters. Do not replace a partly typed token on their echo.
+    if (fieldId.current !== props.id || (value !== emitted.current &&
+      serialTokens(value).join("\n") !== serialTokens(emitted.current).join("\n"))) {
+      setText(value); setPending(false); setNotice(""); emitted.current = value;
+    }
+    fieldId.current = props.id;
+  }, [value, props.id]);
+  const target = targetCount(expected);
+  const tokens = serialTokens(text);
+  const committed = pending ? tokens.slice(0, -1) : tokens;
+  const scanned = new Set(committed).size;
+  const accept = (input: string, commitLast: boolean) => {
+    if (props.disabled || props.readOnly) return;
+    const previousCount = new Set(tokens).size;
+    const limit = target === null ? (requireTarget ? 0 : Infinity) : Math.max(target, previousCount);
+    const parts = input.split(/[\r\n,;\t]/);
+    if (!commitLast) parts.pop();
+    const tooLong = parts.map(part => part.trim()).filter(part => part.length > 100);
+    const result = acceptSerialScans(input, [...blockedSerials, ...tooLong], commitLast, limit);
+    setText(result.text); setPending(!commitLast && !!result.text.trim() && !/[\r\n,;\t]$/.test(result.text));
+    emitted.current = result.text; onChange(result.text);
+    const nextNotice = [
+      result.rejected.length ? `Rejected duplicate, unavailable, or invalid serials: ${result.rejected.join(", ")}.` : "",
+      result.excess ? target === null || target === 0 ? "Enter the quantity before scanning." : `Scan target reached. ${result.excess} extra scan(s) rejected.` : "",
+    ].filter(Boolean).join(" ");
+    if (nextNotice || target === null || scanned < target || serialTokens(result.text).join("\n") !== tokens.join("\n")) setNotice(nextNotice);
+  };
+  return <div className="space-y-2">
+    <SerialScanProgress scanned={scanned} expected={expected} />
+    <Textarea {...props} value={text} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+      onChange={event => accept(event.target.value, false)}
+      onKeyDown={event => {
+        if (event.key === "Enter" || (event.key === "Tab" && text.trim())) {
+          event.preventDefault(); accept(text, true);
+        }
+      }}
+      onPaste={event => {
+        event.preventDefault();
+        const start = event.currentTarget.selectionStart, end = event.currentTarget.selectionEnd;
+        accept(text.slice(0, start) + event.clipboardData.getData("text") + text.slice(end), true);
+      }} />
+    <p className="text-xs text-muted-foreground">Scan with Enter or Tab, or paste a list. Repeated serials and extra scans are rejected.</p>
+    {notice && <p role="alert" className="text-xs text-destructive">{notice}</p>}
+    {tokens.length !== new Set(tokens).size && <p role="alert" className="text-xs text-destructive">Saved entries contain duplicate serials. Remove duplicates before posting.</p>}
+  </div>;
+}
