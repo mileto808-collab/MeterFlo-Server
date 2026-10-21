@@ -78,6 +78,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [confirmHandoff, setConfirmHandoff] = useState(false);
   const [serialSearch, setSerialSearch] = useState<Record<string, string>>({});
   const [scanNotices, setScanNotices] = useState<Record<string, string>>({});
+  const [showStart, setShowStart] = useState(true);
+  const [requestedMode, setRequestedMode] = useState<Draft["mode"] | null>(null);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
@@ -156,6 +158,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useEffect(() => {
     if (!storageKey || !open) return;
     setConfirmHandoff(false);
+    setShowStart(true);
+    setRequestedMode(null);
     setScanNotices({});
     setStorageReady(false);
     try {
@@ -202,6 +206,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     if (draft.pending || draft.createAttempt) return;
     setDraft(emptyDraft());
     setError("");
+  };
+  const hasSavedProgress = Boolean(draft.batchId || draft.selectedIds.length || draft.pending || draft.createAttempt ||
+    draft.step !== "orders" || draft.mode !== "crew" || draft.name || draft.search || draft.route ||
+    draft.group || draft.zone || draft.installer || draft.date);
+  const startMode = (mode: Draft["mode"]) => {
+    if (draft.pending || draft.createAttempt || busy) return;
+    setDraft({ ...emptyDraft(), mode });
+    setError("");
+    setRequestedMode(null);
+    setShowStart(false);
   };
   const close = (next: boolean) => {
     if (!next && busy) return;
@@ -566,12 +580,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           <DialogTitle className="mt-1 text-xl sm:text-2xl">Fulfill / Stage Work Orders</DialogTitle>
           <DialogDescription>Build one saved crew batch, move only what is physically in custody, then hand it to one vehicle.</DialogDescription>
         </DialogHeader>
-        <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
+        {!showStart && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
           {stepNames.map((name, index) => <div key={name} className="min-w-0">
             <div className={`h-1 rounded-full ${index <= currentStepIndex ? "bg-primary" : "bg-border"}`} />
             <p className={`mt-1 truncate text-[10px] sm:text-xs ${index === currentStepIndex ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{name}</p>
           </div>)}
-        </div>
+        </div>}
       </div>
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
         {error && <Alert variant="destructive" className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Workflow needs attention</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
@@ -605,6 +619,28 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           <Button type="button" size="sm" variant="outline" onClick={() => { void fulfillment.refetch(); void inventory.refetch(); }}>Retry</Button>
         </AlertDescription></Alert>}
         {storageReady && !fulfillment.isLoading && !inventory.isLoading && !fulfillment.isError && !inventory.isError && <>
+          {showStart && <div className="space-y-4" data-testid="fulfillment-start-screen">
+            <div><h3 className="text-lg font-semibold">Choose a fulfillment workflow</h3>
+              <p className="text-sm text-muted-foreground">Start a crew batch, prepare scheduled work, or open saved batches.</p></div>
+            {hasSavedProgress && <div className="rounded-lg border bg-muted/30 p-4">
+              <p className="mb-3 text-sm text-muted-foreground">Your previous workflow inputs are saved. Continue when you are ready to return to them.</p>
+              <Button type="button" disabled={busy} onClick={() => setShowStart(false)}><RotateCcw className="mr-2 h-4 w-4" />Continue saved workflow</Button>
+            </div>}
+            <div className="grid gap-3 sm:grid-cols-3">
+              {([
+                ["crew", "New crew batch", "Choose unclaimed work and prepare one crew's pull."],
+                ["scheduled", "Scheduled installer work", "Choose scheduled work for an installer and date."],
+                ["resume", "Resume saved batch", "View saved and processed batches, or resume an unfinished batch."],
+              ] as const).map(([mode, label, description]) => <button key={mode} type="button"
+                disabled={busy || pendingLock || createLock}
+                onClick={() => hasSavedProgress ? setRequestedMode(mode) : startMode(mode)}
+                className="min-h-20 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50">
+                <span className="block font-semibold">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span>
+              </button>)}
+            </div>
+            {(pendingLock || createLock) && <p className="text-sm text-muted-foreground">Continue the saved workflow to resolve its pending result before starting another workflow.</p>}
+          </div>}
+          {!showStart && <>
           {draft.step === "orders" && <div className="space-y-5">
             {!draft.batchId && <div className="grid gap-3 sm:grid-cols-3">
               {([
@@ -867,14 +903,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               </div>}
             </>}
           </div>}
+          </>}
         </>}
       </div>
       <DialogFooter className="min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
-        <div className="flex gap-2">
+        {!showStart && <div className="flex gap-2">
           {draft.step !== "orders" && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} onClick={goBack}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
           {draft.step === "orders" && !draft.batchId && <Button type="button" variant="ghost" disabled={busy || pendingLock || createLock} onClick={reset}>Clear draft</Button>}
-        </div>
+        </div>}
         <div className="flex flex-wrap justify-end gap-2">
+          {!showStart && <>
           {draft.step === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") && <Button type="button" disabled={!canCreate || busy || !storageReady || !stagingLocations.length} onClick={() => update({ step: "review" })}>Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create saved batch"}</Button>}
           {draft.step === "stage" && stagingComplete && hasStagedStock && <Button type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>
@@ -884,11 +922,24 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : draft.step === "stage" ? <ArrowRight className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}
           </Button>}
-          <Button type="button" variant="outline" disabled={busy} onClick={() => close(false)}>Save & leave</Button>
+          </>}
+          <Button type="button" variant="outline" disabled={busy} onClick={() => close(false)}>{showStart ? "Close" : "Save & leave"}</Button>
         </div>
       </DialogFooter>
     </DialogContent>
   </Dialog>
+    <AlertDialog open={open && requestedMode !== null} onOpenChange={next => { if (!next) setRequestedMode(null); }}>
+      <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Replace saved workflow inputs?</AlertDialogTitle>
+          <AlertDialogDescription>Starting a different workflow replaces the current saved selections and unrecorded inputs. Recorded batches, receipts and stock movements are not changed. Cancel to keep your saved workflow.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep saved workflow</AlertDialogCancel>
+          <AlertDialogAction disabled={busy || pendingLock || createLock} onClick={() => { if (requestedMode) startMode(requestedMode); }}>Start selected workflow</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <AlertDialog open={open && confirmHandoff} onOpenChange={setConfirmHandoff}>
       <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
         <AlertDialogHeader>

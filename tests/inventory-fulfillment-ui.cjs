@@ -86,7 +86,36 @@ const assert = require("node:assert/strict");
     await page.goto(`${baseURL}/projects/${fixture.projectId}/inventory`);
     const launch = async () => {
       await page.getByRole("button", { name: "Start Inventory", exact: true }).filter({ visible: true }).click();
+      await expect(page.getByRole("heading", { name: "Choose an inventory task", exact: true })).toBeVisible();
       await page.getByRole("button", { name: /Fulfill \/ Stage Work Orders/ }).click();
+      const home = page.getByTestId("fulfillment-start-screen");
+      await expect(home).toBeVisible();
+      await expect(page.getByLabel("Search orders", { exact: true })).toHaveCount(0);
+      const continueSaved = home.getByRole("button", { name: "Continue saved workflow", exact: true });
+      if (await continueSaved.count()) {
+        const newCrew = home.getByRole("button", { name: /New crew batch/ });
+        if (await newCrew.isEnabled()) {
+          await newCrew.click();
+          await expect(page.getByRole("alertdialog").getByText("Replace saved workflow inputs?", { exact: true })).toBeVisible();
+          await page.getByRole("button", { name: "Keep saved workflow", exact: true }).click();
+          await expect(home).toBeVisible();
+        }
+        await continueSaved.click();
+      } else {
+        await fs.mkdir("generated-artifacts/inventory-fulfillment", { recursive: true });
+        for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          await expect(home.getByRole("button", { name: /New crew batch/ })).toBeVisible();
+          await expect.poll(async () => {
+            const rect = await page.getByRole("dialog").boundingBox();
+            return !!rect && rect.x >= -1 && rect.y >= -1 &&
+              rect.x + rect.width <= viewport.width + 1 && rect.y + rect.height <= viewport.height + 1;
+          }).toBe(true);
+          await page.screenshot({ path: `generated-artifacts/inventory-fulfillment/start-${viewport.width}.png` });
+        }
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await home.getByRole("button", { name: /New crew batch/ }).click();
+      }
     };
     await launch();
     const dialog = page.getByRole("dialog");

@@ -37,6 +37,11 @@ const assert = require("node:assert/strict");
     const launch = async () => {
       await page.getByRole("button", { name: "Start Inventory", exact: true }).filter({ visible: true }).click();
       await page.getByRole("button", { name: /Fulfill \/ Stage Work Orders/ }).click();
+      const home = page.getByTestId("fulfillment-start-screen");
+      await expect(home).toBeVisible();
+      const continueSaved = home.getByRole("button", { name: "Continue saved workflow", exact: true });
+      if (await continueSaved.count()) await continueSaved.click();
+      else await home.getByRole("button", { name: /New crew batch/ }).click();
     };
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await launch();

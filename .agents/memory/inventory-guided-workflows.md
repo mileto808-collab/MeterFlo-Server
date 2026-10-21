@@ -8,3 +8,9 @@ Start Inventory is the entry to a main wizard screen where users choose an inven
 **Why:** The user described a common task-selection screen, not a button tied directly to a single receiving workflow.
 
 **How to apply:** When implementing guided inventory workflows, preserve that shared entry and enforce the permissions appropriate to each selected task. Do not assume Start Inventory should jump straight into removed-equipment acceptance.
+
+Opening Fulfill / Stage Work Orders must always show its main workflow choices, even when a previous draft exists. Returning to saved inputs is an explicit Continue saved workflow action.
+
+**Why:** The user wants a predictable entry screen rather than being taken automatically to the last fulfillment screen. This requirement applies to the Fulfill / Stage task button, not a change to Start Inventory.
+
+**How to apply:** Keep saved inputs and exact pending-operation identities intact behind the start screen. Confirm before replacing unrecorded inputs, and prevent a new workflow from bypassing an unresolved operation.
