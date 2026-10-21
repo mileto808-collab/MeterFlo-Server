@@ -22,7 +22,7 @@ const row = {
   changes:[{field:`counts/${countId}`,before:null,after:{id:countId,itemId,serials:["00001",operationId]}}],
   metadata:{reference:countId},
 };
-const client:any = {query:async(sql:string) => ({rows:sql.includes("inventory_state") ? [{project_id:4,state}] :
+const client:any = {query:async(sql:string) => ({rows:sql.includes("inventory_relational_projects") ? [] : sql.includes("inventory_state") ? [{project_id:4,state}] :
   [{operation_id:operationId,project_id:4,first:"121"}]})};
 test("inventory references and new captured labels use stable business identities", () => {
   const before = structuredClone(state);

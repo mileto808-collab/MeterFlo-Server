@@ -9,35 +9,37 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePermissions } from "@/hooks/usePermissions";
 import { formatDateTimeInTimezone } from "@/lib/timezone";
-import { workOrderHistoryValue } from "@shared/work-order-history-display";
+import {
+  historyActionLabel,
+  historyDisplayText,
+  historyFieldLabel,
+} from "@shared/work-order-history-display";
 
 type HistoryChange = { field: string; before: unknown; after: unknown };
 type HistoryEvent = {
-  id: number; occurredAt: string; actorLabel: string; source: string; action: string;
+  id: string; occurredAt: string; actorLabel: string; source: string; action: string;
   entityId?: string | number | null; entityLabel?: string | null; outcome?: string | null;
   changes?: HistoryChange[]; metadata?: Record<string, unknown> | null;
+  entityReference?: string; eventReference?: string; operationReference?: string;
+  displayChanges?: HistoryChange[]; displayMetadata?: Record<string, unknown> | null;
 };
-type HistoryGroup = { operationId: string; occurredAt: string; actorLabel: string; source: string; outcome?: string | null; events: HistoryEvent[] };
+type HistoryGroup = { operationId: string; operationReference?: string; workOrderReference?: string | null; occurredAt: string; actorLabel: string; source: string; outcome?: string | null; events: HistoryEvent[] };
 type HistoryResponse = { groups: HistoryGroup[]; total: number; timezone: string; projectName: string };
 
-const actionLabels: Record<string, string> = {
-  "workOrder.close": "Work order closed",
-  "workOrder.autoClose": "Automatically closed after review",
-  "workOrder.reopen": "Work order reopened",
-  "workOrder.closingPolicyChanged": "Closing policy changed",
-  "workOrder.changeBlocked": "Change blocked: work order closed",
-  "workOrder.evidenceAdded": "Evidence added",
-  "workOrder.evidenceRemoved": "Evidence removed",
-  created: "Work order created",
-  updated: "Work order updated",
-  deleted: "Work order deleted",
-  started: "Operation started",
-  finished: "Operation finished",
-  "operation.started": "Operation started",
-  "operation.finished": "Operation finished",
-};
 const humanize = (value: string) => value.replace(/[_-]+/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
-const displayValue = (value: unknown) => value == null || value === "" ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value);
+const isUuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
+const redactUuids = (value: string) => value.replace(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/ig, "linked record");
+const workOrderReferenceFromMetadata = (metadata?: Record<string, unknown> | null) => {
+  if (!metadata) return undefined;
+  const value = metadata.customerWoId ?? metadata.customerWorkOrderId ?? metadata.customerWorkOrderNumber ??
+    metadata.customerWoNumber ?? metadata.workOrderNumber ?? metadata.workOrderLabel;
+  return value == null || value === "" || isUuid(value) ? undefined : value;
+};
+const technicalValue = (value: unknown) => value == null || value === "" ? "—" : String(value);
+const readableName = (value: unknown) => !value || isUuid(value) ? "Unknown user" : redactUuids(String(value));
+const readableHistoryValue = (value: unknown, key: string, timezone: string): string => {
+  return redactUuids(historyDisplayText(value, key, timezone));
+};
 
 export function WorkOrderHistory({ projectId, projectTimezone = "UTC", workOrderId, projectName, workOrderLabel }: {
   projectId: number | string; projectTimezone?: string; workOrderId?: number | string; projectName?: string; workOrderLabel?: string;
@@ -68,6 +70,9 @@ export function WorkOrderHistory({ projectId, projectTimezone = "UTC", workOrder
     enabled: open && canView,
   });
   const root = `/api/projects/${projectId}/work-order-history?${queryString}`;
+  const headerWorkOrderLabel = workOrderLabel && !isUuid(workOrderLabel)
+    ? redactUuids(workOrderLabel)
+    : workOrderId && !isUuid(workOrderId) ? workOrderId : "details";
   const exportHistory = (format: "csv" | "print") => {
     const url = `${root}&format=${format}`;
     if (format === "print") window.open(url, "_blank", "noopener,noreferrer");
@@ -89,7 +94,7 @@ export function WorkOrderHistory({ projectId, projectTimezone = "UTC", workOrder
       <DialogContent className="flex max-h-[92dvh] w-[min(96vw,62rem)] max-w-none flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b bg-muted/30 px-5 py-4 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-3 pr-7">
-            <div><DialogTitle>{workOrderId ? `History · Work order ${workOrderLabel || workOrderId}` : "Work-order history"}</DialogTitle>
+            <div><DialogTitle>{workOrderId ? `History · Work order ${headerWorkOrderLabel}` : "Work-order history"}</DialogTitle>
               <DialogDescription className="mt-1">{projectName || data?.projectName || "Project"} · timestamps shown in {data?.timezone || projectTimezone}</DialogDescription>
             </div>
             <div className="flex gap-2">
@@ -112,6 +117,8 @@ export function WorkOrderHistory({ projectId, projectTimezone = "UTC", workOrder
                 <SelectItem value="workOrder.changeBlocked">Change blocked</SelectItem>
                 <SelectItem value="workOrder.evidenceAdded">Evidence added</SelectItem>
                 <SelectItem value="workOrder.evidenceRemoved">Evidence removed</SelectItem>
+                <SelectItem value="inventory.workOrderCompleted">{historyActionLabel("inventory.workOrderCompleted")}</SelectItem>
+                <SelectItem value="inventory.WorkOrderCompleted">{historyActionLabel("inventory.WorkOrderCompleted")}</SelectItem>
                 <SelectItem value="created">Created</SelectItem>
                 <SelectItem value="updated">Updated</SelectItem>
                 <SelectItem value="deleted">Deleted</SelectItem>
@@ -126,30 +133,64 @@ export function WorkOrderHistory({ projectId, projectTimezone = "UTC", workOrder
               : !data?.groups.length ? <div className="rounded-xl border border-dashed bg-muted/20 px-5 py-12 text-center"><History className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="font-medium">No matching work-order history</p><p className="mt-1 text-sm text-muted-foreground">Adjust the search or date range to look further back.</p></div>
                 : <div className="space-y-3">{data.groups.map(group => {
                   const isExpanded = expanded[group.operationId] ?? false;
-                  const primary = group.events.find(e => e.entityLabel && e.entityLabel !== "batch") || group.events[0];
-                  const woLabel = primary?.entityLabel || (primary?.entityId ? `WO #${primary.entityId}` : "");
+                  const timezone = data?.timezone || projectTimezone;
+                  const customerReference = group.workOrderReference ?? group.events.map(event => workOrderReferenceFromMetadata(event.displayMetadata))
+                    .find(value => value !== undefined);
+                  const referenceEvent = group.events.find(event => event.entityReference && !isUuid(event.entityReference));
+                  const primary = group.events.find(event => workOrderReferenceFromMetadata(event.displayMetadata) !== undefined) ||
+                    referenceEvent || group.events[0];
+                  const referenceText = customerReference !== undefined
+                    ? readableHistoryValue(customerReference, "customerWoId", timezone)
+                    : undefined;
+                  const woLabel = referenceText
+                    ? (/\bWO\b|work\s*orders?/i.test(referenceText) ? referenceText : `WO ${referenceText}`)
+                    : referenceEvent?.entityReference ? redactUuids(referenceEvent.entityReference) : (workOrderId ? `WO ${headerWorkOrderLabel}` : "");
+                  const auditFallback = group.events.find(event => !isUuid(event.id))?.id;
+                  const operationReference = group.operationReference && !isUuid(group.operationReference)
+                    ? redactUuids(group.operationReference)
+                    : auditFallback != null ? `Operation · Audit #${auditFallback}` : "Operation · Audit event";
                   return <article key={group.operationId} className="overflow-hidden rounded-xl border bg-card">
                     <button type="button" className="flex w-full items-start gap-3 p-4 text-left hover:bg-muted/40 sm:items-center" onClick={() => setExpanded(current => ({ ...current, [group.operationId]: !isExpanded }))} aria-expanded={isExpanded}>
                       <span className="mt-0.5 text-muted-foreground">{isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2"><strong className="text-sm">{actionLabels[primary?.action] || humanize(primary?.action || "Activity")}</strong>
+                        <span className="flex flex-wrap items-center gap-2"><strong className="text-sm">{historyActionLabel(primary?.action || "activity")}</strong>
                           {woLabel && <Badge variant="secondary">{woLabel}</Badge>}<Badge variant="outline">{group.events.length} {group.events.length === 1 ? "event" : "events"}</Badge></span>
-                        <span className="mt-1 block text-xs text-muted-foreground">{formatDateTimeInTimezone(group.occurredAt, data?.timezone || projectTimezone)} · {group.actorLabel || "Unknown user"} · {humanize(group.source || "web")}</span>
+                        <span className="mt-1 block text-xs text-muted-foreground">{formatDateTimeInTimezone(group.occurredAt, timezone)} · {readableName(group.actorLabel)} · {humanize(group.source || "web")}</span>
                       </span>
-                      <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground md:block">{group.operationId}</span>
+                      <span className="hidden max-w-48 shrink-0 truncate text-[10px] text-muted-foreground md:block" title={operationReference}>{operationReference}</span>
                     </button>
                     {isExpanded && <div className="space-y-4 border-t bg-muted/10 p-4 sm:p-5">
-                      {group.events.map(event => <div key={event.id} className="grid gap-3 sm:grid-cols-[10rem_minmax(0,1fr)]">
-                        <div className="text-xs text-muted-foreground"><p className="font-medium text-foreground">{actionLabels[event.action] || humanize(event.action)}</p>
-                          <p className="mt-1">{formatDateTimeInTimezone(event.occurredAt, data?.timezone || projectTimezone)}</p><p>{event.actorLabel || "Unknown user"} · {humanize(event.source || "web")}</p></div>
+                      {group.events.map(event => {
+                        const changes = event.displayChanges?.length ? event.displayChanges : event.changes || [];
+                        const metadata = event.displayMetadata || event.metadata || {};
+                        const metadataEntries = Object.entries(metadata);
+                        return <div key={event.id} className="grid gap-3 sm:grid-cols-[10rem_minmax(0,1fr)]">
+                        <div className="text-xs text-muted-foreground"><p className="font-medium text-foreground">{historyActionLabel(event.action)}</p>
+                          <p className="mt-1">{formatDateTimeInTimezone(event.occurredAt, timezone)}</p><p>{readableName(event.actorLabel)} · {humanize(event.source || "web")}</p></div>
                         <div className="min-w-0">
-                          {event.entityLabel && <p className="mb-2 text-sm font-medium">{event.entityLabel}</p>}
-                          {event.changes?.length ? <div className="overflow-x-auto rounded-lg border bg-background"><table className="w-full min-w-[26rem] text-left text-xs"><thead className="bg-muted/70 text-muted-foreground"><tr><th className="px-3 py-2 font-medium">Field</th><th className="px-3 py-2 font-medium">Before</th><th className="px-3 py-2 font-medium">After</th></tr></thead>
-                            <tbody>{event.changes.map((change, index) => <tr key={`${change.field}-${index}`} className="border-t"><td className="px-3 py-2 font-medium">{humanize(change.field)}</td><td className="max-w-[12rem] break-words px-3 py-2">{displayValue(workOrderHistoryValue(change.before, change.field, data.timezone))}</td><td className="max-w-[12rem] break-words px-3 py-2">{displayValue(workOrderHistoryValue(change.after, change.field, data.timezone))}</td></tr>)}</tbody></table></div>
-                            : event.metadata && Object.keys(event.metadata).length > 0 ? <pre className="overflow-x-auto rounded-lg border bg-background p-3 text-xs">{JSON.stringify(workOrderHistoryValue(event.metadata, "", data.timezone), null, 2)}</pre>
-                              : <p className="text-sm text-muted-foreground">{event.outcome || "Recorded"}</p>}
+                          {event.entityReference && !isUuid(event.entityReference) && <p className="mb-2 text-sm font-medium">{redactUuids(event.entityReference)}</p>}
+                          {changes.length > 0 && <div className="overflow-x-auto rounded-lg border bg-background"><table className="w-full min-w-[26rem] text-left text-xs"><thead className="bg-muted/70 text-muted-foreground"><tr><th className="px-3 py-2 font-medium">Field</th><th className="px-3 py-2 font-medium">Before</th><th className="px-3 py-2 font-medium">After</th></tr></thead>
+                            <tbody>{changes.map((change, index) => <tr key={`${change.field}-${index}`} className="border-t"><td className="px-3 py-2 font-medium">{historyFieldLabel(change.field)}</td><td className="max-w-[12rem] break-words px-3 py-2">{readableHistoryValue(change.before, change.field, timezone)}</td><td className="max-w-[12rem] break-words px-3 py-2">{readableHistoryValue(change.after, change.field, timezone)}</td></tr>)}</tbody></table></div>}
+                          {metadataEntries.length > 0 && <dl className="mt-3 divide-y rounded-lg border bg-background text-xs">
+                            {metadataEntries.map(([key, value]) => <div key={key} className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)]">
+                              <dt className="font-medium text-muted-foreground">{historyFieldLabel(key)}</dt>
+                              <dd className="break-words">{readableHistoryValue(value, key, timezone)}</dd>
+                            </div>)}
+                          </dl>}
+                          {!changes.length && !metadataEntries.length && <p className="text-sm text-muted-foreground">{readableHistoryValue(event.outcome || "Recorded", "outcome", timezone)}</p>}
+                          <details className="mt-3 rounded-lg border bg-background/70 px-3 py-2 text-xs">
+                            <summary className="cursor-pointer font-medium text-muted-foreground">Raw evidence (technical identifiers)</summary>
+                            <div className="mt-2 space-y-1 break-all text-muted-foreground">
+                              <p>Event ID: {technicalValue(event.id)}</p>
+                              <p>Operation ID: {technicalValue(group.operationId)}</p>
+                              <p>Entity ID: {technicalValue(event.entityId)}</p>
+                              <p>Event reference: {technicalValue(event.eventReference)}</p>
+                              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2">{JSON.stringify({ changes: event.changes, metadata: event.metadata }, null, 2)}</pre>
+                            </div>
+                          </details>
                         </div>
-                      </div>)}
+                      </div>;
+                      })}
                     </div>}
                   </article>;
                 })}</div>}
