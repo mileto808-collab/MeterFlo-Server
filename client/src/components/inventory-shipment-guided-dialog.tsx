@@ -127,10 +127,9 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     if (foreignTransit) return "This serial is unresolved in another transfer.";
     return "";
   };
-  const scanCommit = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", raw: string) => {
-    const serial = raw.trim();
-    const row = values(item.id), all = [...row.goodSerials, ...row.damagedSerials];
-    const allMovementSerials = Object.values(entries).flatMap(entry => [...entry.goodSerials, ...entry.damagedSerials]);
+  const serialIssue = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", serial: string,
+    row = values(item.id), movementSerials = new Set(Object.values(entries).flatMap(entry => [...entry.goodSerials, ...entry.damagedSerials]))) => {
+    const all = [...row.goodSerials, ...row.damagedSerials];
     const targetQty = Number(bucket === "goodSerials" ? row.goodQuantity : row.damagedQuantity);
     const available = action === "accept" ? unresolvedTransferSerials(state, order, item.id) : [];
     const reservedSerials = action === "dispatch" ? state.allocations.filter(allocation => allocation.status === "reserved")
@@ -139,18 +138,37 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       .flatMap(stock => stock.serials).filter(value => !reservedSerials.includes(value)) : [];
     const legacyAllowed = order.lines.find(line => line.itemId === item.id)?.serials ?? [];
     const unavailable = action === "receive" || action === "accept" ? unavailableSerialReason(serial) : "";
-    const issue = !serial ? "Scan is blank." : serial.length > 100 ? "Serials are limited to 100 characters." :
-      allMovementSerials.includes(serial) ? "This serial is already in the movement." :
+    return !serial ? "Scan is blank." : serial.length > 100 ? "Serials are limited to 100 characters." :
+      movementSerials.has(serial) ? "This serial is already in the movement." :
       all.length >= 10000 ? "This product line is limited to 10,000 identified serials." :
       row[bucket].length >= targetQty ? "The selected quantity is already fully scanned." :
       action === "accept" && !available.includes(serial) ? "This identity was not dispatched or is already resolved." :
       unavailable ? unavailable :
       action === "dispatch" && item.tracking === "serialized" && !sourceSerials.includes(serial) ? "This serial is not available in the transfer source location." :
       action === "dispatch" && legacyAllowed.length > 0 && !legacyAllowed.includes(serial) ? "This order retains a legacy serial restriction; choose an allowed identity." : "";
+  };
+  const scanCommit = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", raw: string) => {
+    const serial = raw.trim(), row = values(item.id);
+    const issue = serialIssue(item, bucket, serial);
     if (issue) { setValidation(issue); return false; }
     patch(item.id, { [bucket]: [...row[bucket], serial] });
     setValidation("");
     return true;
+  };
+  const importSerials = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", serials: string[], useCount: boolean) => {
+    const row = { ...values(item.id), [bucket]: [...values(item.id)[bucket]] };
+    const quantityKey = bucket === "goodSerials" ? "goodQuantity" : "damagedQuantity";
+    if (useCount) row[quantityKey] = "10000";
+    const seen = new Set(Object.values(entries).flatMap(value => [...value.goodSerials, ...value.damagedSerials]));
+    const rejected: { index: number; reason: string }[] = [];
+    let added = 0;
+    serials.forEach((value, index) => {
+      const serial = value.trim(), issue = serialIssue(item, bucket, serial, row, seen);
+      if (issue) rejected.push({ index, reason: issue });
+      else { row[bucket].push(serial); seen.add(serial); added++; }
+    });
+    if (added) patch(item.id, { [bucket]: row[bucket], ...(useCount ? { [quantityKey]: String(row[bucket].length) } : {}) });
+    return { added, rejected };
   };
   const commitChildScannerInput = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", input: HTMLInputElement) => {
     if (!scanCommit(item, bucket, input.value)) return false;
@@ -399,6 +417,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         validation={validation}
         onRawChange={(key, value) => setScanBuffers(current => ({ ...current, [key]: value }))}
         onCommit={(bucket, input) => commitChildScannerInput(item, bucket, input)}
+        onImport={(bucket, serials, useCount) => importSerials(item, bucket, serials, useCount)}
         onPatch={change => patch(item.id, change)}
         onClose={closeSerialDialog}
       />;

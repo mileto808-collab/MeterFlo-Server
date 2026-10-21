@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ShipmentAction, ShipmentEntry } from "@/lib/inventory-shipment-guidance";
+import { SerialFileImport, type SerialImportResult } from "@/components/inventory/serial-file-import";
 
 type Bucket = "goodSerials" | "damagedSerials";
 type Props = {
@@ -23,6 +24,7 @@ type Props = {
   onRawChange: (key: string, value: string) => void;
   onCommit: (bucket: Bucket, input: HTMLInputElement) => boolean;
   onPatch: (change: Partial<ShipmentEntry>) => void;
+  onImport: (bucket: Bucket, serials: string[], useCount: boolean) => SerialImportResult;
   onClose: () => void;
 };
 
@@ -30,7 +32,7 @@ const PAGE_SIZE = 50;
 
 export function InventoryShipmentSerialDialog({
   item, order, action, entry, viewOnly, rawBuffers, expectedReferences, validation,
-  onRawChange, onCommit, onPatch, onClose,
+  onRawChange, onCommit, onPatch, onImport, onClose,
 }: Props) {
   const initialBucket: Bucket = rawBuffers[`${item.id}-goodSerials`] ? "goodSerials" :
     rawBuffers[`${item.id}-damagedSerials`] ? "damagedSerials" :
@@ -217,6 +219,8 @@ export function InventoryShipmentSerialDialog({
               }}><Check className="h-4 w-4" /></Button>
             </div>
           </div>}
+          {!viewOnly && action === "receive" && <SerialFileImport key={`${item.id}-${bucket}`} category={bucket === "goodSerials" ? "Good" : "Known damaged"}
+            currentCount={entry[bucket].length} quantity={target(bucket)} onAdd={(serials, useCount) => onImport(bucket, serials, useCount)} />}
           <div className="flex flex-wrap items-center gap-2">
             <Label htmlFor={`${item.id}-${bucket}-search`} className="sr-only">Search committed serials</Label>
             <div className="relative min-w-[10rem] flex-1">
