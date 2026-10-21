@@ -1,4 +1,5 @@
 import { inventoryDateTime } from "@shared/inventory-date-time";
+import { OrderItemPicker } from "@/components/inventory/order-item-picker";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -2190,7 +2191,9 @@ function OrderLineEditor({ items, lineItem, setLineItem, lineQty, setLineQty, li
 }) {
   items = items.filter(item => item.kind !== "labor");
   const selected = items.find(item => item.id === lineItem);
-  return <div className="space-y-3 rounded-md border p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_auto] sm:items-end"><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-item" : "operation-line-item"}>Item</Label><Select value={lineItem} onValueChange={setLineItem}><SelectTrigger id={draftMode ? "draft-line-item" : "operation-line-item"}><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-quantity" : "operation-line-quantity"}>Quantity</Label><Input id={draftMode ? "draft-line-quantity" : "operation-line-quantity"} type="number" min="1" max="1000000" step="1" value={lineQty} onChange={event => setLineQty(event.target.value)} /></div><Button type="button" variant="outline" onClick={add}><Plus className="mr-1 h-4 w-4" />Add line</Button></div>
+  return <div className="space-y-3 rounded-md border p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_auto] sm:items-end"><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-item" : "operation-line-item"}>Item</Label>{draftMode
+    ? <OrderItemPicker id="draft-line-item" items={items} value={lineItem} onValueChange={setLineItem} />
+    : <Select value={lineItem} onValueChange={setLineItem}><SelectTrigger id="operation-line-item"><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>}</div><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-quantity" : "operation-line-quantity"}>Quantity</Label><Input id={draftMode ? "draft-line-quantity" : "operation-line-quantity"} type="number" min="1" max="1000000" step="1" value={lineQty} onChange={event => setLineQty(event.target.value)} /></div><Button type="button" variant="outline" onClick={add}><Plus className="mr-1 h-4 w-4" />Add line</Button></div>
     {!draftMode && selected?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor="operation-serial-scans">Serial scans</Label><Textarea id="operation-serial-scans" value={lineSerials ?? ""} onChange={event => setLineSerials?.(event.target.value)} placeholder="One serial per line" /></div>}
     {draftMode && lines.length > 0 && <div className="mt-1">
       <div className="grid grid-cols-[minmax(0,1fr)_76px_64px] items-center gap-2 border-b pb-1.5 text-xs font-medium text-muted-foreground sm:grid-cols-[minmax(0,1fr)_88px_72px]">
