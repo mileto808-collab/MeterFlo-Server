@@ -23,6 +23,26 @@ async function cloud(ref: ExchangeRef) {
   return new Client(ref.location ? { bucketId: ref.location } : {});
 }
 export const exchangeStore = {
+  async projectKeys(ref: ExchangeRef, projectId: number): Promise<string[]> {
+    if (ref.provider !== "app_storage") return [];
+    const prefix = `meterflo-exchange/${projectId}/`, keys = new Set<string>();
+    let startOffset: string | undefined;
+    for (;;) {
+      const result = await (await cloud(ref)).list({ prefix, maxResults: 1000, startOffset });
+      if (!result.ok) throw new TransferError("Cannot verify project exchange storage. Project deletion was cancelled.", 503);
+      const names = result.value.map(object => object.name).sort();
+      for (const name of names) {
+        if (!name.startsWith(prefix) || !/^[a-f0-9-]{36}\.bin$/.test(name.slice(prefix.length)))
+          throw new TransferError("Unrecognized project exchange content requires administrator review before deletion.");
+        keys.add(name);
+      }
+      if (keys.size > 50000) throw new TransferError("Project exchange cleanup is too large; contact an administrator.");
+      if (names.length < 1000) return [...keys];
+      const next = names.at(-1);
+      if (!next || next === startOffset) throw new TransferError("Could not enumerate all project exchange files.");
+      startOffset = next;
+    }
+  },
   async probe(ref: ExchangeRef, projectId: number) {
     if (ref.provider !== exchangeProvider()) throw new TransferError("Storage provider does not match this instance. Review and save storage settings.", 503);
     const key = `meterflo-exchange/${projectId}/00000000-0000-0000-0000-000000000000.bin`;

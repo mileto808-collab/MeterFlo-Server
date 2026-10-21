@@ -13,9 +13,10 @@ import { enableAuditing } from "../server/auditContext";
 import { saveInventory } from "../server/inventoryService";
 import { writeRelationalInventory } from "../server/inventoryRelational";
 import { emptyInventory, itemSchema, warehouseSchema, vendorSchema } from "../shared/inventory";
-import { normalizeInventoryLocations } from "../shared/inventory-location-types";
+import { normalizeInventoryLocations, defaultStagingTypeId } from "../shared/inventory-location-types";
 import { deleteProjectCompletely, pendingProjectFileCleanups, retryProjectFileCleanup, ProjectDeletionCleanupPending } from "../server/projectDeletion";
 import type { Pool } from "pg";
+import { exchangeStore } from "../server/file-transfers/https-storage";
 
 enableAuditing();
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "meterflo-project-deletion-"));
@@ -37,7 +38,11 @@ async function fixture(inventory: boolean | null = true) {
       itemSchema.parse({ id: "kit", sku: "DEL-KIT", name: "Fixture kit", tracking: "regular", components: [{ itemId: "meter", quantity: 1 }] }),
     ];
     after.warehouses = [warehouseSchema.parse({ id: "warehouse", code: "DELETE", name: "Fixture warehouse",
-      type: "physical", address: "100 Fixture Way", city: "Fixture City" })];
+       type: "physical", address: "100 Fixture Way", city: "Fixture City" }),
+       warehouseSchema.parse({ id: "staging", code: "DEL-STG", name: "Fixture staging", type: "physical",
+         locationTypeId: defaultStagingTypeId, address: "100 Fixture Way" }),
+       warehouseSchema.parse({ id: "vehicle", code: "DEL-VAN", name: "Fixture vehicle", type: "vehicle",
+         vin: "1HGCM82633A004352", plate: "DELETE", plateState: "CO" })];
     after.vendors = [vendorSchema.parse({ id: "vendor", name: "Fixture vendor" })];
     after.stock = [{ warehouseId: "warehouse", itemId: "meter", quantity: 1, serials: ["DELETE-SERIAL"], revision: 1 }];
     after.orders = [{ id: "order", type: "purchase", vendorId: "vendor", sourceId: null,
@@ -46,6 +51,12 @@ async function fixture(inventory: boolean | null = true) {
     after.receipts = [{ id: "receipt", action: "receive", reference: "order", warehouseId: "warehouse",
       lines: [{ itemId: "meter", quantity: 1, serials: ["DELETE-SERIAL"] }],
       actor: "project-deletion-fixture", occurredAt: new Date().toISOString(), reason: "Fixture receipt" }];
+     after.fulfillmentBatches = [{ id: randomUUID(), name: "Deletion crew batch", mode: "crew",
+       sourceId: "warehouse", stagingId: "staging", vehicleId: "vehicle", status: "active", revision: 1,
+       createdBy: "fixture", createdAt: new Date().toISOString(),
+       workOrders: [{ workOrderId: 1, assignmentVersion: 0, label: `DELETE-${project.id}` }],
+       lines: [{ workOrderId: 1, itemId: "meter", quantity: 1, stagedQuantity: 0, deliveredQuantity: 0,
+         stagedSerials: [], deliveredSerials: [] }] }];
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -64,7 +75,22 @@ async function fixture(inventory: boolean | null = true) {
   const inventoryDirectory = path.join(root, `inventory-${project.id}`);
   await fs.mkdir(inventoryDirectory);
   await fs.writeFile(path.join(inventoryDirectory, "inspection.jpg"), "fixture photo evidence");
-  return { ...project, schema, directory, inventoryDirectory };
+   const exchangeDirectory = path.join(root, "Secure File Exchange", String(project.id));
+   const exchangeKey = `meterflo-exchange/${project.id}/${randomUUID()}.bin`;
+   await exchangeStore.put({ provider: "local", location: exchangeDirectory }, exchangeKey, Buffer.from("private project exchange"));
+   await pool.query(`INSERT INTO public.https_transfer_files
+     (id,project_id,direction,file_name,size,sha256,provider,location,storage_key,status)
+     VALUES($1,$2,'inbox','fixture.csv',24,'fixture','local',$3,$4,'received')`, [randomUUID(), project.id, exchangeDirectory, exchangeKey]);
+   const { rows: [config] } = await pool.query(`INSERT INTO public.external_database_configs
+     (project_id,name,database_type,host,port,database_name,username,password)
+     VALUES($1,'Deletion fixture','postgresql','invalid.test',5432,'fixture','fixture','synthetic-test-only') RETURNING id`, [project.id]);
+   const { rows: [importConfig] } = await pool.query(`INSERT INTO public.import_configs
+     (external_db_config_id,name,sql_query) VALUES($1,'Deletion fixture','SELECT 1') RETURNING id`, [config.id]);
+   const { rows: [history] } = await pool.query("INSERT INTO public.import_history(import_config_id,status) VALUES($1,'success') RETURNING id", [importConfig.id]);
+   await pool.query(`INSERT INTO meterflo_audit.operations
+     (id,actor_label,actor_kind,source,entity_type,entity_id,entity_label,project_id,outcome,instance_id)
+     VALUES($1,'Fixture','service','test','fixture',$2,$2,$3,'success','fixture')`, [randomUUID(), String(project.id), project.id]);
+   return { ...project, schema, directory, inventoryDirectory, exchangeDirectory, historyId: history.id };
 }
 async function assertGone(project: Awaited<ReturnType<typeof fixture>>) {
   assert.equal(await storage.getProject(project.id), undefined);
@@ -76,10 +102,12 @@ async function assertGone(project: Awaited<ReturnType<typeof fixture>>) {
     assert.equal((await pool.query(`SELECT 1 FROM public."${table}" WHERE project_id=$1 LIMIT 1`, [project.id])).rowCount, 0, table);
   }
   assert.equal((await pool.query("SELECT 1 FROM meterflo_audit.project_scopes WHERE project_id=$1", [project.id])).rowCount, 0);
-  assert.ok((await pool.query("SELECT 1 FROM meterflo_audit.events WHERE project_id=$1 AND entity_type='projects' AND action='deleted' LIMIT 1",
-    [project.id])).rowCount, "Security evidence of project deletion remains");
+   for (const table of ["events", "operations", "entity_scopes"])
+     assert.equal((await pool.query(`SELECT 1 FROM meterflo_audit.${table} WHERE project_id=$1 LIMIT 1`, [project.id])).rowCount, 0, table);
+   assert.equal((await pool.query("SELECT 1 FROM public.import_history WHERE id=$1", [project.historyId])).rowCount, 0);
   await assert.rejects(fs.stat(project.directory), { code: "ENOENT" });
   await assert.rejects(fs.stat(project.inventoryDirectory), { code: "ENOENT" });
+   await assert.rejects(fs.stat(project.exchangeDirectory), { code: "ENOENT" });
 }
 function failCommit(afterCommit: boolean): Pick<Pool, "connect"> {
   let fail = true;
@@ -175,6 +203,53 @@ try {
     assert.ok(await storage.getProject(project.id));
     assert.ok(await storage.getProject(untouched.id));
   });
+   await test("project-owned import history is deleted even if an upgraded database lacks its cascade", async () => {
+     const project = await fixture(null);
+     const { rows } = await pool.query(`SELECT conname FROM pg_constraint
+       WHERE conrelid='public.import_history'::regclass AND contype='f'`);
+     for (const row of rows) await pool.query(`ALTER TABLE public.import_history DROP CONSTRAINT "${row.conname.replace(/"/g, '""')}"`);
+     try { await deleteProjectCompletely(project.id, root); await assertGone(project); }
+     finally {
+       if (rows.length) await pool.query(`ALTER TABLE public.import_history ADD CONSTRAINT "${rows[0].conname.replace(/"/g, '""')}"
+         FOREIGN KEY(import_config_id) REFERENCES public.import_configs(id) ON DELETE CASCADE`);
+     }
+   });
+   await test("custom local exchange cleanup removes only the project's namespace", async () => {
+     const project = await fixture(null), custom = path.join(root, "custom-exchange");
+     const key = `meterflo-exchange/${project.id}/${randomUUID()}.bin`;
+     const other = `meterflo-exchange/${untouched.id}/${randomUUID()}.bin`;
+     await exchangeStore.put({ provider: "local", location: custom }, key, Buffer.from("owned"));
+     await exchangeStore.put({ provider: "local", location: custom }, other, Buffer.from("other"));
+     await pool.query("INSERT INTO public.https_transfer_settings(project_id,provider,location) VALUES($1,'local',$2)", [project.id, custom]);
+     await deleteProjectCompletely(project.id, root);
+     await assertGone(project);
+     await assert.rejects(fs.stat(path.join(custom, key)), { code: "ENOENT" });
+     assert.equal(await fs.readFile(path.join(custom, other), "utf8"), "other");
+   });
+   await test("cloud cleanup survives failure and retries only captured object keys, never a restored project's new objects", async () => {
+     const project = await fixture(null), key = `meterflo-exchange/${project.id}/${randomUUID()}.bin`;
+     const { rows: [original] } = await pool.query("SELECT row_to_json(p) snapshot FROM public.projects p WHERE id=$1", [project.id]);
+     await pool.query("INSERT INTO public.https_transfer_settings(project_id,provider,location) VALUES($1,'app_storage','fixture-bucket')", [project.id]);
+     const removed: string[] = [];
+     const exchange = { projectKeys: async () => [key], remove: async (_ref: unknown, object: string) => { removed.push(object); throw new Error("Injected cloud outage"); } };
+     await assert.rejects(deleteProjectCompletely(project.id, root, { exchangeStore: exchange }), ProjectDeletionCleanupPending);
+     const pending = (await pendingProjectFileCleanups(root)).find(row => row.projectId === project.id)!;
+     assert.ok(pending);
+     // The same numeric ID could belong to a restored project when cleanup retries.
+     await pool.query(`INSERT INTO public.projects OVERRIDING SYSTEM VALUE
+       SELECT * FROM json_populate_record(NULL::public.projects,$1::json)`, [JSON.stringify(original.snapshot)]);
+     const auditCount = (await pool.query("SELECT count(*)::int n FROM meterflo_audit.events WHERE project_id=$1", [project.id])).rows[0].n;
+     await retryProjectFileCleanup(pending.key, { exchangeStore: {
+       projectKeys: async () => { throw new Error("A retry must not enumerate new/restored objects."); },
+       remove: async (_ref, object) => { removed.push(object); },
+     } });
+     assert.deepEqual(removed, [key, key]);
+     assert.equal((await pool.query("SELECT count(*)::int n FROM meterflo_audit.events WHERE project_id=$1", [project.id])).rows[0].n, auditCount);
+   });
+   await test("unrelated projects and audit evidence remain protected by append-only controls", async () => {
+     assert.ok((await pool.query("SELECT 1 FROM meterflo_audit.events WHERE project_id=$1", [untouched.id])).rowCount);
+     await assert.rejects(pool.query("DELETE FROM meterflo_audit.events WHERE project_id=$1", [untouched.id]), /append-only/);
+   });
 } finally {
   for (const id of owned) if (await storage.getProject(id)) await deleteProjectCompletely(id, root);
   for (const pending of (await pendingProjectFileCleanups(root)).filter(row => owned.has(row.projectId)))

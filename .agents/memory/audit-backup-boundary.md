@@ -9,6 +9,12 @@ Treat a business backup as a data snapshot, not permission to roll back the inst
 
 **How to apply:** Review every new backup/restore mode for local-history preservation, portable database dependencies, and truthful initiation/outcome recording. Never infer the restoring operator from actor fields inside the uploaded snapshot or claim that external pgAdmin operations were audited.
 
+Clean configuration backups are intended for new, clean installations, not implicit factory resets.
+
+**Why:** The user clarified, “generally, a clean db backup and restore are for new clean installations.”
+
+**How to apply:** Keep source data/files/history untouched during backup creation. Exclude project data, logs and stale project cleanup journals from the clean archive. Do not interpret a clean-backup request as permission to erase an occupied destination; ordinary business restores still preserve local audit history.
+
 Do not equate an unsuccessful SQL restore with a fully rolled-back database. Keep file restoration gated on database success, and distinguish a successful database restore followed by file failures from a database failure.
 
 **Why:** PostgreSQL archive restores and their optional cleanup are not one cross-resource transaction. SQL failures can leave partial database changes, while later file failures cannot undo a successful database restore.

@@ -590,7 +590,8 @@ export default function Projects() {
             <AlertDialogDescription>
               Permanently delete this project and its work orders, inventory and inventory history
               (even when Inventory is disabled), routes, assignments, imports and files?
-              Shared users and site-wide catalogs are not deleted. System security audit evidence is retained.
+              This also removes this project's audit and import logs and Secure File Exchange content.
+              Shared users, site-wide catalogs and unrelated audit history are not deleted.
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

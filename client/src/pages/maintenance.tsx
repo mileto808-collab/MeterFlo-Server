@@ -707,8 +707,11 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
                         <li><strong>Configuration data:</strong> Roles, permissions, statuses, trouble codes, service types</li>
                         <li><strong>Users:</strong> Admin and file_import accounts only</li>
                         <li><strong>Disables:</strong> Cloudflare Turnstile (for easy login on fresh server)</li>
-                        <li>Does NOT include projects, work orders, or other users</li>
+                        <li>Does NOT include projects, work orders, project files, operational logs, audit history, or other users</li>
+                        <li>Project-specific codes and pending file-cleanup records are excluded</li>
+                        <li>Creating this backup does not delete anything from the source server</li>
                         <li><strong>Restore to:</strong> Empty database (no need to run migrations)</li>
+                        <li>Clean restore refuses destinations containing project data or project history; it is not a factory reset</li>
                       </ul>
                     )}
                     {backupType === "files" && (

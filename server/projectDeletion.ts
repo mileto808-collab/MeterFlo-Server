@@ -7,11 +7,15 @@ import { getProjectDirectoryName } from "./fileStorage";
 import { insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
 import { clearRelationalInventory } from "./inventoryRelational";
+import { exchangeStore } from "./file-transfers/https-storage";
+import { exchangeFolder, projectExchangeResources, purgeProjectAudit, validateProjectObjects,
+  type ProjectObject, type ExchangeCleanupStore } from "./projectDeletionResources";
 
 const prefix = "project_deletion_";
 const trash = ".meterflo-project-deletions";
 const tokenPattern = /^([1-9]\d*)-([a-f0-9-]{36})$/;
-type Cleanup = { projectId: number; projectName: string; root: string; token: string; restore?: boolean; folders?: string[] };
+type Cleanup = { projectId: number; projectName: string; root: string; token: string; restore?: boolean;
+  folders?: string[]; exchange?: boolean; objects?: ProjectObject[] };
 export type PendingProjectCleanup = { key: string; projectId: number; projectName: string; restore: boolean };
 export class ProjectDeletionCleanupPending extends Error {
   constructor() { super("Project records were deleted, but file cleanup is pending. Retry cleanup on the Projects page."); }
@@ -19,9 +23,10 @@ export class ProjectDeletionCleanupPending extends Error {
 type Dependencies = {
   database?: Pick<Pool, "connect">;
   files?: typeof fs;
+  exchangeStore?: ExchangeCleanupStore;
 };
 const keyFor = (job: Cleanup) => `${prefix}${job.token}`;
-const projectFolders = (id: number, name: string) => [getProjectDirectoryName(name, id), `inventory-${id}`];
+const projectFolders = (id: number, name: string) => [getProjectDirectoryName(name, id), `inventory-${id}`, `Secure File Exchange/${id}`];
 const stagedName = (index: number) => index === 0 ? "files" : `files-${index}`;
 const publicJob = (job: Cleanup): PendingProjectCleanup => ({
   key: keyFor(job), projectId: job.projectId, projectName: job.projectName, restore: !!job.restore,
@@ -32,10 +37,12 @@ function checkedJob(value: string): Cleanup {
       typeof job.root !== "string" || !path.isAbsolute(job.root) ||
       !tokenPattern.test(job.token) || Number(job.token.split("-")[0]) !== job.projectId)
     throw new Error("Invalid project file-cleanup record; no files were removed.");
-  if (job.folders !== undefined && (!Array.isArray(job.folders) || !job.folders.length ||
-      job.folders.length > 2 || new Set(job.folders).size !== job.folders.length ||
-      job.folders.some(folder => !projectFolders(job.projectId, job.projectName).includes(folder))))
+   if (job.folders !== undefined && (!Array.isArray(job.folders) || (!job.folders.length && !job.objects?.length) ||
+      job.folders.length > 4 || new Set(job.folders).size !== job.folders.length ||
+      job.folders.some(folder => ![...projectFolders(job.projectId, job.projectName), exchangeFolder(job.projectId)].includes(folder))))
     throw new Error("Invalid project folder scope; no files were removed.");
+  if (job.objects !== undefined && !validateProjectObjects(job.objects, job.projectId))
+    throw new Error("Invalid project object scope; no files were removed.");
   return job;
 }
 async function putJob(client: PoolClient, job: Cleanup) {
@@ -86,6 +93,7 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
     await lock(client, id);
     const { rows: [project] } = await client.query("SELECT id,name,database_name FROM public.projects WHERE id=$1 FOR UPDATE", [id]);
     if (!project) { await client.query("ROLLBACK"); return false; }
+    const resources = await projectExchangeResources(client, id, filesRoot, dependencies.exchangeStore);
     // Same lock order as inventory enablement/commands; wait for current writers.
     await client.query("SELECT project_id FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [id]);
     const schema = project.database_name as string | null;
@@ -101,6 +109,10 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
     // The root intentionally has ON DELETE RESTRICT; only explicit project
     // deletion is allowed to remove the complete graph and then this root.
     await client.query("DELETE FROM public.inventory_state WHERE project_id=$1", [id]);
+    // Be explicit for upgraded/restored databases whose historical import FK is
+    // missing. Delete while parent scope still exists, so capture remains scoped.
+    await client.query(`DELETE FROM public.import_history h USING public.import_configs c,public.external_database_configs d
+      WHERE h.import_config_id=c.id AND c.external_db_config_id=d.id AND d.project_id=$1`, [id]);
     if (schema) await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     if (auditingEnabled) {
       if (schema) await insertAuditEvent(client, { action: "schema.deleted", entityType: "projectSchema", entityId: String(id),
@@ -112,19 +124,30 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
     await client.query("DELETE FROM public.projects WHERE id=$1", [id]);
     const { rows: [ftpSetting] } = await client.query("SELECT value FROM public.system_settings WHERE key='ftp_files_path'");
     const roots = [...new Set([path.resolve(filesRoot), path.resolve(ftpSetting?.value?.trim() || filesRoot)])];
-    for (const root of roots) {
+    for (const root of [...new Set([...roots, ...resources.local])]) {
     const folders: string[] = [];
-    for (const folder of root === path.resolve(filesRoot) ? projectFolders(id, project.name) : [getProjectDirectoryName(project.name, id)]) {
+    const exchange = resources.local.includes(root) && !roots.includes(root);
+    const candidates = [...(root === path.resolve(filesRoot) ? projectFolders(id, project.name) :
+      roots.includes(root) ? [getProjectDirectoryName(project.name, id)] : []),
+      ...(resources.local.includes(root) ? [exchangeFolder(id)] : [])];
+    for (const folder of candidates) {
+      // A namespace's parent must not redirect deletion through a symlink.
+      if (folder.includes("/")) {
+        const parent = await exists(files, path.dirname(path.join(root, folder)));
+        if (parent?.isSymbolicLink()) throw new Error("Project exchange parent is unsafe; deletion was cancelled.");
+      }
       const stat = await exists(files, path.join(root, folder));
       if (!stat) continue;
       if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("Project directory is not a regular directory; deletion was cancelled.");
       folders.push(folder);
     }
-    if (folders.length) {
+    const objects = root === path.resolve(filesRoot) ? resources.objects : [];
+    if (folders.length || objects.length) {
       const parent = await exists(files, path.join(root, trash));
       if (parent && (parent.isSymbolicLink() || !parent.isDirectory()))
         throw new Error("Project cleanup directory is unsafe; deletion was cancelled.");
-      const staged: Cleanup = { projectId: id, projectName: project.name, root, token: `${id}-${randomUUID()}`, folders };
+      const staged: Cleanup = { projectId: id, projectName: project.name, root, token: `${id}-${randomUUID()}`,
+        folders, ...(exchange ? { exchange: true } : {}), ...(objects.length ? { objects } : {}) };
       stagedJobs.push(staged);
       const directory = path.join(root, trash, staged.token);
       await files.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -135,6 +158,7 @@ export async function deleteProjectCompletely(id: number, filesRoot: string, dep
       await putJob(client, staged);
     }
     }
+    if (auditingEnabled) await purgeProjectAudit(client, id);
     await client.query("COMMIT");
     committed = true;
   } catch (error) {
@@ -187,9 +211,16 @@ export async function retryProjectFileCleanup(key: string, dependencies: Depende
       if (!rows.length) throw new Error("File recovery requires an existing project; no files were removed.");
       await restoreFiles(files, job);
     } else {
+      for (const object of job.objects ?? []) await (dependencies.exchangeStore ?? exchangeStore).remove(object, object.key);
       await files.rm(path.join(job.root, trash, job.token), { recursive: true, force: true });
     }
     await client.query("DELETE FROM public.system_settings WHERE key=$1", [key]);
+    // Only the old journal's events: a portable restore can reuse the project ID.
+    if (auditingEnabled) {
+      await client.query("SELECT set_config('meterflo.audit_retention','authorized',true)");
+      await client.query("DELETE FROM meterflo_audit.events WHERE entity_type='system_settings' AND entity_id=$1", [key]);
+      await client.query("SELECT set_config('meterflo.audit_retention','',true)");
+    }
     await client.query("COMMIT");
     return true;
   } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
@@ -202,9 +233,15 @@ export async function pendingProjectFileCleanups(filesRoot: string, dependencies
   const database = dependencies.database ?? pool, files = dependencies.files ?? fs;
   const settingsClient = await database.connect();
   let ftpRoot: string | undefined;
-  try { ftpRoot = (await settingsClient.query("SELECT value FROM public.system_settings WHERE key='ftp_files_path'")).rows[0]?.value; }
+  let exchangeRoots: string[] = [];
+  try {
+    ftpRoot = (await settingsClient.query("SELECT value FROM public.system_settings WHERE key='ftp_files_path'")).rows[0]?.value;
+    exchangeRoots = (await settingsClient.query(`SELECT location FROM public.https_transfer_settings WHERE provider='local'
+      UNION SELECT location FROM public.https_transfer_files WHERE provider='local'`)).rows.map(row => row.location);
+  }
   finally { settingsClient.release(); }
-  for (const root of new Set([path.resolve(filesRoot), path.resolve(ftpRoot?.trim() || filesRoot)])) {
+  for (const root of new Set([path.resolve(filesRoot), path.resolve(ftpRoot?.trim() || filesRoot),
+    ...exchangeRoots.filter(root => typeof root === "string" && path.isAbsolute(root))])) {
   await safeCleanupDirectory(files, root);
   let entries: string[] = [];
   try { entries = await files.readdir(path.join(root, trash)); }

@@ -157,6 +157,10 @@ function ScheduleEditor({
               <select id="backup-type" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={backupType} onChange={event => setBackupType(event.target.value as BackupScheduleInput["backupType"])}>
                 {backupTypes.map(type => <option key={type} value={type}>{backupTypeLabels[type]}</option>)}
               </select>
+              {backupType === "clean" && <p className="text-xs text-muted-foreground">
+                For fresh installations. Includes base configuration and system accounts, not project data, files, logs or audit history.
+                Creating a backup does not delete source data.
+              </p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="backup-frequency">Frequency</Label>
