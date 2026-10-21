@@ -14,3 +14,9 @@ Opening Fulfill / Stage Work Orders must always show its main workflow choices, 
 **Why:** The user wants a predictable entry screen rather than being taken automatically to the last fulfillment screen. This requirement applies to the Fulfill / Stage task button, not a change to Start Inventory.
 
 **How to apply:** Keep saved inputs and exact pending-operation identities intact behind the start screen. Confirm before replacing unrecorded inputs, and prevent a new workflow from bypassing an unresolved operation.
+
+Each fulfillment wizard step must bring the next required control into view, focus it, and clearly highlight it; completion must bring its confirmation into view.
+
+**Why:** Retaining the previous step's scroll position left phone users looking at the release-remainder section instead of the vehicle-handoff inputs.
+
+**How to apply:** Apply this on forward/back navigation, resumed steps and movement outcomes, not on ordinary typing or background refreshes. Keep focus within the active dialog and account for the device keyboard without replacing saved captures.

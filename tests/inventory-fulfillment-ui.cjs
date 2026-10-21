@@ -102,6 +102,7 @@ const assert = require("node:assert/strict");
         }
         await continueSaved.click();
       } else {
+        await expect(home.getByRole("button", { name: /New crew batch/ })).toBeFocused();
         await fs.mkdir("generated-artifacts/inventory-fulfillment", { recursive: true });
         for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
           await page.setViewportSize(viewport);
@@ -206,6 +207,8 @@ const assert = require("node:assert/strict");
     await dialog.getByRole("button", { name: "Resume saved batch", exact: false }).click();
     await dialog.getByRole("button", { name: "Resume batch", exact: true }).click();
     await expect(dialog.getByText("Scan stock as it is pulled")).toBeVisible();
+    await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toBeFocused();
+    await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toHaveAttribute("data-wizard-focus-target", "true");
     const checkDuplicateScans = async (phase) => {
       const input = dialog.getByTestId(`fulfillment-custody-serials-${phase}-fulfill-meter`);
       const quantity = dialog.getByTestId(`fulfillment-move-quantity-${phase}-fulfill-meter`);
@@ -358,9 +361,20 @@ const assert = require("node:assert/strict");
     const handoff = { id: batchId, revision: current.revision, phase: "vehicle",
       lines: [{ itemId: "fulfill-meter", quantity: 2, serials: ["F-B", "F-A"] }],
       reason: "Physically counted and handed to the crew vehicle", physicallyConfirmed: true };
+    await page.setViewportSize({ width: 390, height: 844 });
+    const stepBody = dialog.getByTestId("fulfillment-step-body");
+    await stepBody.evaluate(element => { element.scrollTop = element.scrollHeight; });
     await dialog.getByRole("button", { name: "Continue to vehicle handoff", exact: true }).click();
     const handoffQuantity = dialog.getByTestId("fulfillment-move-quantity-vehicle-fulfill-meter");
     const handoffSerials = dialog.getByTestId("fulfillment-custody-serials-vehicle-fulfill-meter");
+    await expect(handoffQuantity).toBeFocused();
+    await expect(handoffQuantity).toHaveAttribute("data-wizard-focus-target", "true");
+    await expect.poll(async () => {
+      const input = await handoffQuantity.boundingBox();
+      const body = await stepBody.boundingBox();
+      return !!input && !!body && input.y >= body.y && input.y + input.height <= body.y + body.height;
+    }).toBe(true);
+    await page.screenshot({ path: "generated-artifacts/inventory-fulfillment/handoff-step-focus-390.png" });
     await checkDuplicateScans("vehicle");
     const acceptSerials = dialog.getByTestId("fulfillment-accept-staged-fulfill-meter");
     const picker = dialog.getByTestId("fulfillment-serial-picker-fulfill-meter");
@@ -507,6 +521,8 @@ const assert = require("node:assert/strict");
     assert.deepEqual(actualHandoff.data.lines, [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-A"] }]);
     handoffId = actualHandoff.operationId;
     await expect(dialog.getByText("Vehicle handoff complete", { exact: true })).toBeVisible();
+    await expect(dialog.locator("[data-wizard-complete]")).toBeFocused();
+    await expect(dialog.locator("[data-wizard-complete]")).toHaveAttribute("data-wizard-focus-target", "true");
     await expect(dialog.getByRole("button", { name: "Record vehicle handoff", exact: true })).toHaveCount(0);
     const combinedButton = dialog.getByRole("button", { name: "Print combined receipt", exact: true });
     await expect(combinedButton).toHaveCount(1);
@@ -556,6 +572,8 @@ const assert = require("node:assert/strict");
       await page.getByRole("option", { name: new RegExp(option) }).click();
     }
     await dialog.getByRole("button", { name: "Review batch", exact: true }).click();
+    await expect(dialog.locator("[data-wizard-review]")).toBeFocused();
+    await expect(dialog.locator("[data-wizard-review]")).toHaveAttribute("data-wizard-focus-target", "true");
     await dialog.getByRole("button", { name: "Create saved batch", exact: true }).click();
     await expect(dialog.getByText("Scan stock as it is pulled", { exact: true })).toBeVisible();
     discovery = await request("GET", `${inventory}/fulfillment`);

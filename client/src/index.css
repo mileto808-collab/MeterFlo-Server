@@ -70,6 +70,12 @@
 @tailwind components;
 @tailwind utilities;
 
+[data-wizard-focus-target="true"] {
+  outline: 3px solid hsl(var(--primary));
+  outline-offset: 3px;
+  border-radius: var(--radius);
+}
+
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0,0,0, .10);

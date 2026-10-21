@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useWizardStepFocus } from "@/hooks/useWizardStepFocus";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
@@ -81,6 +82,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [editingSerialKey, setEditingSerialKey] = useState<string | null>(null);
   const [showStart, setShowStart] = useState(true);
   const [requestedMode, setRequestedMode] = useState<Draft["mode"] | null>(null);
+  const wizardRef = useRef<HTMLDivElement>(null);
+  const stepBodyRef = useRef<HTMLDivElement>(null);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
@@ -591,12 +594,42 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     update({ step: "vehicle", quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false });
   };
 
+  useWizardStepFocus({
+    open,
+    ready: storageReady && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff && requestedMode === null,
+    stepKey: `${showStart ? "start" : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
+    rootRef: wizardRef,
+    bodyRef: stepBodyRef,
+    chooseTarget: root => {
+      const find = (...selectors: string[]) => {
+        for (const selector of selectors) {
+          const target = [...root.querySelectorAll<HTMLElement>(selector)].find(element =>
+            !element.matches(":disabled, [aria-disabled=true]") && element.getClientRects().length > 0);
+          if (target) return target;
+        }
+        return null;
+      };
+      if (showStart) return find('[data-wizard-continue]', '[data-testid="fulfillment-start-screen"] button');
+      if (draft.pending || draft.createAttempt) return find('[data-wizard-pending]', '[data-wizard-title]');
+      if (draft.step === "review") return find('[data-wizard-review]');
+      if (draft.step === "orders") return draft.mode === "resume"
+        ? find('[data-wizard-saved-batches]')
+        : find(!draft.selectedIds.length ? "#fulfillment-search" : !draft.name.trim() ? "#batch-name" : !draft.sourceId ? "#batch-source" : !draft.stagingId ? "#batch-staging" : !draft.vehicleId ? "#batch-vehicle" : "#fulfillment-search");
+      if (activeBatch && activeBatch.status !== "active") return find('[data-wizard-complete]');
+      if (draft.step === "stage" && stagingComplete && !hasUnrecordedMove) return find('[data-wizard-handoff]', "#fulfillment-staging-complete");
+      return find('[data-wizard-needs-input="true"]',
+        ...(draft.reason.trim().length < 10 ? ["#fulfillment-reason"] : []),
+        ...(!draft.physicallyConfirmed ? ["#fulfillment-physical-confirmation"] : []),
+        '[data-wizard-record]', '[data-wizard-title]');
+    },
+  });
+
   return <><Dialog open={open} onOpenChange={close}>
-    <DialogContent className="!fixed !left-1/2 !top-2 !translate-x-[-50%] !translate-y-0 !flex !h-auto !max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-4xl !min-w-0 flex-col gap-0 overflow-hidden p-0 sm:rounded-xl" onInteractOutside={event => { if (busy) event.preventDefault(); }}>
+    <DialogContent ref={wizardRef} className="!fixed !left-1/2 !top-2 !translate-x-[-50%] !translate-y-0 !flex !h-auto !max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-4xl !min-w-0 flex-col gap-0 overflow-hidden p-0 sm:rounded-xl" onInteractOutside={event => { if (busy) event.preventDefault(); }}>
       <div className="min-w-0 shrink-0 border-b bg-muted/35 px-4 py-3 pr-12 sm:px-6 sm:py-4">
         <DialogHeader className="min-w-0 text-left">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><ClipboardList className="h-4 w-4" /> Inventory workflow</div>
-          <DialogTitle className="mt-1 text-xl sm:text-2xl">Fulfill / Stage Work Orders</DialogTitle>
+          <DialogTitle data-wizard-title tabIndex={-1} className="mt-1 text-xl sm:text-2xl">Fulfill / Stage Work Orders</DialogTitle>
           <DialogDescription>Build one saved crew batch, move only what is physically in custody, then hand it to one vehicle.</DialogDescription>
         </DialogHeader>
         {!showStart && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
@@ -606,16 +639,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           </div>)}
         </div>}
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+      <div ref={stepBodyRef} data-testid="fulfillment-step-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
         {error && <Alert variant="destructive" className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Workflow needs attention</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
-        {draft.pending && <Alert className="mb-4 border-amber-500/50 bg-amber-500/5">
+        {draft.pending && <Alert data-wizard-pending tabIndex={-1} className="mb-4 border-amber-500/50 bg-amber-500/5">
           <AlertTriangle className="h-4 w-4" /><AlertTitle>{busy ? "Checking saved movement" : "Movement outcome needs confirmation"}</AlertTitle>
           <AlertDescription className="space-y-2"><span>The exact operation ID and payload are retained. Do not make another physical move until a matching receipt is found or this command is retried.</span>
             <span className="block break-all font-mono text-xs">{draft.pending.operationId}</span>
             <Button type="button" size="sm" variant="outline" disabled={busy || !canPost} onClick={() => void sendPending()}><RotateCcw className="mr-2 h-4 w-4" />Check receipt / retry same command</Button>
           </AlertDescription>
         </Alert>}
-        {draft.createAttempt && <Alert className="mb-4 border-amber-500/50 bg-amber-500/5">
+        {draft.createAttempt && <Alert data-wizard-pending tabIndex={-1} className="mb-4 border-amber-500/50 bg-amber-500/5">
           <AlertTriangle className="h-4 w-4" /><AlertTitle>Batch creation outcome needs confirmation</AlertTitle>
           <AlertDescription>The saved batch identity is retained. Retry the same command before creating another batch. <span className="block break-all font-mono text-xs">{draft.createAttempt.operationId}</span></AlertDescription>
         </Alert>}
@@ -643,7 +676,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               <p className="text-sm text-muted-foreground">Start a crew batch, prepare scheduled work, or open saved batches.</p></div>
             {hasSavedProgress && <div className="rounded-lg border bg-muted/30 p-4">
               <p className="mb-3 text-sm text-muted-foreground">Your previous workflow inputs are saved. Continue when you are ready to return to them.</p>
-              <Button type="button" disabled={busy} onClick={() => setShowStart(false)}><RotateCcw className="mr-2 h-4 w-4" />Continue saved workflow</Button>
+              <Button data-wizard-continue type="button" disabled={busy} onClick={() => setShowStart(false)}><RotateCcw className="mr-2 h-4 w-4" />Continue saved workflow</Button>
             </div>}
             <div className="grid gap-3 sm:grid-cols-3">
               {([
@@ -766,7 +799,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               </div>
             </>}
             {draft.mode === "resume" && <div className="space-y-3">
-              <div><h3 className="text-lg font-semibold">Saved fulfillment batches</h3><p className="text-sm text-muted-foreground">Resume the existing custody record; no work order is claimed or reassigned.</p></div>
+              <div><h3 data-wizard-saved-batches tabIndex={-1} className="text-lg font-semibold">Saved fulfillment batches</h3><p className="text-sm text-muted-foreground">Resume the existing custody record; no work order is claimed or reassigned.</p></div>
               {(fulfillment.data?.batches ?? []).length ? fulfillment.data!.batches.map(batch => <div key={batch.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
                 <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium">{batch.name}<Badge variant={batch.status === "completed" ? "secondary" : "outline"}>{batch.status}</Badge></div>
                   <p className="mt-1 text-xs text-muted-foreground">{batch.workOrders.length} work orders · {batch.mode} · {batch.createdAt ? new Date(batch.createdAt).toLocaleString() : ""}</p>
@@ -780,7 +813,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
             </div>}
           </div>}
           {draft.step === "review" && <div className="space-y-5">
-            <div><Badge variant="outline">Review before creating</Badge><h3 className="mt-2 text-xl font-semibold">{draft.name || "Unnamed batch"}</h3><p className="text-sm text-muted-foreground">{selectedOrders.length} selected work orders · {draft.mode === "scheduled" ? "scheduled installer work" : "crew batch"}</p></div>
+            <div><Badge variant="outline">Review before creating</Badge><h3 data-wizard-review tabIndex={-1} className="mt-2 text-xl font-semibold">{draft.name || "Unnamed batch"}</h3><p className="text-sm text-muted-foreground">{selectedOrders.length} selected work orders · {draft.mode === "scheduled" ? "scheduled installer work" : "crew batch"}</p></div>
             <div className="grid gap-3 sm:grid-cols-3">
               {[["Source", draft.sourceId], ["Staging", draft.stagingId], ["Vehicle", draft.vehicleId]].map(([label, id]) => <div key={label} className="rounded-lg border p-3"><p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 font-medium">{warehouses.find(location => location.id === id)?.name ?? "Not selected"}</p></div>)}
             </div>
@@ -795,7 +828,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               activeBatch.status !== "active" ? <div className="space-y-4 rounded-xl border bg-muted/20 p-5 text-center sm:p-8">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><Check className="h-6 w-6" /></div>
                 <Badge variant="secondary">{activeBatch.status}</Badge>
-                <h3 className="text-xl font-semibold">{activeBatch.status === "completed" ? "Vehicle handoff complete" : "Batch closed"}</h3>
+                <h3 data-wizard-complete tabIndex={-1} className="text-xl font-semibold">{activeBatch.status === "completed" ? "Vehicle handoff complete" : "Batch closed"}</h3>
                 <p className="mx-auto max-w-lg text-sm text-muted-foreground">{activeBatch.status === "completed"
                   ? "All physical demand was handed to the batch vehicle. The work orders were not reassigned."
                   : "Unfinished quantities were released. Staged-but-undelivered stock remains physically at Staging; this was not a physical return. Delivered stock remains with the vehicle."}</p>
@@ -852,7 +885,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{row.item?.name}</p><p className="text-xs text-muted-foreground">{row.item?.sku} · {row.item?.unit ?? "units"}</p></div>
                       <div className="text-right text-xs"><span className="block text-muted-foreground">Remaining to {draft.step === "stage" ? "stage" : "handoff"}</span><strong className="font-mono text-base">{remaining}</strong><span className="ml-1">{row.item?.unit ?? "units"}</span></div></div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
-                      <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "quantities")} placeholder="0" /></div>
+                      <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-wizard-needs-input={!scanTarget || enteredQuantity > moveLimit ? "true" : undefined} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "quantities")} placeholder="0" /></div>
                       {row.item?.tracking === "serialized" && <div className="space-y-1">
                         <Label htmlFor={`serial-${key}`}>Custody serials</Label>
                         <div data-testid={`fulfillment-scan-progress-${draft.step}-${row.itemId}`} className={`rounded-md border p-2 ${scanComplete ? "border-green-600/50 bg-green-500/10" : "bg-muted/30"}`}>
@@ -868,7 +901,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                           </p>
                         </div>
                         <p id={`scan-notice-${key}`} role="status" aria-live="polite" className="text-sm text-destructive">{scanNotices[key] ?? ""}</p>
-                        <Textarea id={`serial-${key}`} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}
+                        <Textarea id={`serial-${key}`} data-wizard-needs-input={scanTarget > 0 && !scanComplete ? "true" : undefined} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}
                           onChange={event => scanSerials(key, event.target.value)}
                           onBlur={() => setEditingSerialKey(current => current === key ? null : current)}
                           onKeyDown={event => {
@@ -923,7 +956,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               </div>
               <div className="space-y-1"><Label htmlFor="fulfillment-reason">Physical move reason</Label><Input id="fulfillment-reason" maxLength={500} disabled={pendingLock || !canPost} value={draft.reason} onChange={event => update({ reason: event.target.value })} placeholder="Describe the physical pull or handoff" /><p className="text-xs text-muted-foreground">At least 10 characters. Do not record a planned or future movement.</p></div>
               <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-muted/20 p-3">
-                <Checkbox checked={draft.physicallyConfirmed} disabled={pendingLock || !canPost} onCheckedChange={checked => update({ physicallyConfirmed: checked === true })} />
+                <Checkbox id="fulfillment-physical-confirmation" checked={draft.physicallyConfirmed} disabled={pendingLock || !canPost} onCheckedChange={checked => update({ physicallyConfirmed: checked === true })} />
                 <span><span className="text-sm font-medium">I confirm the listed stock has physically moved</span><span className="mt-1 block text-xs text-muted-foreground">Only actual quantities in physical custody can be recorded. This does not assign installed serials.</span></span>
               </label>
               </>}
@@ -953,10 +986,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           {!showStart && <>
           {draft.step === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") && <Button type="button" disabled={!canCreate || busy || !storageReady || !stagingLocations.length} onClick={() => update({ step: "review" })}>Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create saved batch"}</Button>}
-          {draft.step === "stage" && stagingComplete && hasStagedStock && <Button type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>
+          {draft.step === "stage" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>
             <Truck className="mr-2 h-4 w-4" />Continue to vehicle handoff
           </Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && !(draft.step === "stage" && stagingComplete) && <Button type="button" disabled={!canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
+          {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && !(draft.step === "stage" && stagingComplete) && <Button data-wizard-record type="button" disabled={!canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : draft.step === "stage" ? <ArrowRight className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}
           </Button>}
