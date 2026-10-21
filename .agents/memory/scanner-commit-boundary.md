@@ -14,3 +14,9 @@ Input-processing guards must agree with whether the scan field is visibly enable
 **Why:** A completed stock post can unlock its field before background query refresh finishes. A separate busy guard silently dropped scans during that interval despite the field accepting focus.
 
 **How to apply:** Keep uncertain-outcome and permission locks intact, but do not silently reject input in an enabled scan field merely because background refresh is still finishing.
+
+Reducing a move quantity must not automatically delete already captured serials to fit the new quantity.
+
+**Why:** Scans are evidence of physical units being handled; workers must choose which entries to remove rather than having the software silently discard them.
+
+**How to apply:** Cap new scans at the requested quantity, but preserve existing captures when that quantity is reduced. Show the excess count and require an explicit correction before posting the move.

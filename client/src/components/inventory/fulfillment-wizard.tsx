@@ -78,6 +78,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [confirmHandoff, setConfirmHandoff] = useState(false);
   const [serialSearch, setSerialSearch] = useState<Record<string, string>>({});
   const [scanNotices, setScanNotices] = useState<Record<string, string>>({});
+  const [editingSerialKey, setEditingSerialKey] = useState<string | null>(null);
   const [showStart, setShowStart] = useState(true);
   const [requestedMode, setRequestedMode] = useState<Draft["mode"] | null>(null);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
@@ -161,6 +162,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setShowStart(true);
     setRequestedMode(null);
     setScanNotices({});
+    setEditingSerialKey(null);
     setStorageReady(false);
     try {
       const saved = window.localStorage.getItem(storageKey);
@@ -501,20 +503,35 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       ? draft.selectedIds.filter(value => value !== id) : [...draft.selectedIds, id]);
     setSelectionNotice("");
   };
-  const setLineValue = (key: string, value: string, field: "quantities" | "serialText") => update({ [field]: { ...draft[field], [key]: value } });
+  const setLineValue = (key: string, value: string, field: "quantities" | "serialText") => {
+    update({ [field]: { ...draft[field], [key]: value } });
+    if (field === "quantities") setScanNotices(current => ({ ...current, [key]: "" }));
+  };
   const scanSerials = (key: string, text: string, commitLast = false) => {
     if (pendingLock || createLock || !canPost) return;
+    const quantity = Number(draft.quantities[key] ?? 0);
+    const target = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 0;
+    const previousText = draft.serialText[key] ?? "";
+    // Reducing the quantity must not silently discard serials already captured.
+    if (new Set(splitSerials(previousText)).size > target && new Set(splitSerials(text)).size > target) {
+      if (text.length <= previousText.length) setLineValue(key, text, "serialText");
+      setScanNotices(current => ({ ...current, [key]: "Remove extra serials or increase the move quantity before scanning more." }));
+      return;
+    }
     const recorded = batchDemand.flatMap(row => draft.step === "stage" ? row.serials : row.deliveredSerials);
     const otherLines = Object.entries(draft.serialText)
       .filter(([other]) => other !== key && other.startsWith(`${draft.step}:`))
       .flatMap(([, value]) => splitSerials(value));
-    const result = acceptFulfillmentScans(text, [...recorded, ...otherLines], commitLast);
+    const result = acceptFulfillmentScans(text, [...recorded, ...otherLines], commitLast, target);
     setLineValue(key, result.text, "serialText");
+    setEditingSerialKey(!commitLast && result.text.split(/[\r\n,;\t]/).at(-1)?.trim() ? key : null);
     setScanNotices(current => ({
       ...current,
       [key]: result.rejected.length
         ? `Already scanned or recorded in this batch: ${result.rejected.slice(0, 3).join(", ")}${result.rejected.length > 3 ? ` (+${result.rejected.length - 3} more)` : ""}. Duplicate entries were not added.`
-        : "",
+        : result.excess
+          ? target ? "Required scan count reached. Extra serials were not added." : "Set a positive whole move quantity before scanning."
+          : "",
     }));
   };
   const availableStagedSerials = (row: typeof batchDemand[number]) =>
@@ -540,6 +557,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       return;
     }
     setError("");
+    setEditingSerialKey(null);
+    setScanNotices(current => ({ ...current, [key]: "" }));
     update({
       serialText: { ...draft.serialText, [key]: serials.join("\n") },
       quantities: { ...draft.quantities, [key]: String(serials.length) },
@@ -821,6 +840,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                   const key = quantityKey(draft.step, row.itemId);
                   const availableSerials = availableStagedSerials(row);
                   const capturedSerials = new Set(splitSerials(draft.serialText[key] ?? ""));
+                  const enteredQuantity = Number(draft.quantities[key] ?? 0);
+                  const scanTarget = Number.isSafeInteger(enteredQuantity) && enteredQuantity > 0 ? enteredQuantity : 0;
+                  const scanText = draft.serialText[key] ?? "";
+                  const scannedCount = new Set(splitSerials(editingSerialKey === key ? scanText.replace(/[^\r\n,;\t]*$/, "") : scanText)).size;
+                  const scanComplete = scanTarget > 0 && scannedCount === scanTarget && capturedSerials.size === scanTarget;
+                  const tooManyScans = capturedSerials.size > scanTarget;
                   const matchingSerials = availableSerials.filter(serial => serial.toLowerCase().includes((serialSearch[row.itemId] ?? "").trim().toLowerCase()));
                   const serialSelectionLocked = busy || pendingLock || createLock || !canPost || !batchCanReleaseRemainder;
                   return <div key={row.itemId} className="rounded-lg border p-3 sm:p-4">
@@ -830,9 +855,22 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                       <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "quantities")} placeholder="0" /></div>
                       {row.item?.tracking === "serialized" && <div className="space-y-1">
                         <Label htmlFor={`serial-${key}`}>Custody serials</Label>
+                        <div data-testid={`fulfillment-scan-progress-${draft.step}-${row.itemId}`} className={`rounded-md border p-2 ${scanComplete ? "border-green-600/50 bg-green-500/10" : "bg-muted/30"}`}>
+                          <div className="flex flex-wrap justify-between gap-2 text-sm font-medium">
+                            <span>Scanned {scannedCount} / {scanTarget}</span>
+                            <span>{tooManyScans ? `${capturedSerials.size - scanTarget} extra` : `${Math.max(0, scanTarget - scannedCount)} left to scan`}</span>
+                          </div>
+                          <progress aria-label={`${row.item?.name ?? row.itemId} custody scan progress`} className="mt-1 h-2 w-full accent-primary" max={Math.max(1, scanTarget)} value={Math.min(scannedCount, scanTarget)} />
+                          <p role="status" aria-live="polite" className={`min-h-10 text-xs ${tooManyScans ? "text-destructive" : scanComplete ? "font-semibold text-green-700 dark:text-green-400" : "text-muted-foreground"}`}>
+                            {tooManyScans ? "Remove extra serials or increase the move quantity. Your captured serials have been kept."
+                              : scanComplete ? "Scanning complete — all required serials captured."
+                              : scanTarget ? "Scan the next barcode, then press Enter or Tab." : "Set a positive whole move quantity before scanning."}
+                          </p>
+                        </div>
                         <p id={`scan-notice-${key}`} role="status" aria-live="polite" className="text-sm text-destructive">{scanNotices[key] ?? ""}</p>
                         <Textarea id={`serial-${key}`} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}
                           onChange={event => scanSerials(key, event.target.value)}
+                          onBlur={() => setEditingSerialKey(current => current === key ? null : current)}
                           onKeyDown={event => {
                             const text = event.currentTarget.value;
                             if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && text.split(/[\r\n,;\t]/).at(-1)?.trim())) {
