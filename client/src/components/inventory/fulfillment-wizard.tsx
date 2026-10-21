@@ -72,6 +72,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selectionNotice, setSelectionNotice] = useState("");
+  const [showUnavailable, setShowUnavailable] = useState(false);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
@@ -161,6 +162,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setStorageReady(true);
   }, [storageKey, open]);
   useEffect(() => {
+    if (open) setShowUnavailable(false);
+  }, [open]);
+  useEffect(() => {
     if (!storageKey || !storageReady) return;
     try { window.localStorage.setItem(storageKey, JSON.stringify(draft)); }
     catch { setError("Browser storage is unavailable. Physical moves stay disabled until their exact retry identity can be saved."); }
@@ -248,6 +252,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
         ? "A scheduled batch can contain work for one assigned installer only." : "")
       : "";
   const isOrderSelectable = (order: FulfillmentOrder) => order.eligible && order.missing.length === 0 && order.lines.length > 0;
+  const unavailableMatchingOrders = filteredOrders.filter(order => !isOrderSelectable(order));
+  const visibleOrders = showUnavailable ? filteredOrders : filteredOrders.filter(isOrderSelectable);
   const eligibleMatchingOrders = filteredOrders.filter(isOrderSelectable);
   const eligibleMatchingIds = new Set(eligibleMatchingOrders.map(order => order.workOrderId));
   const selectedMatchingCount = eligibleMatchingOrders.filter(order => draft.selectedIds.includes(order.workOrderId)).length;
@@ -564,6 +570,20 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                 <div className="space-y-1"><Label htmlFor="fulfillment-installer">Installer</Label><Select value={draft.installer || "all"} onValueChange={value => update({ installer: value === "all" ? "" : value })}><SelectTrigger id="fulfillment-installer"><SelectValue placeholder="Any installer" /></SelectTrigger><SelectContent><SelectItem value="all">Any installer</SelectItem>{[...new Map(orders.filter(order => order.installerId).map(order => [order.installerId!, order.installer])).entries()].map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select></div>
                 {draft.mode === "scheduled" && <div className="space-y-1"><Label htmlFor="fulfillment-date">Scheduled date</Label><Input id="fulfillment-date" type="date" value={draft.date} onChange={event => update({ date: event.target.value })} /></div>}
               </div>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/10 px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Checkbox
+                    id="fulfillment-show-unavailable"
+                    data-testid="fulfillment-show-unavailable"
+                    checked={showUnavailable}
+                    onCheckedChange={checked => setShowUnavailable(checked === true)}
+                  />
+                  <Label htmlFor="fulfillment-show-unavailable" className="cursor-pointer text-sm">Show unavailable work orders</Label>
+                </div>
+                <Badge variant="secondary" aria-label={`${unavailableMatchingOrders.length} unavailable work orders matching current filters`}>
+                  {unavailableMatchingOrders.length} unavailable
+                </Badge>
+              </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/70 p-3">
                 <label className="flex min-w-0 items-center gap-2 text-sm">
                   <Checkbox
@@ -595,8 +615,14 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                 {draft.selectedIds.length >= 500 && <p className="w-full text-xs text-amber-700">500-order batch limit reached. Remove selected orders before adding more.</p>}
                 {selectionNotice && <p role="alert" className="w-full text-xs text-destructive">{selectionNotice}</p>}
               </div>
+              {filteredOrders.length > 0 && eligibleMatchingOrders.length === 0 && <Alert data-testid="fulfillment-no-eligible" className="border-amber-500/40 bg-amber-500/5">
+                <AlertTriangle className="h-4 w-4" /><AlertTitle>No eligible work orders</AlertTitle>
+                <AlertDescription>
+                  Nothing matching these filters can be added to a new batch. Existing reservations or planned/fulfilled batches may already cover demand; no uncovered lines does not confirm stock was physically picked. Other matches may be unavailable because mapped requirements are missing or their status/assignment does not fit this mode. Completed work orders no longer appear here. Resume existing custody records from Saved fulfillment batches.
+                </AlertDescription>
+              </Alert>}
               <div className="space-y-2">
-                {filteredOrders.map(order => {
+                {visibleOrders.map(order => {
                   const checked = draft.selectedIds.includes(order.workOrderId);
                   const limitBlocked = !checked && draft.selectedIds.length >= 500;
                   return <label key={order.workOrderId} className={`flex min-h-16 cursor-pointer items-start gap-3 rounded-lg border p-3 ${checked ? "border-primary bg-primary/5" : "bg-card"} ${!order.eligible ? "opacity-65" : ""}`}>
@@ -605,12 +631,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                       <span className="flex flex-wrap items-center gap-2 font-medium">{order.label || `Work order ${order.workOrderId}`}<Badge variant={isOrderSelectable(order) ? "outline" : "secondary"}>{isOrderSelectable(order) ? "Eligible" : "Unavailable"}</Badge></span>
                       <span className="mt-1 block text-xs text-muted-foreground">{[order.group, order.installer || "No installer", projectDate(order.scheduledDate), order.route && `Route ${order.route}`, order.zone && `Zone ${order.zone}`].filter(Boolean).join(" · ")}</span>
                       {order.missing.length > 0 && <span className="mt-1 block text-xs text-amber-700">Missing configured items: {order.missing.map(entry => `${entry.equipment} ${entry.typeId}`).join(", ")}</span>}
-                      {!order.missing.length && !order.lines.length && <span className="mt-1 block text-xs text-muted-foreground">No uncovered physical demand; existing holds or fulfillment already cover this work.</span>}
+                      {!order.missing.length && !order.lines.length && <span className="mt-1 block text-xs text-muted-foreground">No uncovered physical demand. Existing reservations or a planned/fulfilled batch may cover this work; this does not confirm a physical pickup.</span>}
                       {!order.eligible && <span className="mt-1 block text-xs text-amber-700">This order’s current status or assignment is not eligible for a new batch.</span>}
                     </span>
                   </label>;
                 })}
-                {!filteredOrders.length && <div className="rounded-lg border border-dashed p-8 text-center"><ClipboardList className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-medium">No matching work orders</p><p className="text-sm text-muted-foreground">Adjust the filters or check back after work has been scheduled.</p></div>}
+                {!filteredOrders.length && <div className="rounded-lg border border-dashed p-8 text-center"><ClipboardList className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-medium">No matching work orders</p><p className="text-sm text-muted-foreground">No records match this mode and the current search, route, date, or assignment filters.</p></div>}
               </div>
               <div className="space-y-3 rounded-lg border p-4">
                 <div><h3 className="font-semibold">Batch setup</h3><p className="text-xs text-muted-foreground">One source, physical Staging destination, and one vehicle for the entire batch.</p></div>

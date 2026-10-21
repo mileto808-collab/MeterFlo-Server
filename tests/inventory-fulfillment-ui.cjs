@@ -104,6 +104,22 @@ const assert = require("node:assert/strict");
     };
     await expect(selectAll).toBeDisabled(); // Several crews; never pick the first crew implicitly.
     await setFilter("Work group", group.name);
+     const showUnavailable = dialog.getByTestId("fulfillment-show-unavailable");
+     await expect(showUnavailable).not.toBeChecked();
+     await expect(rowCheckbox("BULK-UNAVAILABLE")).toHaveCount(0);
+     await expect(rowCheckbox("FUL-CREW-1")).toHaveCount(0);
+     await dialog.getByLabel("Search orders", { exact: true }).fill("FUL-CREW");
+     await expect(dialog.getByTestId("fulfillment-no-eligible")).toBeVisible();
+     await showUnavailable.check();
+     await expect(rowCheckbox("FUL-CREW-1")).toBeDisabled();
+     await expect(rowCheckbox("FUL-CREW-2")).toBeDisabled();
+     await expect(dialog.getByTestId("fulfillment-no-eligible")).toBeVisible();
+     await showUnavailable.uncheck();
+     await dialog.getByLabel("Search orders", { exact: true }).fill("NO-SUCH-WORK-ORDER");
+     await expect(dialog.getByText("No matching work orders", { exact: true })).toBeVisible();
+     await expect(dialog.getByTestId("fulfillment-no-eligible")).toHaveCount(0);
+     await dialog.getByLabel("Search orders", { exact: true }).clear();
+     await showUnavailable.check();
     await expect(rowCheckbox("BULK-UNAVAILABLE")).toBeDisabled();
     await selectAll.check();
     await expect(dialog.getByTestId("fulfillment-selection-summary")).toContainText("Selected 2 / Eligible matching 2");
@@ -122,6 +138,8 @@ const assert = require("node:assert/strict");
     await clearSelection.click();
     await expect(rowCheckbox("BULK-CREW-B")).not.toBeChecked();
     await rowCheckbox("BULK-CREW-A").check();
+     await showUnavailable.uncheck();
+     await expect(rowCheckbox("BULK-CREW-A")).toBeChecked();
     await setFilter("Work group", otherGroup.name);
     await expect(selectAll).toBeDisabled(); // Hidden selection belongs to another crew.
     await clearSelection.click();
@@ -244,6 +262,34 @@ const assert = require("node:assert/strict");
     state = (await request("GET", inventory)).state;
     assert.equal(state.stock.find(stock => stock.warehouseId === "fulfill-stage" && stock.itemId === "fulfill-meter").quantity, 1);
     assert.equal(state.allocations.find(a => a.workOrderId === scheduled.id).lines.length, 0);
+     await page.keyboard.press("Escape");
+     await page.evaluate(key => localStorage.removeItem(key),
+       `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${fixture.projectId}`);
+     await page.reload();
+     await launch();
+     await expect(showUnavailable).not.toBeChecked();
+     await dialog.getByLabel("Search orders", { exact: true }).fill("FUL-CREW-1");
+     await expect(dialog.getByTestId("fulfillment-no-eligible")).toBeVisible();
+     for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+       await page.setViewportSize(viewport);
+       await showUnavailable.scrollIntoViewIfNeeded();
+       await expect(showUnavailable).toBeVisible();
+       assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true);
+       await page.screenshot({ path: `generated-artifacts/inventory-fulfillment/eligible-empty-${viewport.width}.png` });
+     }
+     await page.setViewportSize({ width: 1280, height: 900 });
+     await showUnavailable.check();
+     await expect(rowCheckbox("FUL-CREW-1")).toBeDisabled();
+     await request("PATCH", `${root}/work-orders/${crewWork[0].id}`, { status: "Completed",
+       oldSystemId: "FUL-OLD-A", newSystemId: "F-A", oldSystemReading: 1, newSystemReading: 0,
+       signatureName: "Fulfillment acceptance",
+       signatureData: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" }, admin);
+     await expect(rowCheckbox("FUL-CREW-1")).toHaveCount(0, { timeout: 20000 });
+     await expect(dialog.getByText("No matching work orders", { exact: true })).toBeVisible();
+     discovery = await request("GET", `${inventory}/fulfillment`);
+     assert.ok(!discovery.orders.some(order => order.workOrderId === crewWork[0].id));
+     assert.ok(discovery.batches.some(batch => batch.id === batchId && batch.status === "completed"),
+       "Completing a work order does not delete its fulfillment batch history.");
     await request("PUT", `/api/subroles/${role.id}/permissions`, { permissions: ["workOrders.view", "inventory.view"] }, admin);
     await rejected("fulfillmentClose", { id: scheduledId, revision: 3, reason: "Permission revoked during an open wizard" }, 403);
     assert.deepEqual(errors, []);
