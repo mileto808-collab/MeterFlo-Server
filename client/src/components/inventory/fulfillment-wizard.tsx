@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
 
@@ -73,6 +74,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [error, setError] = useState("");
   const [selectionNotice, setSelectionNotice] = useState("");
   const [showUnavailable, setShowUnavailable] = useState(false);
+  const [confirmHandoff, setConfirmHandoff] = useState(false);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
@@ -150,6 +152,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
 
   useEffect(() => {
     if (!storageKey || !open) return;
+    setConfirmHandoff(false);
     setStorageReady(false);
     try {
       const saved = window.localStorage.getItem(storageKey);
@@ -244,6 +247,11 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const stageRemaining = (row: typeof batchDemand[number]) => row.total - row.staged;
   const vehicleRemaining = (row: typeof batchDemand[number]) => row.staged - row.delivered;
   const batchCanReleaseRemainder = !!activeBatch && activeBatch.status === "active";
+  const stagingComplete = batchCanReleaseRemainder && batchDemand.length > 0 && batchDemand.every(row => stageRemaining(row) <= 0);
+  const hasStagedStock = batchCanReleaseRemainder && batchDemand.some(row => vehicleRemaining(row) > 0);
+  const hasUnrecordedMove = Object.values(draft.quantities).some(value => value.trim() !== "" && value.trim() !== "0") ||
+    Object.values(draft.serialText).some(value => value.trim() !== "") || !!draft.reason.trim() || draft.physicallyConfirmed;
+  const showMoveForm = draft.step !== "stage" || !stagingComplete || hasUnrecordedMove;
   const selectionConstraintError = draft.mode === "crew"
     ? (selectedOrders.some(order => !order.group) || new Set(selectedOrders.map(order => order.group)).size > 1
       ? "A crew batch can contain work from one non-empty group only." : "")
@@ -494,9 +502,15 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     else if (draft.step === "vehicle") update({ step: "stage" });
     else update({ mode: "crew", step: "orders", batchId: "" });
   };
-  const moveToVehicle = () => update({ step: "vehicle", quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false });
+  const moveToVehicle = (discard = false) => {
+    if (busy || pendingLock || createLock || !hasStagedStock) return;
+    if (hasUnrecordedMove && !discard) { setConfirmHandoff(true); return; }
+    setConfirmHandoff(false);
+    setError("");
+    update({ step: "vehicle", quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false });
+  };
 
-  return <Dialog open={open} onOpenChange={close}>
+  return <><Dialog open={open} onOpenChange={close}>
     <DialogContent className="!fixed !left-1/2 !top-2 !translate-x-[-50%] !translate-y-0 !flex !h-auto !max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-4xl !min-w-0 flex-col gap-0 overflow-hidden p-0 sm:rounded-xl" onInteractOutside={event => { if (busy) event.preventDefault(); }}>
       <div className="min-w-0 shrink-0 border-b bg-muted/35 px-4 py-3 pr-12 sm:px-6 sm:py-4">
         <DialogHeader className="min-w-0 text-left">
@@ -692,7 +706,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                     : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p></div>
                 <Badge variant="secondary">Revision {activeBatch.revision}</Badge>
               </div>
-              <Alert><ScanLine className="h-4 w-4" /><AlertTitle>{draft.step === "stage" ? "Scan stock as it is pulled" : "Scan stock as custody changes"}</AlertTitle>
+              {draft.step === "stage" && stagingComplete && <Alert data-testid="fulfillment-staging-complete">
+                <Check className="h-4 w-4" /><AlertTitle>Stock staged</AlertTitle>
+                <AlertDescription>The full batch has already been pulled into Staging. Continue to vehicle handoff when ready; do not record the same pull again.
+                  {hasUnrecordedMove && <span className="mt-1 block">Unrecorded entries remain below. Continuing will ask before discarding them.</span>}
+                </AlertDescription>
+              </Alert>}
+              {showMoveForm && <><Alert><ScanLine className="h-4 w-4" /><AlertTitle>{draft.step === "stage" ? "Scan stock as it is pulled" : "Scan stock as custody changes"}</AlertTitle>
                 <AlertDescription>{draft.step === "stage"
                   ? "Enter only the quantity physically moved from the warehouse. Partial pulls are allowed; the remaining demand stays visible."
                   : "Enter only units physically handed to this batch’s single vehicle. Serialized units must already be staged and cannot be delivered twice."}</AlertDescription></Alert>
@@ -731,11 +751,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                 <Checkbox checked={draft.physicallyConfirmed} disabled={pendingLock || !canPost} onCheckedChange={checked => update({ physicallyConfirmed: checked === true })} />
                 <span><span className="text-sm font-medium">I confirm the listed stock has physically moved</span><span className="mt-1 block text-xs text-muted-foreground">Only actual quantities in physical custody can be recorded. This does not assign installed serials.</span></span>
               </label>
+              </>}
               {draft.step === "stage" && batchDemand.some(row => stageRemaining(row) > 0) && <div className="rounded-lg border border-dashed p-3 text-sm"><p className="font-medium">Outstanding work remains</p><ul className="mt-1 space-y-1 text-muted-foreground">{batchDemand.filter(row => stageRemaining(row) > 0).map(row => <li key={row.itemId}>{row.item?.name}: {stageRemaining(row)} {row.item?.unit ?? "units"} still to stage</li>)}</ul></div>}
               {draft.step === "vehicle" && batchDemand.some(row => vehicleRemaining(row) > 0) && <div className="rounded-lg border border-dashed p-3 text-sm"><p className="font-medium">Staged stock still to hand off</p><ul className="mt-1 space-y-1 text-muted-foreground">{batchDemand.filter(row => vehicleRemaining(row) > 0).map(row => <li key={row.itemId}>{row.item?.name}: {vehicleRemaining(row)} {row.item?.unit ?? "units"} still at staging</li>)}</ul></div>}
-              {draft.step === "stage" && batchDemand.some(row => row.staged > row.delivered) && <div className="space-y-2">
-                {batchDemand.some(row => stageRemaining(row) > 0) && <p className="text-xs text-muted-foreground">You may hand off the stock already staged; return here later for the remaining pull.</p>}
-                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={moveToVehicle}><Truck className="mr-2 h-4 w-4" />Continue to vehicle handoff</Button>
+              {draft.step === "stage" && !stagingComplete && hasStagedStock && <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">You may hand off only the stock already staged; return here later for the remaining pull. Unrecorded entries are not part of that handoff.</p>
+                <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} className="w-full sm:w-auto" onClick={() => moveToVehicle()}><Truck className="mr-2 h-4 w-4" />Hand off already-staged stock</Button>
               </div>}
               {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
                 <p className="font-medium">Release unfinished remainder</p>
@@ -755,7 +776,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
         <div className="flex flex-wrap justify-end gap-2">
           {draft.step === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") && <Button type="button" disabled={!canCreate || busy || !storageReady || !stagingLocations.length} onClick={() => update({ step: "review" })}>Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create saved batch"}</Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && activeBatch && <Button type="button" disabled={!canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
+          {draft.step === "stage" && stagingComplete && hasStagedStock && <Button type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>
+            <Truck className="mr-2 h-4 w-4" />Continue to vehicle handoff
+          </Button>}
+          {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && !(draft.step === "stage" && stagingComplete) && <Button type="button" disabled={!canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : draft.step === "stage" ? <ArrowRight className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}
           </Button>}
@@ -763,5 +787,18 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
         </div>
       </DialogFooter>
     </DialogContent>
-  </Dialog>;
+  </Dialog>
+    <AlertDialog open={open && confirmHandoff} onOpenChange={setConfirmHandoff}>
+      <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unrecorded movement entries</AlertDialogTitle>
+          <AlertDialogDescription>These quantities, serials, notes and confirmation have not been recorded. Stay here to record or review them, or discard them and continue with stock already recorded at Staging. Discarding does not move stock or change recorded receipts.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Stay and review</AlertDialogCancel>
+          <AlertDialogAction disabled={busy || pendingLock || createLock || !hasStagedStock} onClick={() => moveToVehicle(true)}>Discard entries and continue</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>;
 }

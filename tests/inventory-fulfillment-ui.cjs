@@ -191,6 +191,44 @@ const assert = require("node:assert/strict");
       await page.screenshot({ path: `generated-artifacts/inventory-fulfillment/${viewport.width}.png` });
     }
     await page.setViewportSize({ width: 1280, height: 900 });
+    // Partial pulls keep their own form. Navigation must not post or silently discard another pull.
+    await dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter").fill("1");
+    await dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter").fill("F-A");
+    await dialog.getByRole("button", { name: "Record physical pull", exact: true }).click();
+    await expect.poll(async () => (await batch()).lines.reduce((sum, line) => sum + line.stagedQuantity, 0)).toBe(1);
+    const partialHandoff = dialog.getByRole("button", { name: "Hand off already-staged stock", exact: true });
+    await expect(partialHandoff).toBeVisible();
+    await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toHaveValue("");
+    await dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter").fill("1");
+    await dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter").fill("F-B");
+    await dialog.getByLabel("Physical move reason", { exact: true }).fill("Second physical pull not recorded yet");
+    await dialog.getByRole("checkbox").first().check();
+    let navigationPosts = 0;
+    const countNavigationPosts = req => {
+      if (req.method() === "POST" && req.url().endsWith(`${inventory}/commands`)) navigationPosts++;
+    };
+    page.on("request", countNavigationPosts);
+    await partialHandoff.click();
+    const warning = page.getByRole("alertdialog");
+    await expect(warning.getByText("Unrecorded movement entries", { exact: true })).toBeVisible();
+    await warning.getByRole("button", { name: "Stay and review", exact: true }).click();
+    await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toHaveValue("1");
+    await expect(dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter")).toHaveValue("F-B");
+    await expect(dialog.getByLabel("Physical move reason", { exact: true })).toHaveValue("Second physical pull not recorded yet");
+    await expect(dialog.getByRole("checkbox").first()).toBeChecked();
+    await partialHandoff.click();
+    await warning.getByRole("button", { name: "Discard entries and continue", exact: true }).click();
+    await expect(dialog.getByTestId("fulfillment-move-quantity-vehicle-fulfill-meter")).toBeVisible();
+    await expect(dialog.getByLabel("Physical move reason", { exact: true })).toHaveValue("");
+    await expect(dialog.getByRole("checkbox").first()).not.toBeChecked();
+    assert.equal(navigationPosts, 0, "Changing steps must not move stock.");
+    page.off("request", countNavigationPosts);
+    await dialog.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toHaveValue("");
+    await dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter").fill("1");
+    await dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter").fill("F-B");
+    await dialog.getByLabel("Physical move reason", { exact: true }).fill("Second physical pull confirmed at the warehouse");
+    await dialog.getByRole("checkbox").first().check();
     // Lose the response AFTER the server records the move. Reload must recover that same identity.
     let intercepted = false;
     await page.route(`**${inventory}/commands`, async route => {
@@ -203,11 +241,28 @@ const assert = require("node:assert/strict");
     await expect.poll(async () => (await batch()).lines.reduce((sum, line) => sum + line.stagedQuantity, 0)).toBe(2);
     await page.reload();
     await launch();
-    await expect(dialog.getByText("Scan stock as it is pulled")).toBeVisible();
     await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).pending,
       `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${fixture.projectId}`)).toBe(null);
+    await expect(dialog.getByTestId("fulfillment-staging-complete")).toBeVisible();
+    await expect(dialog.getByLabel("Physical move reason", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Record physical pull", exact: true })).toHaveCount(0);
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport);
+      const next = dialog.getByRole("button", { name: "Continue to vehicle handoff", exact: true });
+      await expect(next).toBeEnabled();
+      await expect.poll(async () => {
+        const rect = await dialog.boundingBox();
+        return !!rect && rect.x >= -1 && rect.y >= -1 && rect.x + rect.width <= viewport.width + 1 && rect.y + rect.height <= viewport.height + 1;
+      }, { message: "Wait for the resized dialog to fit the viewport." }).toBe(true);
+      await expect.poll(async () => {
+        const rect = await next.boundingBox();
+        return !!rect && rect.x >= 0 && rect.x + rect.width <= viewport.width && rect.y >= 0 && rect.y + rect.height <= viewport.height;
+      }, { message: "Completed staging's primary action stays visible." }).toBe(true);
+      await page.screenshot({ path: `generated-artifacts/inventory-fulfillment/staged-${viewport.width}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     let state = (await request("GET", inventory)).state;
-    assert.equal(state.receipts.filter(receipt => receipt.reference === batchId && receipt.action === "fulfillmentMove").length, 1);
+    assert.equal(state.receipts.filter(receipt => receipt.reference === batchId && receipt.action === "fulfillmentMove").length, 2);
     assert.equal(state.allocations.some(a => crewWork.some(w => w.id === a.workOrderId)), false);
     const current = await batch();
     let handoffId = crypto.randomUUID();
@@ -224,6 +279,7 @@ const assert = require("node:assert/strict");
     const actualHandoff = (await posted).postDataJSON();
     handoffId = actualHandoff.operationId;
     await expect(dialog.getByText("Vehicle handoff complete", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Record vehicle handoff", exact: true })).toHaveCount(0);
     await command(actualHandoff.action, actualHandoff.data, prep, handoffId);
     assert.equal((await batch()).status, "completed");
     const print = await prep.request.get(`${inventory}/print/receipt/${handoffId}`);

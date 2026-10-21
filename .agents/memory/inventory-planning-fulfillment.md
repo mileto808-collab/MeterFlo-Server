@@ -33,6 +33,12 @@ The user approved a Staging-location approach for the shared stock pool. The ful
 
 **How to apply:** Keep shared crew pools distinct from individually scheduled reservations. Treat Staging as physical custody, never installation, and retain onsite selection of actual installed serials.
 
+After a staging pull is recorded, moving to the vehicle-handoff step must not require another reason or physical confirmation for that same pull.
+
+**Why:** The user found repeated pull controls confusing and expects to continue directly when staging is complete. Vehicle handoff is still a separate physical movement that must be recorded.
+
+**How to apply:** Distinguish navigation from stock posting. Keep partial pulls available, make the next phase clear once staging is complete, and require explicit approval before discarding unrecorded movement entries.
+
 Keep the current fulfillment workflow for now, including required recording of pickups. Do not introduce unrecorded direct-from-Staging field use.
 
 **Why:** After discussing stock-aware replenishment, optional vehicle handoff, and Returns locations, the user said, “Lets keep it the same for now. Forced recording pickups is better.”
