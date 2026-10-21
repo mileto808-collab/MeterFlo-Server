@@ -15,6 +15,12 @@ MeterFlo receives bulk imported Open work orders assigned to groups; Scheduled w
 
 **How to apply:** Treat fulfillment as warehouse preparation, not proof of installation or a reason to promise the same group work separately to every group member.
 
+Late item-type link setup after importing work orders must support recovery without deleting and re-importing those orders.
+
+**Why:** The user encountered this sequence and imports can contain thousands of records; destructive re-import is not an acceptable recovery workflow.
+
+**How to apply:** Preserve work-order identities, captures, manual plans, reservations and fulfillment history. Distinguish missing mapping from assignment eligibility or demand already covered, and offer project-wide readiness feedback rather than silently resetting operational records.
+
 The installed serial is not known at import time: the technician may grab a random system/module onsite and explicitly record its serial during changeout.
 
 **Why:** The user described this as the normal physical workflow, not an exceptional case.
