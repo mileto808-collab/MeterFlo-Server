@@ -28,3 +28,31 @@ mtime_ms = 1792358901195
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/9596c99f-10c7-4630-950f-b18d5447e257/fe8d4ce1-56e5-4e16-80eb-7828598dd722"
 storage_version_token = "1792359315443144"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "rswglQF3Q0x01s-OYJ-pR"
+uri = "file://generated-artifacts/test-serials/meterflo-50-test-serials.xlsx"
+type = "table"
+title = "Excel — 50 test serials"
+description = "One text-formatted Serial column with 50 unique IDs, MF2600000001 through MF2600000050."
+logical_id = "983a3029-0bc2-4394-95e7-1f07ec5b1391"
+content_hash = "sha256:ecb96a2903e41ff02c5f47c705bd6f4cc5f6cdc73479a88d86d9c585bc7e166e"
+size = 19574
+mtime_ms = 1792606922778
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/983a3029-0bc2-4394-95e7-1f07ec5b1391/9528c009-5cdd-4bd3-bce6-58c60b741c94"
+storage_version_token = "1792606942926757"
+content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+[[outputs]]
+id = "uaxeu3UvmsqOz7AzCR0mj"
+uri = "file://generated-artifacts/test-serials/meterflo-50-test-serial-barcodes.pdf"
+type = "pdf"
+title = "PDF — 50 serials with barcodes"
+description = "The same 50 serials with Code 128 barcodes, arranged 10 per page across 5 pages for browser viewing or printing."
+logical_id = "90a04e37-5d0b-469f-b6d7-b71dd7466b45"
+content_hash = "sha256:980650c86c5db62d47048eac242478a8ebe9646e475ba6fa8b2f0958dd4234af"
+size = 46430
+mtime_ms = 1792606927758
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/90a04e37-5d0b-469f-b6d7-b71dd7466b45/9fa2da5f-a000-41f3-906a-1f9e51f6c976"
+storage_version_token = "1792606943778445"
+content_type = "application/pdf"
