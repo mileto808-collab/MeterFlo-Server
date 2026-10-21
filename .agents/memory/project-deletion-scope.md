@@ -13,8 +13,13 @@ reason to prohibit an administrator from deleting the entire project.
 
 **How to apply:** Keep project deletion separate from inventory catalog-item
 deletion restrictions. Treat the project schema and business-row removal as one
-database transaction. Preserve shared site-wide users/catalogs and append-only
-security audit evidence rather than treating them as orphan project records.
+database transaction. Preserve shared site-wide users/catalogs.
 Stage both ordinary project files and inventory inspection files reversibly.
 Never report a file-cleanup failure as complete deletion: retain an isolated
 cleanup journal and an administrator-visible retry/recovery action.
+
+Project deletion must include project-owned audit and import logs, not merely operational inventory records.
+
+**Why:** The user explicitly clarified that deleting a project should remove “ALL stale records everywhere including audit logs, import logs, everywhere.”
+
+**How to apply:** Do not treat retained project audit evidence as satisfying complete project deletion. Keep unrelated site-wide records separate. Creating a clean configuration backup must not purge the source instance; destructive destination cleanup during a clean restore requires an explicit, clear reset boundary.
