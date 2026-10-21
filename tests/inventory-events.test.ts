@@ -9,6 +9,8 @@ test("inventory invalidation covers every tab, lazy stock detail and work-order 
     ["/api/projects/3/inventory", "stock", "context"],
     ["/api/projects/3/inventory", "stock", "/api/projects/3/inventory/stock/serials?item=a"],
     ["/api/projects/3/inventory/stock/options"],
+    ["/api/projects", 3, "inventory", "fulfillment"],
+    ["/api/projects", "3", "inventory", "stock"],
     ["/api/projects", "3", "work-orders", 8, "inventory"],
     ["/api/projects/3/work-orders/8/inventory"],
     [["/api/projects/3/inventory"], "detail"],
@@ -16,6 +18,7 @@ test("inventory invalidation covers every tab, lazy stock detail and work-order 
   for (const key of [
     ["/api/projects/30/inventory"], ["/api/projects/3/inventory-other"],
     ["/api/projects", 30, "work-orders", 8, "inventory"],
+    ["/api/projects", 30, "inventory", "fulfillment"],
     ["/api/projects/3/work-orders"], ["/api/users"], [],
   ]) assert.equal(isInventoryQueryForProject(key, 3), false, JSON.stringify(key));
 });

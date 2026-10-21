@@ -20,3 +20,9 @@ Publish invalidations at the database transaction's actual commit, not just from
 **Why:** Work-order transitions and restores also change inventory, sometimes inside transactions owned by another subsystem. A handler-only notification misses those changes or announces a write that later rolls back.
 
 **How to apply:** Preserve the shared commit-time notification boundary when adding mutation paths or changing persistence. Reconnects must catch missed writes, including restores whose revision can move backwards.
+
+A locally saved fulfillment draft must not, by itself, make a remotely completed batch appear unfinished.
+
+**Why:** The user completed a batch on one device but another still offered Continue saved workflow based on browser-local inputs.
+
+**How to apply:** Check a fresh server snapshot on entry and reconcile live terminal-state changes. Clear obsolete, capture-free continuation state; retain unposted captures as review-only evidence. A completed batch is not proof that an uncertain operation succeeded: preserve its exact retry identity until a matching receipt confirms it.

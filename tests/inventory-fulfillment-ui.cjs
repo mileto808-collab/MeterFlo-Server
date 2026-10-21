@@ -516,6 +516,31 @@ const assert = require("node:assert/strict");
     await dialog.getByLabel("Physical move reason", { exact: true }).fill(handoff.reason);
     await physicalConfirmation.check();
     const posted = page.waitForRequest(req => req.url().endsWith(`${inventory}/commands`) && req.method() === "POST" && req.postDataJSON().data.phase === "vehicle");
+    // A second device using the same account must refresh through SSE, not the ten-second safety poll.
+    const mirror = await browser.newContext({ baseURL });
+    await request("POST", "/api/auth/local/login", credentials, mirror);
+    const savedKey = `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${fixture.projectId}`;
+    const mirrorDraft = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), savedKey);
+    Object.assign(mirrorDraft, { step: "vehicle", batchId, pending: null, createAttempt: null,
+      quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "" });
+    await mirror.addInitScript(({ key, draft }) => {
+      localStorage.setItem(key, JSON.stringify(draft));
+      const interval = window.setInterval.bind(window);
+      window.setInterval = (handler, timeout, ...args) => interval(handler, timeout === 10_000 ? 600_000 : timeout, ...args);
+    }, { key: savedKey, draft: mirrorDraft });
+    const mirrorPage = await mirror.newPage();
+    let mirrorPosts = 0;
+    mirrorPage.on("request", req => {
+      if (req.method() === "POST" && req.url().endsWith(`${inventory}/commands`)) mirrorPosts++;
+    });
+    await mirrorPage.goto(`${baseURL}/projects/${fixture.projectId}/inventory`);
+    const openMirror = async () => {
+      await mirrorPage.getByRole("button", { name: "Start Inventory", exact: true }).filter({ visible: true }).click();
+      await mirrorPage.getByRole("button", { name: /Fulfill \/ Stage Work Orders/ }).click();
+      await expect(mirrorPage.getByTestId("fulfillment-start-screen")).toBeVisible();
+    };
+    await openMirror();
+    await expect(mirrorPage.getByRole("button", { name: "Continue saved workflow", exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Record vehicle handoff", exact: true }).click();
     const actualHandoff = (await posted).postDataJSON();
     assert.deepEqual(actualHandoff.data.lines, [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-A"] }]);
@@ -523,6 +548,36 @@ const assert = require("node:assert/strict");
     await expect(dialog.getByText("Vehicle handoff complete", { exact: true })).toBeVisible();
     await expect(dialog.locator("[data-wizard-complete]")).toBeFocused();
     await expect(dialog.locator("[data-wizard-complete]")).toHaveAttribute("data-wizard-focus-target", "true");
+    await expect(mirrorPage.getByRole("button", { name: "Continue saved workflow", exact: true })).toHaveCount(0);
+    await expect(mirrorPage.getByText(/The saved work is already completed/)).toBeVisible();
+    await expect.poll(async () => mirrorPage.evaluate(key => JSON.parse(localStorage.getItem(key)).batchId, savedKey)).toBe("");
+    await mirrorPage.screenshot({ path: "generated-artifacts/inventory-fulfillment/remote-completion-home.png" });
+    // Reopening must reconcile old local storage against a fresh server snapshot as well.
+    await mirrorPage.getByRole("button", { name: "Close", exact: true }).first().click();
+    await mirrorPage.evaluate(({ key, draft }) => localStorage.setItem(key, JSON.stringify(draft)), { key: savedKey, draft: mirrorDraft });
+    await openMirror();
+    await expect(mirrorPage.getByRole("button", { name: "Continue saved workflow", exact: true })).toHaveCount(0);
+    await expect(mirrorPage.getByText(/The saved work is already completed/)).toBeVisible();
+    // A terminal batch is not proof that an unrelated saved attempt was posted.
+    await mirrorPage.getByRole("button", { name: "Close", exact: true }).first().click();
+    const protectedAttempt = { operationId: crypto.randomUUID(), action: "fulfillmentMove", data: handoff };
+    await mirrorPage.evaluate(({ key, draft }) => localStorage.setItem(key, JSON.stringify(draft)),
+      { key: savedKey, draft: { ...mirrorDraft, pending: protectedAttempt } });
+    await openMirror();
+    await expect(mirrorPage.getByRole("button", { name: "Continue saved workflow", exact: true })).toBeVisible();
+    assert.deepEqual(await mirrorPage.evaluate(key => JSON.parse(localStorage.getItem(key)).pending, savedKey), protectedAttempt);
+    // Captured but never submitted scans remain accessible as review-only evidence, not another handoff.
+    await mirrorPage.getByRole("button", { name: "Close", exact: true }).first().click();
+    await mirrorPage.evaluate(({ key, draft }) => localStorage.setItem(key, JSON.stringify(draft)), {
+      key: savedKey, draft: { ...mirrorDraft, quantities: { "vehicle:fulfill-meter": "1" }, serialText: { "vehicle:fulfill-meter": "F-A" } },
+    });
+    await openMirror();
+    await expect(mirrorPage.getByRole("button", { name: "Continue saved workflow", exact: true })).toHaveCount(0);
+    await mirrorPage.getByRole("button", { name: "Review saved inputs", exact: true }).click();
+    await expect(mirrorPage.getByTestId("fulfillment-retained-inputs")).toContainText("F-A");
+    await expect(mirrorPage.getByRole("button", { name: "Record vehicle handoff", exact: true })).toHaveCount(0);
+    assert.equal(mirrorPosts, 0, "Cross-device reconciliation and review must never post a stock command.");
+    await mirror.close();
     await expect(dialog.getByRole("button", { name: "Record vehicle handoff", exact: true })).toHaveCount(0);
     const combinedButton = dialog.getByRole("button", { name: "Print combined receipt", exact: true });
     await expect(combinedButton).toHaveCount(1);

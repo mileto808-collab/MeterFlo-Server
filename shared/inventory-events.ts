@@ -15,5 +15,5 @@ export function isInventoryQueryForProject(key: readonly unknown[], projectId: n
   }
   if (Array.isArray(first) && isInventoryQueryForProject(first, projectId)) return true;
   return first === "/api/projects" && String(key[1]) === String(projectId) &&
-    key[2] === "work-orders" && key[4] === "inventory";
+    (key[2] === "inventory" || (key[2] === "work-orders" && key[4] === "inventory"));
 }

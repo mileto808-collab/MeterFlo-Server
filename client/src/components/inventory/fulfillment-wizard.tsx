@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWizardStepFocus } from "@/hooks/useWizardStepFocus";
+import { useInventoryEvents } from "@/hooks/useInventoryEvents";
+import { reconcileFulfillmentDraft } from "@/lib/fulfillment-draft-reconciliation";
+import { FulfillmentSavedInputs } from "./fulfillment-saved-inputs";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
@@ -82,6 +85,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [editingSerialKey, setEditingSerialKey] = useState<string | null>(null);
   const [showStart, setShowStart] = useState(true);
   const [requestedMode, setRequestedMode] = useState<Draft["mode"] | null>(null);
+  const [checkedOnEntry, setCheckedOnEntry] = useState(false);
+  const [finishedNotice, setFinishedNotice] = useState("");
+  const [showSavedInputs, setShowSavedInputs] = useState(false);
   const wizardRef = useRef<HTMLDivElement>(null);
   const stepBodyRef = useRef<HTMLDivElement>(null);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
@@ -99,10 +105,15 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     (livePermissions !== undefined ? livePermissions.includes(permission) : hasPermission(permission));
   const canViewWorkOrders = canPermission("workOrders.view");
   const canPost = canViewWorkOrders && canPermission("inventory.assign") && canPermission("inventory.receive") && canPermission("inventory.transfer");
+  useInventoryEvents(open && canViewWorkOrders ? projectId : null);
   const fulfillment = useQuery<FulfillmentResponse>({
     queryKey: dataKey,
     queryFn: async () => (await apiRequest("GET", `/api/projects/${projectId}/inventory/fulfillment`)).json(),
     enabled: open && canViewWorkOrders,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnReconnect: "always",
+    refetchOnWindowFocus: "always",
   });
   const orders = fulfillment.data?.orders ?? [];
   const state = inventory.data?.state;
@@ -110,6 +121,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const warehouses = state?.warehouses ?? [];
   const receipts: Receipt[] = (state?.receipts ?? []) as Receipt[];
   const activeBatch = fulfillment.data?.batches.find(batch => batch.id === draft.batchId);
+  const savedOutcome = useMemo(() => reconcileFulfillmentDraft(draft, fulfillment.data?.batches ?? [], orders), [draft, fulfillment.data]);
   const orderMap = useMemo(() => new Map(orders.map(order => [order.workOrderId, order])), [orders]);
   const selectedOrders = useMemo(() => draft.selectedIds.map(id => orderMap.get(id)).filter((order): order is FulfillmentOrder => !!order), [draft.selectedIds, orderMap]);
   const activeItems = useMemo(() => items.filter(item => item.active && item.kind !== "labor"), [items]);
@@ -164,6 +176,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setConfirmHandoff(false);
     setShowStart(true);
     setRequestedMode(null);
+    setCheckedOnEntry(false);
+    setFinishedNotice("");
+    setShowSavedInputs(false);
     setScanNotices({});
     setEditingSerialKey(null);
     setStorageReady(false);
@@ -194,9 +209,15 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     }
   }, [draft.pending, receipts, projectId]);
   useEffect(() => {
-    if (!open || !canViewWorkOrders || inventory.data?.state.revision === undefined) return;
-    void queryClient.invalidateQueries({ queryKey: dataKey });
-  }, [open, canViewWorkOrders, inventory.data?.state.revision, projectId]);
+    if (!open || !storageReady || busy || !inventory.isFetchedAfterMount || !fulfillment.isFetchedAfterMount ||
+      inventory.isFetching || fulfillment.isFetching || inventory.isError || fulfillment.isError) return;
+    setCheckedOnEntry(true);
+    if (showStart && savedOutcome.kind === "clear") {
+      setFinishedNotice(`The saved work is already ${savedOutcome.status}. Its history and receipts are available under Resume saved batch.`);
+      setDraft(emptyDraft());
+    }
+  }, [open, storageReady, busy, showStart, savedOutcome, inventory.isFetchedAfterMount, fulfillment.isFetchedAfterMount,
+    inventory.isFetching, fulfillment.isFetching, inventory.isError, fulfillment.isError]);
   useEffect(() => {
     if (!open || !canViewWorkOrders) return;
     const refresh = window.setInterval(() => {
@@ -219,6 +240,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     if (draft.pending || draft.createAttempt || busy) return;
     setDraft({ ...emptyDraft(), mode });
     setError("");
+    setFinishedNotice("");
+    setShowSavedInputs(false);
     setRequestedMode(null);
     setShowStart(false);
   };
@@ -596,8 +619,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
 
   useWizardStepFocus({
     open,
-    ready: storageReady && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff && requestedMode === null,
-    stepKey: `${showStart ? "start" : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
+    ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff && requestedMode === null,
+    stepKey: `${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
     rootRef: wizardRef,
     bodyRef: stepBodyRef,
     chooseTarget: root => {
@@ -663,20 +686,28 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
             <Button type="button" size="sm" variant="outline" onClick={setupLocations}>Open Locations</Button>
           </AlertDescription>
         </Alert>}
-        {(fulfillment.isLoading || inventory.isLoading) && <div className="space-y-3" aria-label="Loading fulfillment data">
+        {(fulfillment.isLoading || inventory.isLoading || (!checkedOnEntry && canViewWorkOrders && !inventory.isError && !fulfillment.isError)) && <div className="space-y-3" aria-label="Loading fulfillment data">
           <div className="h-16 animate-pulse rounded-lg bg-muted" /><div className="h-28 animate-pulse rounded-lg bg-muted" /><div className="h-20 animate-pulse rounded-lg bg-muted" />
         </div>}
         {(fulfillment.isError || inventory.isError) && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Inventory could not load</AlertTitle><AlertDescription className="flex flex-wrap items-center justify-between gap-3">
           <span>Work orders and authorized locations are required before this workflow can continue.</span>
           <Button type="button" size="sm" variant="outline" onClick={() => { void fulfillment.refetch(); void inventory.refetch(); }}>Retry</Button>
         </AlertDescription></Alert>}
-        {storageReady && !fulfillment.isLoading && !inventory.isLoading && !fulfillment.isError && !inventory.isError && <>
+        {storageReady && checkedOnEntry && !fulfillment.isLoading && !inventory.isLoading && !fulfillment.isError && !inventory.isError && <>
           {showStart && <div className="space-y-4" data-testid="fulfillment-start-screen">
             <div><h3 className="text-lg font-semibold">Choose a fulfillment workflow</h3>
               <p className="text-sm text-muted-foreground">Start a crew batch, prepare scheduled work, or open saved batches.</p></div>
-            {hasSavedProgress && <div className="rounded-lg border bg-muted/30 p-4">
-              <p className="mb-3 text-sm text-muted-foreground">Your previous workflow inputs are saved. Continue when you are ready to return to them.</p>
-              <Button data-wizard-continue type="button" disabled={busy} onClick={() => setShowStart(false)}><RotateCcw className="mr-2 h-4 w-4" />Continue saved workflow</Button>
+            {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
+            {hasSavedProgress && savedOutcome.kind !== "clear" && <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+              <p className="text-sm text-muted-foreground">{savedOutcome.kind === "review"
+                ? `This saved batch is ${savedOutcome.status}. Local unrecorded inputs were kept for review, not for another stock movement.`
+                : draft.pending || draft.createAttempt
+                  ? "A saved operation still needs confirmation. Its exact identity and inputs have been retained."
+                  : "Your previous workflow inputs are saved. Continue when you are ready to return to them."}</p>
+              {savedOutcome.kind === "review"
+                ? <Button type="button" variant="outline" onClick={() => setShowSavedInputs(value => !value)}>Review saved inputs</Button>
+                : <Button data-wizard-continue type="button" disabled={busy} onClick={() => setShowStart(false)}><RotateCcw className="mr-2 h-4 w-4" />Continue saved workflow</Button>}
+              {savedOutcome.kind === "review" && showSavedInputs && <FulfillmentSavedInputs draft={draft} items={items} />}
             </div>}
             <div className="grid gap-3 sm:grid-cols-3">
               {([
@@ -835,7 +866,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                 <div className="flex flex-wrap justify-center gap-2">
                   <Button type="button" variant="outline" onClick={() => printBatchReceipt(activeBatch.id)}><Printer className="mr-2 h-4 w-4" />Print combined receipt</Button>
                 </div>
-                <Button type="button" variant="ghost" onClick={() => update({ batchId: "", mode: "resume", step: "orders" })}>Back to saved batches</Button>
+                {savedOutcome.kind === "review" && <FulfillmentSavedInputs draft={draft} items={items} />}
+                <Button type="button" variant="ghost" onClick={() => savedOutcome.kind === "review" ? setShowStart(true) : update({ batchId: "", mode: "resume", step: "orders" })}>{savedOutcome.kind === "review" ? "Back to workflow choices" : "Back to saved batches"}</Button>
               </div> : <>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><Badge variant="outline">{draft.step === "stage" ? "Physical pull to staging" : "Physical vehicle handoff"}</Badge><h3 className="mt-2 text-xl font-semibold">{activeBatch.name}</h3>
