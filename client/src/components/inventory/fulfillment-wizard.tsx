@@ -36,7 +36,7 @@ type InventorySnapshot = { state: InventoryState; permissions: string[]; project
 type Receipt = { id: string; action: string; reference: string; occurredAt: string; actor: string; reason?: string; lines: Array<{ itemId: string; quantity: number; serials: string[] }> };
 type PendingMove = {
   operationId: string;
-  action: "fulfillmentMove" | "fulfillmentClose";
+  action: "fulfillmentMove" | "fulfillmentClose" | "fulfillmentReady";
   data: Record<string, unknown>;
 };
 type CreateAttempt = { operationId: string; id: string; data: Record<string, unknown> };
@@ -124,7 +124,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const items = state?.items ?? [];
   const warehouses = state?.warehouses ?? [];
   const receipts: Receipt[] = (state?.receipts ?? []) as Receipt[];
-  const activeBatch = fulfillment.data?.batches.find(batch => batch.id === draft.batchId);
+  const activeBatch = fulfillment.data?.batches.find(batch => batch.id === draft.batchId) as (FulfillmentBatch & { pickupReady?: boolean }) | undefined;
   const activeResume = activeBatch ? fulfillment.data?.resumeStatus?.[activeBatch.id] : undefined;
   const movementBlocked = !!activeBatch && !!activeResume &&
     (!activeResume.resumable || draft.step === "stage" && activeResume.nextStep === "vehicle");
@@ -609,6 +609,18 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     step: fulfillment.data?.resumeStatus?.[batch.id]?.nextStep ??
       (batch.lines.some(line => line.quantity > line.stagedQuantity) ? "stage" : "vehicle") });
   const printBatchReceipt = (id: string) => window.open(`/api/projects/${projectId}/inventory/print/fulfillment/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
+  const printPickTicket = (id: string) => window.open(`/api/projects/${projectId}/inventory/fulfillment/${encodeURIComponent(id)}/pick-ticket`, "_blank", "noopener,noreferrer");
+  const makePartialReady = async () => {
+    if (!activeBatch || !canPost || busy || pendingLock || !hasStagedStock || stagingComplete) return;
+    const pending: PendingMove = { operationId: crypto.randomUUID(), action: "fulfillmentReady",
+      data: { id: activeBatch.id, revision: activeBatch.revision, ready: true } };
+    if (!storageKey) { setError("A signed-in user is required to safely save this exact readiness command."); return; }
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({ ...draft, pending }));
+      setDraft(current => ({ ...current, pending }));
+    } catch { setError("Could not save this exact readiness command. No status change was sent."); return; }
+    await sendPending(pending);
+  };
   const setupLocations = () => {
     try {
       window.sessionStorage.setItem(`meterflo:inventory-tab:${user?.id ?? "pending"}:${projectId}`, "locations");
@@ -924,8 +936,18 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                   <p className="text-sm text-muted-foreground">{draft.step === "stage"
                     ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
                     : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p></div>
-                <Badge variant="secondary">Revision {activeBatch.revision}</Badge>
+                 <div className="flex flex-wrap gap-2"><Badge variant={activeBatch.pickupReady || stagingComplete ? "secondary" : "outline"}>{stagingComplete || activeBatch.pickupReady ? stagingComplete ? "Ready · full batch" : "Ready · partial" : "Not yet ready"}</Badge><Badge variant="secondary">Revision {activeBatch.revision}</Badge></div>
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
+                <div><p className="text-sm font-medium">Pick ticket · {warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}</p><p className="text-xs text-muted-foreground">A printable staging list; printing does not move stock.</p></div>
+                <Button type="button" size="sm" variant="outline" onClick={() => printPickTicket(activeBatch.id)}><Printer className="mr-2 h-4 w-4" />Print pick ticket</Button>
+              </div>
+              {(() => {
+                const assignedVehicle = warehouses.find(location => location.id === activeBatch.vehicleId);
+                return assignedVehicle && !assignedVehicle.assignedUserId && !(assignedVehicle.userIds?.length) ?
+                  <Alert className="border-amber-500/40 bg-amber-500/5"><AlertTriangle className="h-4 w-4" /><AlertTitle>Vehicle has no assigned users</AlertTitle><AlertDescription>This vehicle has neither an assigned user nor assigned-user list. Technicians will not receive pickup notices until it is assigned.</AlertDescription></Alert> : null;
+              })()}
+              <Alert className="border-amber-500/40 bg-amber-500/5"><AlertTriangle className="h-4 w-4" /><AlertTitle>Stock stays at Staging</AlertTitle><AlertDescription>Ready status and pickup notices do not move inventory. Warehouse must record the physical vehicle handoff to transfer custody.</AlertDescription></Alert>
               {draft.step === "stage" && stagingComplete && <Alert data-testid="fulfillment-staging-complete">
                 <Check className="h-4 w-4" /><AlertTitle>Stock staged</AlertTitle>
                 <AlertDescription>The full batch has already been pulled into Staging. Continue to vehicle handoff when ready; do not record the same pull again.
@@ -1037,6 +1059,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               {draft.step === "vehicle" && batchDemand.some(row => vehicleRemaining(row) > 0) && <div className="rounded-lg border border-dashed p-3 text-sm"><p className="font-medium">Staged stock still to hand off</p><ul className="mt-1 space-y-1 text-muted-foreground">{batchDemand.filter(row => vehicleRemaining(row) > 0).map(row => <li key={row.itemId}>{row.item?.name}: {vehicleRemaining(row)} {row.item?.unit ?? "units"} still at staging</li>)}</ul></div>}
               {draft.step === "stage" && !stagingComplete && hasStagedStock && <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">You may hand off only the stock already staged; return here later for the remaining pull. Unrecorded entries are not part of that handoff.</p>
+                {!activeBatch.pickupReady && <Button type="button" variant="outline" disabled={!canPost || busy || pendingLock || movementBlocked} onClick={() => void makePartialReady()}>Make staged stock ready for partial pickup</Button>}
                 <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} className="w-full sm:w-auto" onClick={() => moveToVehicle()}><Truck className="mr-2 h-4 w-4" />Hand off already-staged stock</Button>
               </div>}
               {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">

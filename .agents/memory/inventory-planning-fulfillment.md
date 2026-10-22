@@ -45,6 +45,12 @@ The user wants a printable pick ticket during physical picking, placed on the pu
 
 **How to apply:** Treat the ticket and vehicle-assignee pickup visibility as fulfillment requirements. Keep staging custody separate from the later recorded physical vehicle handoff. Do not introduce closed-app push, SMS or email alerts for this workflow.
 
+Pickup viewing is a vehicle-assignee capability, not general warehouse authority. Showing or acknowledging a notice must never record pickup or transfer stock.
+
+**Why:** The crew needs to inspect the physical items and quantities awaiting its vehicle without gaining warehouse-wide inventory access. The warehouse still owns the recorded physical handoff.
+
+**How to apply:** Derive readiness from persisted custody; full staging is ready automatically, while a partial pull needs an explicit readiness decision. Recheck vehicle membership and project access on reads and live refreshes; withhold reassigned scheduled batches and clear completed handoffs. Keep each user's viewed status separate from stock and custody history.
+
 Keep completed fulfillment batches in searchable, filterable, exportable history, separate from resuming unfinished work. Active batches that cannot safely resume still need a distinct review/release path; do not silently hide their remaining holds.
 
 **Why:** The user expects “Resume saved batch” to contain only valid unfinished batches, while completed batches remain findable and warehouse workers still need to resolve interrupted or reassigned custody work.

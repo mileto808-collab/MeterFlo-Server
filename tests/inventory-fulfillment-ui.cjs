@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
   const baseURL = require("./support/workspace-ui-base.cjs")();
   const admin = await browser.newContext({ baseURL });
   const prep = await browser.newContext({ baseURL });
+  const tech = await browser.newContext({ baseURL });
   const root = `/api/projects/${fixture.projectId}`, inventory = `${root}/inventory`;
   const request = async (method, path, data, context = prep) => {
     const response = await context.request.fetch(path, { method, data });
@@ -29,6 +30,12 @@ const assert = require("node:assert/strict");
     const credentials = { username: `fulfill-${crypto.randomUUID().slice(0, 8)}`, password: `Aa1!${crypto.randomUUID()}` };
     const user = await request("POST", "/api/users", { ...credentials, firstName: "Owned", lastName: "Warehouse",
       role: "user", subroleId: role.id, projectIds: [fixture.projectId] }, admin);
+    const techRole = await request("POST", "/api/subroles", { key: `pickup_${crypto.randomUUID().slice(0, 8)}`,
+      label: "Pickup-only technician", baseRole: "user", permissions: ["workOrders.view", "nav.projects"] }, admin);
+    const techCredentials = { username: `pickup-${crypto.randomUUID().slice(0, 8)}`, password: `Aa1!${crypto.randomUUID()}` };
+    const technician = await request("POST", "/api/users", { ...techCredentials, firstName: "Pickup", lastName: "Technician",
+      role: "user", subroleId: techRole.id, projectIds: [fixture.projectId] }, admin);
+    await request("POST", "/api/auth/local/login", techCredentials, tech);
     const group = await request("POST", "/api/user-groups", { name: `Fulfillment crew ${crypto.randomUUID().slice(0, 8)}`,
       projectIds: [fixture.projectId] }, admin);
     await request("POST", "/api/auth/local/login", credentials);
@@ -36,7 +43,7 @@ const assert = require("node:assert/strict");
     await command("warehouse", { id: "fulfill-stage", code: "FUL-STG", name: "Crew staging shelf", type: "physical",
       locationTypeId: "57e15eca-f991-4328-a091-000000000003", address: "100 Test Road" }, admin);
     await command("warehouse", { id: "fulfill-vehicle", code: "FUL-VAN", name: "Crew vehicle", type: "vehicle",
-      vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO", userIds: [user.id] }, admin);
+      vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO", userIds: [user.id, technician.id] }, admin);
     await command("item", { id: "fulfill-meter", sku: "FUL-METER", name: "Fulfillment meter", tracking: "serialized", equipment: "system" });
     await command("vendor", { id: "fulfill-vendor", name: "Fulfillment vendor" });
     await command("order", { id: "fulfill-po", type: "purchase", vendorId: "fulfill-vendor", destinationId: "fulfill-source",
@@ -80,6 +87,20 @@ const assert = require("node:assert/strict");
     await createWork("BULK-SCHEDULED-OTHER", true, { assignedUserId: otherInstaller.id });
     const batch = async () => (await request("GET", `${inventory}/fulfillment`)).batches.find(batch => batch.id === batchId);
     assert.equal((await batch()).lines.length, 2);
+    const pickups = async () => (await request("GET", "/api/inventory/pickups", undefined, tech)).pickups;
+    assert.deepEqual(await pickups(), []);
+    assert.equal((await tech.request.get(inventory)).status(), 403, "Pickup-only technicians do not gain general warehouse access.");
+    const ticketResponse = await prep.request.get(`${inventory}/fulfillment/${batchId}/pick-ticket`);
+    assert.equal(ticketResponse.status(), 200);
+    const ticketHtml = await ticketResponse.text();
+    assert.match(ticketHtml, /Pick ticket.*PICK-/);
+    assert.match(ticketHtml, /data:image\/png;base64,/);
+    assert.match(ticketHtml, /FUL-METER/);
+    assert.match(ticketHtml, /Picked/);
+    assert.match(ticketHtml, /Printing\/checking this sheet does not reserve stock/);
+    const techPage = await tech.newPage();
+    await techPage.goto(`${baseURL}/`);
+    await expect(techPage.getByTestId("section-ready-pickups")).toContainText("Nothing staged for your vehicle");
     const page = await prep.newPage();
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -255,6 +276,13 @@ const assert = require("node:assert/strict");
     await expect(dialog.getByText("Scan stock as it is pulled")).toBeVisible();
     await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toBeFocused();
     await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toHaveAttribute("data-wizard-focus-target", "true");
+    const printPopup = page.waitForEvent("popup");
+    await dialog.getByRole("button", { name: "Print pick ticket", exact: true }).click();
+    const pickTicket = await printPopup;
+    await expect(pickTicket.getByRole("heading", { name: /Pick ticket · PICK-/ })).toBeVisible();
+    await expect(pickTicket.getByRole("button", { name: "Print / Save PDF", exact: true })).toBeVisible();
+    await pickTicket.screenshot({ path: "generated-artifacts/inventory-fulfillment/pick-ticket.png" });
+    await pickTicket.close();
     const checkDuplicateScans = async (phase) => {
       const input = dialog.getByTestId(`fulfillment-custody-serials-${phase}-fulfill-meter`);
       const quantity = dialog.getByTestId(`fulfillment-move-quantity-${phase}-fulfill-meter`);
@@ -336,6 +364,17 @@ const assert = require("node:assert/strict");
     await expect.poll(async () => (await batch()).lines.reduce((sum, line) => sum + line.stagedQuantity, 0)).toBe(1);
     const partialHandoff = dialog.getByRole("button", { name: "Hand off already-staged stock", exact: true });
     await expect(partialHandoff).toBeVisible();
+    assert.equal((await pickups()).length, 0, "A partial pull is not automatically advertised as ready.");
+    const beforeReady = (await request("GET", inventory)).state;
+    await dialog.getByRole("button", { name: "Make staged stock ready for partial pickup", exact: true }).click();
+    await expect.poll(async () => (await pickups())[0]?.status).toBe("partial");
+    const afterReady = (await request("GET", inventory)).state;
+    assert.deepEqual(afterReady.stock, beforeReady.stock, "Marking readiness never moves stock.");
+    await expect(techPage.getByTestId("section-ready-pickups")).toContainText("Owned crew pull");
+    await techPage.getByTestId("section-ready-pickups").getByRole("button", { name: "View notice", exact: true }).click();
+    await expect(techPage.getByTestId("section-ready-pickups")).toContainText("F-A");
+    await expect.poll(async () => (await pickups())[0]?.unread).toBe(false);
+    assert.deepEqual((await request("GET", inventory)).state.stock, afterReady.stock, "Viewing a pickup never transfers custody.");
     await expect(dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter")).toHaveValue("");
     await dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter").fill("1");
     await dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter").fill("F-B");
@@ -403,6 +442,24 @@ const assert = require("node:assert/strict");
     assert.equal(state.receipts.filter(receipt => receipt.reference === batchId && receipt.action === "fulfillmentMove").length, 2);
     assert.equal(state.allocations.some(a => crewWork.some(w => w.id === a.workOrderId)), false);
     const current = await batch();
+    await expect.poll(async () => (await pickups())[0]?.status).toBe("ready");
+    assert.deepEqual((await pickups())[0].items[0].serials.sort(), ["F-A", "F-B"]);
+    const vehicle = { id: "fulfill-vehicle", code: "FUL-VAN", name: "Crew vehicle", type: "vehicle",
+      vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO" };
+    await command("warehouse", { ...vehicle, userIds: [user.id] }, admin);
+    await expect.poll(async () => (await pickups()).length).toBe(0);
+    await expect(techPage.getByTestId("section-ready-pickups")).not.toContainText("Owned crew pull");
+    await command("warehouse", { ...vehicle, userIds: [user.id, technician.id] }, admin);
+    await expect(techPage.getByTestId("section-ready-pickups")).toContainText("Owned crew pull");
+    await techPage.goto(`${baseURL}/projects/${fixture.projectId}/work-orders?pickup=${batchId}&preserve=yes`);
+    await expect(techPage.getByText("Pickup detail", { exact: true })).toBeVisible();
+    await expect.poll(() => new URL(techPage.url()).searchParams.has("pickup")).toBe(false);
+    assert.equal(new URL(techPage.url()).searchParams.get("preserve"), "yes");
+    await techPage.screenshot({ path: "generated-artifacts/inventory-fulfillment/pickup-detail-desktop.png" });
+    await techPage.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await techPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await techPage.screenshot({ path: "generated-artifacts/inventory-fulfillment/pickup-detail-phone.png" });
+    await techPage.setViewportSize({ width: 1280, height: 720 });
     let handoffId = crypto.randomUUID();
     const handoff = { id: batchId, revision: current.revision, phase: "vehicle",
       lines: [{ itemId: "fulfill-meter", quantity: 2, serials: ["F-B", "F-A"] }],
@@ -592,6 +649,8 @@ const assert = require("node:assert/strict");
     assert.deepEqual(actualHandoff.data.lines, [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-A"] }]);
     handoffId = actualHandoff.operationId;
     await expect(dialog.getByText("Vehicle handoff complete", { exact: true })).toBeVisible();
+    await expect.poll(async () => (await pickups()).some(pickup => pickup.batchId === batchId)).toBe(false);
+    await expect(techPage.getByText("Pickup detail", { exact: true })).toHaveCount(0);
     await expect(dialog.locator("[data-wizard-complete]")).toBeFocused();
     await expect(dialog.locator("[data-wizard-complete]")).toHaveAttribute("data-wizard-focus-target", "true");
     await expect(mirrorPage.getByRole("button", { name: "Continue saved workflow", exact: true })).toHaveCount(0);
@@ -717,9 +776,11 @@ const assert = require("node:assert/strict");
     await command("fulfillmentMove", { id: scheduledId, revision: 1, phase: "stage",
       lines: [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-C"] }],
       reason: "Scheduled installer equipment physically staged", physicallyConfirmed: true }, prep, stageId);
+    assert.ok((await pickups()).some(pickup => pickup.batchId === scheduledId));
     state = (await request("GET", inventory)).state;
     assert.deepEqual(state.allocations.find(a => a.workOrderId === scheduled.id).lines[0].serials, []);
     await request("PATCH", `${root}/work-orders/${scheduled.id}`, { status: "Open", assignedUserId: null, assignedGroupId: group.name }, admin);
+    assert.equal((await pickups()).some(pickup => pickup.batchId === scheduledId), false, "Reassigned scheduled work must not invite the former vehicle.");
     await rejected("fulfillmentMove", { id: scheduledId, revision: 2, phase: "vehicle",
       lines: [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-C"] }],
       reason: "Must not deliver for an obsolete assignment", physicallyConfirmed: true });

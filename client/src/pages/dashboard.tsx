@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { DashboardMobileRelease } from "@/components/mobile-release-manager";
 import type { Project, User } from "@shared/schema";
+import { DashboardPickupSection } from "@/components/inventory/pickup-notices";
 import {
   ClipboardList,
   Clock,
@@ -46,6 +47,7 @@ export default function Dashboard() {
       </div>
 
       <DashboardMobileRelease />
+      {role !== "customer" && <DashboardPickupSection />}
 
       {role === "admin" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

@@ -159,6 +159,12 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
     ALTER TABLE public.inventory_warehouses ADD CONSTRAINT inventory_warehouse_location_type_required
       CHECK(location_type_id IS NOT NULL) NOT VALID;
     END IF; END $$`);
+  statements.push(`CREATE TABLE IF NOT EXISTS public.inventory_pickup_views (
+    project_id integer NOT NULL, batch_id text NOT NULL,
+    user_id varchar NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    revision integer NOT NULL CHECK(revision>0), viewed_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY(project_id,batch_id,user_id),
+    FOREIGN KEY(project_id,batch_id) REFERENCES public.inventory_fulfillment_batches(project_id,_key) ON DELETE CASCADE)`);
   const client = await pool.connect();
   await client.query("BEGIN");
   try {

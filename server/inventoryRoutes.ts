@@ -32,6 +32,8 @@ import { fulfillmentOrders } from "./inventoryFulfillment";
 import { fulfillmentResumeStatus } from "../shared/inventory-fulfillment";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 import { readRelationalInventory } from "./inventoryRelational";
+import { registerInventoryPickupRoutes } from "./inventoryPickups";
+import { inventoryPickTicket } from "./inventoryPickTicket";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -49,6 +51,7 @@ export function inventoryVisibleState(state: InventoryState, actor: string, admi
   }) };
 }
 export function registerInventoryRoutes(app: Express) {
+  registerInventoryPickupRoutes(app);
   const base = "/api/projects/:projectId/inventory";
   const auth = (workOrderRead = false) => async (req: any, res: any, next: any) => {
     try {
@@ -91,6 +94,26 @@ export function registerInventoryRoutes(app: Express) {
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth());
+  app.get(`${base}/fulfillment/:id/pick-ticket`, handler(async (req, res) => {
+    const c = res.locals.inventory;
+    if (!c.project.inventoryEnabled || !await storage.hasPermission(c.user, "workOrders.view"))
+      throw Object.assign(new InventoryError("Project inventory and work-order access required."), { status: 403 });
+    const id = z.string().uuid().parse(req.params.id);
+    const state = await inventoryState(c.project.id);
+    const batch = state.fulfillmentBatches?.find(batch => batch.id === id);
+    if (!batch) throw Object.assign(new InventoryError("Batch not found."), { status: 404 });
+    const connection = await pool.connect();
+    try {
+      const visible = await fulfillmentOrders(connection, c.project.id, state, c.user, batch.workOrders.map(work => work.workOrderId));
+      if (visible.length !== batch.workOrders.length)
+        throw Object.assign(new InventoryError("Work-order access required for this ticket."), { status: 403 });
+    } finally { connection.release(); }
+    const vehicle = state.warehouses.find(location => location.id === batch.vehicleId);
+    const { rows: users } = await pool.query("SELECT id,username FROM public.users WHERE id=ANY($1::text[]) AND NOT coalesce(is_locked,false)",
+      [[...(vehicle?.userIds ?? []), ...(vehicle?.assignedUserId ? [vehicle.assignedUserId] : [])]]);
+    const labels = await inventoryWorkOrderLabels(c.project.databaseName, batch.workOrders.map(work => work.workOrderId));
+    res.type("html").send(await inventoryPickTicket(batch, state, c.project, users, `${req.protocol}://${req.get("host")}`, labels));
+  }));
   app.get(`${base}/fulfillment`, handler(async (_req, res) => {
     const c = res.locals.inventory;
     if (!c.project.inventoryEnabled) throw new InventoryError("Project inventory is disabled.");

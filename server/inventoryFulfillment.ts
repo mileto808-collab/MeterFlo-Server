@@ -4,7 +4,7 @@ import { visibleAssignedOrders } from "./workOrderVisibility";
 import { workRequirements } from "./inventoryRequirements";
 import type { InventoryState } from "../shared/inventory";
 import { InventoryError, warehouseAccess } from "../shared/inventory-engine";
-import { fulfillmentCreateSchema, fulfillmentMoveSchema, fulfillmentCloseSchema, fulfillmentOutstanding,
+import { fulfillmentCreateSchema, fulfillmentMoveSchema, fulfillmentCloseSchema, fulfillmentReadySchema, fulfillmentOutstanding,
   type FulfillmentBatch, type FulfillmentCandidate } from "../shared/inventory-fulfillment";
 import type { User } from "../shared/schema";
 import { isStagingType } from "../shared/inventory-location-types";
@@ -43,7 +43,8 @@ export async function prepareFulfillment(client: PoolClient, projectId: number, 
   for (const permission of required) if (!await storage.hasPermission(user, permission))
     throw Object.assign(new InventoryError("Fulfillment requires work-order viewing and inventory assign, receive and transfer permissions."), { status: 403 });
   if (action !== "fulfillmentCreate") {
-    const input = action === "fulfillmentMove" ? fulfillmentMoveSchema.parse(data) : fulfillmentCloseSchema.parse(data);
+    const input = action === "fulfillmentMove" ? fulfillmentMoveSchema.parse(data) :
+      action === "fulfillmentReady" ? fulfillmentReadySchema.parse(data) : fulfillmentCloseSchema.parse(data);
     const batch = state.fulfillmentBatches?.find(b => b.id === input.id);
     if (!batch) throw new InventoryError("Fulfillment batch not found.");
     // Allow warehouse staff to finish custody handoff after an order is reassigned/completed:
@@ -56,7 +57,7 @@ export async function prepareFulfillment(client: PoolClient, projectId: number, 
         visible.some(w => batch.workOrders.find(saved => saved.workOrderId === w.workOrderId)?.assignmentVersion !== w.assignmentVersion ||
           !["open", "scheduled"].includes(String(w.status).toLowerCase())))
       throw Object.assign(new InventoryError("Work or assignments changed since this batch was planned. Release its remaining demand and review current orders before pulling more stock. Already-staged crew stock can still be handed to its vehicle."), { status: 409 });
-    if (batch.mode === "scheduled" && action === "fulfillmentMove") {
+    if (batch.mode === "scheduled" && (action === "fulfillmentMove" || action === "fulfillmentReady")) {
       const stale = visible.some(w => batch.workOrders.find(saved => saved.workOrderId === w.workOrderId)?.assignmentVersion !== w.assignmentVersion ||
         !w.eligible || String(w.status).toLowerCase() !== "scheduled");
       if (stale) throw Object.assign(new InventoryError("A scheduled order was reassigned or its status changed. Review its reservations in Work Order Details; do not hand this batch to the former installer."), { status: 409 });

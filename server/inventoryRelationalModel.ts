@@ -13,7 +13,7 @@ const text = (...keys: string[]): Columns => Object.fromEntries(keys.map(key => 
 const line = { itemId: "text", quantity: "integer" };
 export const relationalEntities: EntityModel[] = [
   { name: "inventory_fulfillment_batches", field: "fulfillmentBatches",
-    columns: { ...text("id", "name", "mode", "sourceId", "stagingId", "vehicleId", "status", "createdBy", "createdAt"), revision: "integer" },
+    columns: { ...text("id", "name", "mode", "sourceId", "stagingId", "vehicleId", "status", "createdBy", "createdAt"), revision: "integer", pickupReady: "boolean" },
     children: [
       { name: "inventory_fulfillment_work_orders", paths: ["workOrders"],
         columns: { workOrderId: "integer", assignmentVersion: "integer", label: "text" } },

@@ -2,6 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect, type ReactNode } from "react";
 import { withExactReadings } from "@shared/exact-readings";
+import { ProjectPickupBanner } from "@/components/inventory/pickup-notices";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -3827,6 +3828,7 @@ export default function ProjectWorkOrders() {
 
   return (
     <div className="p-4 flex flex-col gap-2 h-[calc(100vh-72px)] overflow-hidden">
+      {projectId && <ProjectPickupBanner projectId={projectId} />}
       <ChangeoutDraftRecovery
         projectId={Number(projectId)}
         onResume={(workOrderId) => {

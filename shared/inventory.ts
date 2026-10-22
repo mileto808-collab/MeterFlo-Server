@@ -77,7 +77,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
-    "fulfillmentCreate", "fulfillmentMove", "fulfillmentClose", "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
+    "fulfillmentCreate", "fulfillmentMove", "fulfillmentClose", "fulfillmentReady", "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy"]),
   data: z.record(z.unknown()),
 }).strict();

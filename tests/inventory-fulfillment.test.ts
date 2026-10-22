@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { applyInventoryCommand, reserved } from "../shared/inventory-engine";
 import { emptyInventory, type InventoryCommand, type InventoryState } from "../shared/inventory";
 import { fulfillmentOutstanding, type FulfillmentBatch } from "../shared/inventory-fulfillment";
+import { inventoryPickTicket } from "../server/inventoryPickTicket";
 import { inventoryFromRelational, inventoryToRelational } from "../server/inventoryRelationalCodec";
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { inventoryPrint } from "../server/inventoryPrint";
@@ -43,6 +44,42 @@ const move = (s: InventoryState, phase: "stage" | "vehicle", serials: string[], 
     lines: [{ itemId: "meter", quantity: serials.length, serials }],
     reason: "Physically counted and scanned for this batch", physicallyConfirmed: true }, operationId);
 };
+test("partial pickup readiness is explicit, versioned, replay-safe and does not move stock", () => {
+  let { state, batch } = create(setup());
+  assert.throws(() => post(state, "fulfillmentReady", { id: batch.id, revision: 1, ready: true }), /no stock at staging/i);
+  state = move(state, "stage", ["A"]);
+  const before = structuredClone(state), operationId = randomUUID();
+  const data = { id: batch.id, revision: state.fulfillmentBatches![0].revision, ready: true };
+  state = post(state, "fulfillmentReady", data, operationId);
+  assert.deepEqual(state.stock, before.stock);
+  assert.deepEqual(state.allocations, before.allocations);
+  assert.equal(state.fulfillmentBatches![0].pickupReady, true);
+  assert.equal(state.fulfillmentBatches![0].revision, data.revision + 1);
+  assert.deepEqual(post(state, "fulfillmentReady", data, operationId), state);
+  assert.throws(() => post(state, "fulfillmentReady", { ...data, ready: false }), /Batch changed/);
+  const relational = inventoryToRelational(state, 1);
+  const restored = inventoryFromRelational(new Map([...relational].map(([name, value]) => [name, value.rows])),
+    state.revision, Object.keys(state));
+  assert.equal(restored.fulfillmentBatches![0].pickupReady, true);
+});
+
+test("pick tickets print escaped readable identities and actual staged custody without changing stock", async () => {
+  let { state, batch } = create(setup());
+  state = move(state, "stage", ["A"]);
+  batch = state.fulfillmentBatches![0];
+  const before = structuredClone(state);
+  const html = await inventoryPickTicket(batch, state, { id: 1, name: "Project <script>", timezone: "America/Denver" },
+    [{ id: "worker", username: "Crew tech" }], "https://example.test", { "1": "CUSTOMER-1", "2": "CUSTOMER-2" });
+  assert.match(html, /PICK-\d{4}-000001/);
+  assert.match(html, /data:image\/png;base64,/);
+  assert.match(html, /Project &lt;script&gt;/);
+  assert.match(html, /CUSTOMER-1/);
+  assert.match(html, /Partially staged — not yet ready/);
+  assert.match(html, /Recorded serials waiting at staging/);
+  assert.doesNotMatch(html, new RegExp(batch.id));
+  assert.deepEqual(state, before);
+});
+
 test("crew fulfillment counts demand once, pools custody, and hands stock to a vehicle without installed reservations", () => {
   const initial = setup();
   let { state, batch } = create(initial);

@@ -19,6 +19,7 @@ import { HttpLoginRecoveryAlert } from "@/components/http-login-recovery-alert";
 import { RouteSessionCleanup } from "@/components/work-order-routing/route-session-cleanup";
 import { AccessLockGate } from "@/components/access-locks/access-lock-gate";
 import { SystemRestoreBoundary } from "@/components/system-restore-boundary";
+import { PickupInboxButton } from "@/components/inventory/pickup-notices";
 
 import Landing from "@/pages/landing";
 import LoginPage from "@/pages/login";
@@ -265,6 +266,7 @@ function AuthenticatedLayout() {
                 <HeaderContent />
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                <PickupInboxButton />
                 <UpdateNotification />
                 <ThemeToggle />
               </div>

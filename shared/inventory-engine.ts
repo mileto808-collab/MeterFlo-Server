@@ -15,7 +15,7 @@ import { allocationSchema, reservationSchema, dispositionSchema, itemSchema, sto
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 import { InventoryError } from "./inventory-errors";
 import { updateWorkPlan, effectivePlannedLines } from "./inventory-planning";
-import { applyFulfillmentMove, fulfillmentBatchSchema, fulfillmentReserved } from "./inventory-fulfillment";
+import { applyFulfillmentMove, fulfillmentBatchSchema, fulfillmentReserved, fulfillmentReadySchema } from "./inventory-fulfillment";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
 import { fieldUseSplit, resolveStockDiscrepancySchema } from "./inventory-stock-discrepancies";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
@@ -381,6 +381,18 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     access(batch.sourceId); access(batch.stagingId); access(batch.vehicleId);
     (s.fulfillmentBatches ??= []).push(batch);
     receipt(batch.id, batch.stagingId, [], `Fulfillment batch · ${batch.name}`);
+  } else if (a === "fulfillmentReady") {
+    const input = fulfillmentReadySchema.parse(d);
+    const batch = s.fulfillmentBatches?.find(value => value.id === input.id);
+    assert(batch && batch.status === "active", "Only an active batch can be made ready for pickup.");
+    assert(batch.revision === input.revision, "Batch changed. Reload before changing pickup readiness.");
+    access(batch.sourceId); access(batch.stagingId); access(batch.vehicleId);
+    assert(batch.lines.some(line => line.stagedQuantity > line.deliveredQuantity), "There is no stock at staging to pick up.");
+    batch.pickupReady = input.ready;
+    batch.revision++;
+    receipt(batch.id, batch.stagingId, [], input.ready
+      ? "Warehouse marked staged stock ready for partial pickup; no physical movement recorded."
+      : "Warehouse withdrew partial pickup readiness; stock stays at staging.");
   } else if (a === "fulfillmentMove" || a === "fulfillmentClose") {
     applyFulfillmentMove(s, a, d, command.operationId, {
       access,
