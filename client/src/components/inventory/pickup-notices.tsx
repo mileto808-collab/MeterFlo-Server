@@ -141,9 +141,22 @@ export function PickupNoticeDetails({ notice: rawNotice, onViewed }: { notice: P
   const [reportDescription, setReportDescription] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState("");
+  const [ticketQr, setTicketQr] = useState("");
+  const [ticketQrError, setTicketQrError] = useState(false);
   const reportKey = useMemo(() => user?.id ? `meterflo:pickup-issue:${encodeURIComponent(String(user.id))}:${notice.projectId}:${encodeURIComponent(notice.batchId)}` : null,
     [user?.id, notice.projectId, notice.batchId]);
   const [pendingReport, setPendingReport] = useState<{ operationId: string; revision: number; itemId: string; category: string; description: string } | null>(null);
+  useEffect(() => {
+    let current = true;
+    setTicketQr("");
+    setTicketQrError(false);
+    import("qrcode").then(({ default: QRCode }) => QRCode.toDataURL(
+      `${window.location.origin}${pickupHref(notice)}`,
+      { errorCorrectionLevel: "M", margin: 2, width: 320, color: { dark: "#172522", light: "#ffffff" } },
+    )).then(value => { if (current) setTicketQr(value); })
+      .catch(() => { if (current) setTicketQrError(true); });
+    return () => { current = false; };
+  }, [notice.projectId, notice.batchId]);
   useEffect(() => {
     if (!reportKey) return;
     try {
@@ -206,6 +219,20 @@ export function PickupNoticeDetails({ notice: rawNotice, onViewed }: { notice: P
         <p className="mt-1 text-sm text-muted-foreground">{notice.projectName} · {notice.ticketNumber}</p></div>
       <Link href={pickupHref(notice)} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">Open in project <ArrowUpRight className="h-4 w-4" /></Link>
     </div>
+    <section data-testid="pickup-ticket-qr" aria-label="Pick ticket QR code"
+      className="flex flex-col items-center gap-4 rounded-xl border bg-card p-4 text-center sm:flex-row sm:items-center sm:text-left">
+      <div className="flex h-44 w-44 shrink-0 items-center justify-center rounded-lg border bg-white p-2">
+        {ticketQr ? <img src={ticketQr} alt={`Pick ticket QR for ${notice.ticketNumber}, vehicle ${notice.vehicleName}`} className="h-full w-full object-contain" />
+          : ticketQrError ? <p role="status" className="px-3 text-xs text-muted-foreground">QR is unavailable. Open the project ticket using the link above.</p>
+            : <div className="h-36 w-36 animate-pulse rounded bg-muted" aria-label="Preparing pick ticket QR" />}
+      </div>
+      <div className="min-w-0 space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Show at staging</p>
+        <h4 className="text-lg font-semibold">Pick ticket · {notice.ticketNumber}</h4>
+        <p className="text-sm text-muted-foreground">Have the warehouse worker scan this code to open the saved batch. Scanning only opens the ticket; it does not move stock.</p>
+        <p className="text-sm"><span className="text-muted-foreground">Vehicle:</span> <span className="font-semibold">{notice.vehicleName}</span></p>
+      </div>
+    </section>
     <div className="grid gap-2 rounded-lg bg-muted/45 p-3 text-sm sm:grid-cols-2">
       <p className="flex items-center gap-2"><Truck className="h-4 w-4 text-primary" />{notice.vehicleName}</p>
       <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />{notice.stagingName}{notice.stagingLocation ? ` · ${notice.stagingLocation}` : ""}</p>

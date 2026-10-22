@@ -584,18 +584,18 @@ const assert = require("node:assert/strict");
     await expect(chooseSerial("F-B")).toBeChecked();
     await expect(chooseSerial("F-A")).not.toBeChecked();
     await expect(dialog.getByRole("button", { name: "Record vehicle handoff", exact: true })).toBeDisabled();
-    // Normal role controls must disable preparation while permission is revoked, without losing captures.
+    // Revoked workflow access hides entry completely while preserving every saved capture.
+    const beforeRevocation = await page.evaluate(key => localStorage.getItem(key),
+      `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${fixture.projectId}`);
     await request("PUT", `/api/subroles/${role.id}/permissions`, { permissions: permissions.filter(p => p !== "inventory.transfer") }, admin);
     await page.reload();
-    await launch();
-    await picker.locator("summary").click();
-    await expect(chooseSerial("F-A")).toBeDisabled();
-    await expect(searchSerials).toBeDisabled();
-    await expect(acceptSerials).toBeDisabled();
-    await expect(handoffSerials).toHaveValue("F-B");
+    await expect(page.locator('[data-testid^="button-start-inventory-"]')).toHaveCount(0);
+    assert.equal(await page.evaluate(key => localStorage.getItem(key),
+      `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${fixture.projectId}`), beforeRevocation);
     await request("PUT", `/api/subroles/${role.id}/permissions`, { permissions }, admin);
     await page.reload();
     await launch();
+    await expect(handoffSerials).toHaveValue("F-B");
     await picker.locator("summary").click();
     await expect(chooseSerial("F-A")).toBeEnabled();
     // Unknown outcomes retain the exact partial handoff and lock both existing and new preparation controls.
@@ -833,9 +833,10 @@ const assert = require("node:assert/strict");
     await expect(dialog.getByTestId("reassignment-vehicle-select")).toContainText("Reassigned installer vehicle");
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    const reviewBounds = await dialog.boundingBox();
-    assert.ok(reviewBounds && reviewBounds.x >= -1 && reviewBounds.x + reviewBounds.width <= 391,
-      "Reassignment dialog must fit within the phone viewport, not just the document.");
+    await expect.poll(async () => {
+      const reviewBounds = await dialog.boundingBox();
+      return !!reviewBounds && reviewBounds.x >= -1 && reviewBounds.x + reviewBounds.width <= 391;
+    }, { message: "Settled reassignment dialog fits within the phone viewport, not just the document." }).toBe(true);
     assert.equal(await dialog.getByTestId("fulfillment-step-body").evaluate(body =>
       body.scrollWidth <= body.clientWidth + 1), true, "Reassignment contents must not be horizontally clipped.");
     await expect(dialog.getByRole("button", { name: "Continue to vehicle handoff", exact: true })).toHaveCount(0);

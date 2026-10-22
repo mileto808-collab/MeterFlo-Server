@@ -22,6 +22,7 @@ interface ScannerInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  openCameraRequest?: number;
   "data-testid"?: string;
 }
 
@@ -32,6 +33,7 @@ export function ScannerInput({
   onChange,
   placeholder = "Enter ID...",
   disabled = false,
+  openCameraRequest,
   "data-testid": testId,
 }: ScannerInputProps) {
   const [scanMode, setScanMode] = useState<ScanMode>("manual");
@@ -47,6 +49,7 @@ export function ScannerInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerRef = useRef<HTMLDivElement>(null);
+  const lastCameraRequest = useRef(openCameraRequest);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -352,6 +355,12 @@ export function ScannerInput({
       }
     }
   };
+
+  useEffect(() => {
+    if (openCameraRequest === undefined || openCameraRequest === lastCameraRequest.current) return;
+    lastCameraRequest.current = openCameraRequest;
+    handleModeSelect("qrcode");
+  }, [openCameraRequest]);
 
   const handleDialogClose = () => {
     stopScanning();

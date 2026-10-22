@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { inventoryTabs } from "@/components/inventory-navigation";
 import { inventoryCapabilities } from "@shared/inventory-capabilities";
-import { StartInventoryButton } from "@/components/start-inventory-button";
+import { InventoryWorkflowLauncher, StartInventoryButton } from "@/components/start-inventory-button";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { countStockMatches, countStockScopeMatches } from "@shared/inventory-count-stock";
@@ -1324,6 +1324,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   return <main ref={inventoryMainRef} className={`inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7 ${["locations", "returns"].includes(inventoryTab) ? "[@media(max-height:500px)]:pb-2" : ""}`} data-testid="inventory-workspace">
+    {capabilities.fulfillment && <InventoryWorkflowLauncher projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
     <div
       ref={editorHostRef}
       className={inlineEditorOpen ? "absolute inset-0 z-30" : "hidden"}

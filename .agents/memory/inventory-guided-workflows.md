@@ -15,6 +15,18 @@ Opening Fulfill / Stage Work Orders must always show its main workflow choices, 
 
 **How to apply:** Keep saved inputs and exact pending-operation identities intact behind the start screen. Confirm before replacing unrecorded inputs, and prevent a new workflow from bypassing an unresolved operation.
 
+An explicit pick-ticket scan is an exception to the normal chooser-first entry: open that verified batch at the appropriate current step.
+
+**Why:** The user needs warehouse staff to retrieve a staged order quickly when a crew arrives later, using an HID scanner anywhere in Inventory or the fulfillment camera. The technician's pickup notice/report must also show a QR that the warehouse can scan.
+
+**How to apply:** Keep manual task entry predictable. Resolve scanned batch identity against current local permissions and state, not the printed status or scanned host. Waiting staged stock leads to handoff; unpicked work leads to staging; review and completed states must not expose an unsafe movement. Opening a scan never posts stock.
+
+Ticket switching must preserve captured work and unresolved command identities, including separately saved correction work.
+
+**Why:** A technician pickup can arrive while the warehouse worker has another workflow open, and an uncertain correction must not be bypassed by scanning a different ticket.
+
+**How to apply:** Confirm before replacing different unrecorded work, recheck the target after confirmation, block unresolved commands unless their exact receipt proves completion, and reject stale lookup results after inputs change. Do not let the Inventory HID listener steal editable-field focus or consume unrelated serial scans.
+
 Each fulfillment wizard step must bring the next required control into view, focus it, and clearly highlight it; completion must bring its confirmation into view.
 
 **Why:** Retaining the previous step's scroll position left phone users looking at the release-remainder section instead of the vehicle-handoff inputs.

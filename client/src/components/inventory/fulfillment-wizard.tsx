@@ -5,6 +5,7 @@ import { hasMeaningfulFulfillmentWork, reconcileFulfillmentDraft } from "@/lib/f
 import { FulfillmentSavedInputs } from "./fulfillment-saved-inputs";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { parsePickTicketQr } from "@shared/inventory-pick-ticket";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InventoryItem, InventoryState, Warehouse } from "@shared/inventory";
@@ -21,12 +22,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { acceptFulfillmentScans } from "@/lib/fulfillment-scans";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ScannerInput } from "@/components/scanner-input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
 import { inventoryCapabilities } from "@shared/inventory-capabilities";
 
 type FulfillmentOrder = {
@@ -37,6 +39,35 @@ type FulfillmentOrder = {
 };
 type FulfillmentResponse = { orders: FulfillmentOrder[]; batches: FulfillmentBatch[]; resumeStatus: Record<string, FulfillmentResumeStatus>; timezone: string };
 type InventorySnapshot = { state: InventoryState; permissions: string[]; projectName?: string };
+type PickTicketLookup = { batch: FulfillmentBatch; resume: { resumable: boolean; nextStep: "stage" | "vehicle"; reason?: string } };
+type CorrectionDraftSnapshot = {
+  readable: boolean;
+  raw: string | null;
+  saved: { edited?: boolean; pending?: { operationId?: string } | null; investigation?: unknown } | null;
+};
+function readCorrectionDraft(key: string | null): CorrectionDraftSnapshot {
+  if (!key) return { readable: false, raw: null, saved: null };
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return { readable: true, raw: null, saved: null };
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return { readable: false, raw, saved: null };
+    const record = value as CorrectionDraftSnapshot["saved"];
+    if (record?.pending && typeof record.pending.operationId !== "string")
+      return { readable: false, raw, saved: null };
+    return { readable: true, raw, saved: record };
+  } catch { return { readable: false, raw: null, saved: null }; }
+}
+function correctionPendingIsUnknown(snapshot: CorrectionDraftSnapshot, receipts: unknown[]) {
+  const operationId = snapshot.saved?.pending?.operationId;
+  if (!operationId) return false;
+  return !receipts.some(receipt => !!receipt && typeof receipt === "object" &&
+    (receipt as { id?: unknown }).id === operationId);
+}
+function correctionHasRetainedInputs(snapshot: CorrectionDraftSnapshot) {
+  return !!snapshot.saved && (snapshot.saved.edited === true || !!snapshot.saved.investigation || !!snapshot.saved.pending);
+}
 type Receipt = { id: string; action: string; reference: string; occurredAt: string; actor: string; reason?: string; lines: Array<{ itemId: string; quantity: number; serials: string[] }> };
 type PendingMove = {
   operationId: string;
@@ -80,7 +111,9 @@ const splitSerials = (value: string) => value.split(/[\n,;]/).map(item => item.t
 const quantityKey = (phase: string, itemId: string) => `${phase}:${itemId}`;
 const unique = (values: string[]) => new Set(values).size === values.length;
 
-export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId: number; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr, onPickTicketQrConsumed, permissions }: {
+  projectId: number; open: boolean; onOpenChange: (open: boolean) => void; pickTicketQr?: string; onPickTicketQrConsumed?: () => void; permissions?: string[];
+}) {
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -102,12 +135,29 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [finishedNotice, setFinishedNotice] = useState("");
   const [showSavedInputs, setShowSavedInputs] = useState(false);
   const [reassignmentBatchId, setReassignmentBatchId] = useState("");
+  const [ticketInput, setTicketInput] = useState("");
+  const [cameraRequest, setCameraRequest] = useState(0);
+  const [ticketBusy, setTicketBusy] = useState(false);
+  const [ticketConfirmBusy, setTicketConfirmBusy] = useState(false);
+  const [requestedTicket, setRequestedTicket] = useState<PickTicketLookup | null>(null);
+  const ticketSequence = useRef(0);
+  const ticketInFlight = useRef(new Map<string, Promise<PickTicketLookup>>());
+  const handledQr = useRef("");
+  const ticketInteraction = useRef(false);
+  const currentDraftRef = useRef(draft);
+  currentDraftRef.current = draft;
+  const [requestedTicketSnapshot, setRequestedTicketSnapshot] = useState("");
+  const [requestedCorrectionSnapshot, setRequestedCorrectionSnapshot] = useState<string | null>(null);
   const wizardRef = useRef<HTMLDivElement>(null);
   const stepBodyRef = useRef<HTMLDivElement>(null);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
-  const roleCapabilities = inventoryCapabilities(hasPermission);
+  const correctionStorageKey = user?.id
+    ? `meterflo:staging-corrections:${encodeURIComponent(String(user.id))}:${projectId}`
+    : null;
+  const roleCan = (permission: string) => permissions !== undefined ? permissions.includes(permission) : hasPermission(permission);
+  const roleCapabilities = inventoryCapabilities(roleCan);
   const inventory = useQuery<InventorySnapshot>({
     queryKey: inventoryKey,
     queryFn: async () => (await apiRequest("GET", `/api/projects/${projectId}/inventory`)).json(),
@@ -118,7 +168,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const livePermissions = inventory.data?.permissions;
   const canPermission = (permission: string) => livePermissions !== undefined
     ? livePermissions.includes(permission)
-    : hasPermission(permission);
+    : roleCan(permission);
   const canViewWorkOrders = canPermission("workOrders.view");
   const canFulfill = inventoryCapabilities(canPermission).fulfillment;
   const canPost = canFulfill;
@@ -261,7 +311,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     if (!open || !storageReady || busy || !inventory.isFetchedAfterMount || !fulfillment.isFetchedAfterMount ||
       inventory.isFetching || fulfillment.isFetching || inventory.isError || fulfillment.isError) return;
     setCheckedOnEntry(true);
-    if (showStart && savedOutcome.kind === "clear") {
+    if (!ticketInteraction.current && showStart && savedOutcome.kind === "clear") {
       setFinishedNotice(`The saved work is already ${savedOutcome.status}. Completed history and receipts are available under Completed batches.`);
       setDraft(emptyDraft());
     }
@@ -277,11 +327,228 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   }, [open, canViewWorkOrders, projectId]);
 
   const update = (changes: Partial<Draft>) => setDraft(current => ({ ...current, ...changes }));
+  const changeTicketInput = (value: string) => {
+    ticketSequence.current += 1;
+    setTicketBusy(false);
+    setTicketInput(value);
+  };
   const reset = () => {
     if (draft.pending || draft.createAttempt) return;
     setDraft(emptyDraft());
     setError("");
   };
+  const showTicketHistory = (ticket: PickTicketLookup) => {
+    setFinishedNotice(`This batch is ${ticket.batch.status}. It is read-only; review its record in Completed batches. Scanning did not move stock.`);
+    setShowCorrections(false);
+    setReassignmentBatchId("");
+    setShowStart(true);
+    setShowBlocked(false);
+    setShowHistory(true);
+    setError("");
+  };
+  const showTicketReview = (ticket: PickTicketLookup) => {
+    setShowCorrections(false);
+    setReassignmentBatchId("");
+    setShowStart(false);
+    setShowHistory(false);
+    setShowBlocked(true);
+    setError(ticket.resume.reason || "This batch needs review before it can be resumed. No stock was moved.");
+  };
+  const lookupPickTicket = async (raw: string) => {
+    const sequence = ++ticketSequence.current;
+    setTicketBusy(false);
+    setTicketConfirmBusy(false);
+    setRequestedTicket(null);
+    setRequestedTicketSnapshot("");
+    setRequestedCorrectionSnapshot(null);
+    const parsed = parsePickTicketQr(raw, projectId);
+    if (parsed.kind === "invalid") {
+      setError("That code is not a supported pick ticket. Scan its printed QR again or paste the complete ticket link.");
+      return;
+    }
+    if (parsed.kind === "wrong_project") {
+      setError(`This pick ticket belongs to project ${parsed.projectId}, not project ${projectId}. Open that project’s Inventory before scanning.`);
+      return;
+    }
+    if (draft.pending || draft.createAttempt) {
+      setError("A saved stock operation or batch-creation attempt still has an unknown outcome. Resolve that exact attempt before switching tickets.");
+      return;
+    }
+    const correctionSnapshot = readCorrectionDraft(correctionStorageKey);
+    if (!correctionSnapshot.readable) {
+      setError("Saved pickup-correction inputs could not be checked safely. Keep them intact and retry after storage is available.");
+      return;
+    }
+    ticketInteraction.current = true;
+    const draftSnapshot = JSON.stringify(currentDraftRef.current);
+    const key = `${projectId}:${parsed.batchId}`;
+    setTicketBusy(true);
+    setError("");
+    try {
+      let request = ticketInFlight.current.get(key);
+      if (!request) {
+        request = apiRequest("GET", `/api/projects/${projectId}/inventory/fulfillment/${encodeURIComponent(parsed.batchId)}/ticket`)
+          .then(response => response.json() as Promise<PickTicketLookup>);
+        ticketInFlight.current.set(key, request);
+      }
+      const result = await request;
+      if (sequence !== ticketSequence.current) return;
+      const [freshInventory, freshFulfillment] = await Promise.all([inventory.refetch(), fulfillment.refetch()]);
+      if (sequence !== ticketSequence.current) return;
+      if (JSON.stringify(currentDraftRef.current) !== draftSnapshot) {
+        setError("Your workflow inputs changed while the ticket was loading. They were kept; scan or paste the ticket again to continue.");
+        return;
+      }
+      if (freshInventory.isError || freshFulfillment.isError || !freshInventory.data || !freshFulfillment.data) {
+        setError("Ticket details were found, but a fresh inventory and fulfillment refresh did not complete. Your workflow inputs were kept; retry before continuing.");
+        return;
+      }
+      const currentCorrection = readCorrectionDraft(correctionStorageKey);
+      if (!currentCorrection.readable || currentCorrection.raw !== correctionSnapshot.raw) {
+        setError("Pickup-correction captures changed while the ticket was loading. They were kept; scan or paste the ticket again after reviewing them.");
+        return;
+      }
+      const freshReceipts = (freshInventory.data.state.receipts ?? []) as unknown[];
+      if (correctionPendingIsUnknown(currentCorrection, freshReceipts)) {
+        setError("A saved pickup-correction command has no matching receipt yet. Its exact identity and inputs remain protected; resolve that command before switching tickets.");
+        return;
+      }
+      const freshBatch = freshFulfillment.data?.batches.find(batch => batch.id === parsed.batchId);
+      if (!freshBatch) {
+        setError("The ticket was found, but its batch is not visible in the refreshed fulfillment list. Check your project access and retry.");
+        return;
+      }
+      const ticket = { ...result, batch: freshBatch };
+      if (ticket.batch.status === "completed" || ticket.batch.status === "cancelled") {
+        showTicketHistory(ticket);
+        return;
+      }
+      if (ticket.batch.status !== "active" || !ticket.resume.resumable) {
+        showTicketReview(ticket);
+        return;
+      }
+      const correctionRetained = correctionHasRetainedInputs(currentCorrection);
+      const hasRetainedWork = hasMeaningfulFulfillmentWork(draft) || !!draft.reassignmentBatchId || correctionRetained;
+      const changesSavedWork = draft.batchId !== parsed.batchId || !!draft.reassignmentBatchId ||
+        showCorrections || correctionRetained || draft.step !== ticket.resume.nextStep;
+      if (hasRetainedWork && changesSavedWork) {
+        setRequestedTicket(ticket);
+        setRequestedTicketSnapshot(draftSnapshot);
+        setRequestedCorrectionSnapshot(currentCorrection.raw);
+        return;
+      }
+      if (hasMeaningfulFulfillmentWork(draft) && draft.batchId === parsed.batchId) {
+        setDraft(current => ({ ...current, mode: "resume", step: ticket.resume.nextStep }));
+        setShowStart(false);
+        setShowHistory(false);
+        setError("");
+        return;
+      }
+      applyPickTicket(ticket);
+    } catch (cause) {
+      if (sequence !== ticketSequence.current) return;
+      const message = cause instanceof Error ? cause.message : "";
+      if (message.startsWith("403")) setError("You do not have permission to open this pick ticket. Ask a project administrator for fulfillment access.");
+      else if (message.startsWith("404")) setError("This pick ticket is not available in this project. Verify the printed ticket or ask a project administrator.");
+      else setError(`The pick ticket could not be refreshed (${message || "connection error"}). Your saved inputs were kept; retry when inventory is available.`);
+    } finally {
+      if (ticketInFlight.current.get(key)) ticketInFlight.current.delete(key);
+      if (sequence === ticketSequence.current) setTicketBusy(false);
+    }
+  };
+  const applyPickTicket = (ticket: PickTicketLookup) => {
+    if (draft.pending || draft.createAttempt) return;
+    setDraft({ ...emptyDraft(), mode: "resume", step: ticket.resume.nextStep, batchId: ticket.batch.id, name: ticket.batch.name });
+    setReassignmentBatchId("");
+    setShowCorrections(false);
+    setShowBlocked(false);
+    setShowHistory(false);
+    setShowStart(false);
+    setRequestedTicket(null);
+    setRequestedTicketSnapshot("");
+    setRequestedCorrectionSnapshot(null);
+    setFinishedNotice("");
+    setError("");
+  };
+  const confirmPickTicketReplacement = async () => {
+    const candidate = requestedTicket;
+    if (!candidate || ticketConfirmBusy || busy || draft.pending || draft.createAttempt) return;
+    const sequence = ++ticketSequence.current;
+    setTicketConfirmBusy(true);
+    setError("");
+    const currentCorrection = readCorrectionDraft(correctionStorageKey);
+    if (!currentCorrection.readable || JSON.stringify(currentDraftRef.current) !== requestedTicketSnapshot ||
+      currentCorrection.raw !== requestedCorrectionSnapshot) {
+      setRequestedTicket(null);
+      setRequestedTicketSnapshot("");
+      setRequestedCorrectionSnapshot(null);
+      setError("Workflow or pickup-correction inputs changed while confirmation was open. They were kept; scan or paste the ticket again.");
+      setTicketConfirmBusy(false);
+      return;
+    }
+    try {
+      const response = await apiRequest("GET", `/api/projects/${projectId}/inventory/fulfillment/${encodeURIComponent(candidate.batch.id)}/ticket`);
+      const latestTicket = await response.json() as PickTicketLookup;
+      if (sequence !== ticketSequence.current) return;
+      const [freshInventory, freshFulfillment] = await Promise.all([inventory.refetch(), fulfillment.refetch()]);
+      if (sequence !== ticketSequence.current) return;
+      const finalCorrection = readCorrectionDraft(correctionStorageKey);
+      if (JSON.stringify(currentDraftRef.current) !== requestedTicketSnapshot ||
+        !finalCorrection.readable || finalCorrection.raw !== requestedCorrectionSnapshot) {
+        setRequestedTicket(null);
+        setRequestedTicketSnapshot("");
+        setRequestedCorrectionSnapshot(null);
+        setError("Workflow or pickup-correction inputs changed during the final ticket check. They were kept; scan or paste again.");
+        return;
+      }
+      if (freshInventory.isError || freshFulfillment.isError || !freshInventory.data || !freshFulfillment.data) {
+        setError("A fresh inventory and fulfillment check could not complete. Nothing was replaced; retry the confirmation.");
+        return;
+      }
+      const freshReceipts = (freshInventory.data.state.receipts ?? []) as unknown[];
+      if (correctionPendingIsUnknown(finalCorrection, freshReceipts)) {
+        setError("A saved pickup-correction command still has no matching receipt. Its identity and inputs remain protected; resolve it before confirming this ticket.");
+        return;
+      }
+      const freshBatch = freshFulfillment.data.batches.find(batch => batch.id === candidate.batch.id);
+      if (!freshBatch) {
+        setError("The ticket is no longer visible in the refreshed fulfillment list. Verify project access and retry.");
+        return;
+      }
+      const ticket = { ...latestTicket, batch: freshBatch };
+      if (ticket.batch.status === "completed" || ticket.batch.status === "cancelled") {
+        setRequestedTicket(null);
+        setRequestedTicketSnapshot("");
+        setRequestedCorrectionSnapshot(null);
+        showTicketHistory(ticket);
+        return;
+      }
+      if (ticket.batch.status !== "active" || !ticket.resume.resumable) {
+        setRequestedTicket(null);
+        setRequestedTicketSnapshot("");
+        setRequestedCorrectionSnapshot(null);
+        showTicketReview(ticket);
+        return;
+      }
+      applyPickTicket(ticket);
+    } catch (cause) {
+      if (sequence !== ticketSequence.current) return;
+      const message = cause instanceof Error ? cause.message : "";
+      if (message.startsWith("403")) setError("You do not have permission to open this pick ticket. Your saved inputs remain unchanged.");
+      else if (message.startsWith("404")) setError("This pick ticket is no longer available. Your saved inputs remain unchanged.");
+      else setError(`The final ticket check failed (${message || "connection error"}). Nothing was replaced; retry the confirmation.`);
+    } finally {
+      if (sequence === ticketSequence.current) setTicketConfirmBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (!pickTicketQr) { handledQr.current = ""; return; }
+    if (pickTicketQr === handledQr.current) return;
+    handledQr.current = pickTicketQr;
+    setTicketInput(pickTicketQr);
+    void lookupPickTicket(pickTicketQr);
+    onPickTicketQrConsumed?.();
+  }, [pickTicketQr]);
   const hasSavedProgress = hasMeaningfulFulfillmentWork(draft);
   const startMode = (mode: Draft["mode"]) => {
     if (draft.pending || draft.createAttempt || busy) return;
@@ -748,7 +1015,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   });
 
   return <><Dialog open={open && roleCapabilities.fulfillment && canFulfill} onOpenChange={close}>
-    <DialogContent ref={wizardRef} className="!fixed !left-1/2 !top-2 !translate-x-[-50%] !translate-y-0 !flex !h-auto !max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-4xl !min-w-0 flex-col gap-0 overflow-hidden p-0 sm:rounded-xl" onInteractOutside={event => { if (busy) event.preventDefault(); }}>
+    <DialogContent ref={wizardRef} data-inventory-fulfillment-dialog="true" className="!fixed !left-1/2 !top-2 !translate-x-[-50%] !translate-y-0 !flex !h-auto !max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-4xl !min-w-0 flex-col gap-0 overflow-hidden p-0 sm:rounded-xl" onInteractOutside={event => { if (busy) event.preventDefault(); }}>
       <div className="min-w-0 shrink-0 border-b bg-muted/35 px-4 py-3 pr-12 sm:px-6 sm:py-4">
         <DialogHeader className="min-w-0 text-left">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><ClipboardList className="h-4 w-4" /> Inventory workflow</div>
@@ -843,6 +1110,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               else { setShowStart(true); setShowBlocked(true); }
             }} />}
           {showHistory && state && fulfillment.data && <div data-wizard-history tabIndex={-1} className="flex min-h-[24rem] flex-col">
+            {finishedNotice && <Alert className="mb-3"><AlertTitle>Read-only pick ticket</AlertTitle><AlertDescription>{finishedNotice}</AlertDescription></Alert>}
             <FulfillmentBatchHistory state={state} batches={fulfillment.data.batches}
               timezone={fulfillment.data.timezone} projectName={inventory.data?.projectName ?? "Project inventory"}
               onRefresh={() => { void fulfillment.refetch(); void inventory.refetch(); }} onPrint={printBatchReceipt} />
@@ -865,6 +1133,34 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           {showStart && !showHistory && !showBlocked && <div className="space-y-4" data-testid="fulfillment-start-screen">
             <div><h3 className="text-lg font-semibold">Choose a fulfillment workflow</h3>
               <p className="text-sm text-muted-foreground">Start new work, resume an unfinished batch, or review completed batches.</p></div>
+            <section className="space-y-3 rounded-xl border bg-muted/15 p-4" aria-labelledby="pick-ticket-scan-heading">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><h3 id="pick-ticket-scan-heading" className="font-semibold">Open a saved fulfillment ticket</h3>
+                  <p className="text-sm text-muted-foreground">Open the saved ticket to continue staging or handoff. Scanning never moves stock.</p></div>
+                <Button type="button" data-testid="inventory-pick-ticket-camera"
+                  onClick={() => setCameraRequest(value => value + 1)}>
+                  <Camera className="mr-2 h-4 w-4" />Scan Pick Ticket QR Code
+                </Button>
+              </div>
+              <ScannerInput value={ticketInput} onChange={value => {
+                changeTicketInput(value);
+                if (parsePickTicketQr(value, projectId).kind !== "invalid") void lookupPickTicket(value);
+              }} placeholder="Scan a printed pick ticket QR code"
+                data-testid="inventory-pick-ticket-scanner" openCameraRequest={cameraRequest} />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input aria-label="Paste pick ticket QR link" data-testid="inventory-pick-ticket-paste"
+                  value={ticketInput} onChange={event => changeTicketInput(event.target.value)}
+                  onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void lookupPickTicket(ticketInput); } }}
+                  placeholder="Or paste the complete ticket link" />
+                <Button type="button" data-testid="inventory-pick-ticket-open"
+                  disabled={ticketBusy || !ticketInput.trim() || !!draft.pending || !!draft.createAttempt}
+                  onClick={() => void lookupPickTicket(ticketInput)}>
+                  {ticketBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanLine className="mr-2 h-4 w-4" />}
+                  Open ticket
+                </Button>
+              </div>
+              {(draft.pending || draft.createAttempt) && <p role="status" className="text-xs text-amber-800">Resolve the saved operation before opening a different ticket. Your retry identity is protected.</p>}
+            </section>
             <Button type="button" variant="outline" className="w-full sm:w-auto" data-testid="fulfillment-open-corrections-chooser" onClick={() => setShowCorrections(true)}>Review pickup problems and missing stock</Button>
             {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
             {hasSavedProgress && (checkedOnEntry || draft.pending || draft.createAttempt) && savedOutcome.kind !== "clear" &&
@@ -1240,6 +1536,32 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
         <AlertDialogFooter>
           <AlertDialogCancel>Keep saved workflow</AlertDialogCancel>
           <AlertDialogAction disabled={busy || pendingLock || createLock} onClick={() => { if (requestedMode) startMode(requestedMode); }}>Start selected workflow</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={open && !!requestedTicket} onOpenChange={next => {
+      if (!next && !ticketConfirmBusy) {
+        setRequestedTicket(null);
+        setRequestedTicketSnapshot("");
+        setRequestedCorrectionSnapshot(null);
+      }
+    }}>
+      <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg" data-testid="inventory-pick-ticket-replace-dialog"
+        onEscapeKeyDown={event => { if (ticketConfirmBusy) event.preventDefault(); }}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Replace saved workflow inputs?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Opening ticket {requestedTicket?.batch.name} replaces different unrecorded selections, movement entries, or correction/reassignment edits. Recorded receipts and stock are unchanged. Cancel keeps every current input.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="inventory-pick-ticket-cancel-replace" disabled={ticketConfirmBusy}>Keep current inputs</AlertDialogCancel>
+          <AlertDialogAction data-testid="inventory-pick-ticket-confirm-replace"
+            disabled={busy || ticketConfirmBusy || pendingLock || createLock}
+            onClick={event => {
+              event.preventDefault();
+              void confirmPickTicketReplacement();
+            }}>{ticketConfirmBusy ? "Checking current ticket…" : "Replace inputs and open ticket"}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

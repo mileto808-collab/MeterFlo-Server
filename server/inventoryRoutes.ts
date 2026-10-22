@@ -100,6 +100,30 @@ export function registerInventoryRoutes(app: Express) {
     if (!inventoryCapabilities(permission => context.admin || context.permissions.includes(permission)).fulfillment)
       throw Object.assign(new InventoryError("Fulfillment requires inventory view, work-order view, assign, receive and transfer permissions."), { status: 403 });
   };
+  app.get(`${base}/fulfillment/:id/ticket`, handler(async (req, res) => {
+    const c = res.locals.inventory;
+    requireFulfillment(c);
+    if (!c.project.inventoryEnabled) throw new InventoryError("Project inventory is disabled.");
+    const id = z.string().uuid().parse(req.params.id);
+    const connection = await pool.connect();
+    try {
+      await connection.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const state = normalizeInventoryLocations(await readRelationalInventory(connection, c.project.id, { readOnly: true }));
+      const batch = state.fulfillmentBatches?.find(value => value.id === id);
+      if (!batch) throw Object.assign(new InventoryError("This pick ticket's batch was not found in the current project."), { status: 404 });
+      const ids = [...new Set(batch.workOrders.map(work => work.workOrderId))];
+      const orders = await fulfillmentOrders(connection, c.project.id, state, c.user, ids);
+      if (orders.length !== ids.length)
+        throw Object.assign(new InventoryError("Work-order access changed. An authorized warehouse manager must review this ticket."), { status: 403 });
+      const resume = fulfillmentResumeStatus(state, batch, orders, c.user.id, c.admin);
+      // A crew can collect a verified partial pull without waiting for all outstanding demand.
+      if (resume.resumable && batch.lines.some(line => line.stagedQuantity > line.deliveredQuantity))
+        resume.nextStep = "vehicle";
+      await connection.query("COMMIT");
+      return { batch, resume };
+    } catch (error) { await connection.query("ROLLBACK"); throw error; }
+    finally { connection.release(); }
+  }));
   app.get(`${base}/fulfillment/:id/pick-ticket`, handler(async (req, res) => {
     const c = res.locals.inventory;
     requireFulfillment(c);

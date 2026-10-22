@@ -31,7 +31,7 @@
 - [Inventory order identity](inventory-order-identity.md) — readable numbers and editable references must not replace replay/shipment identities; restores retain known numbering history.
 - [Export scope safety](export-scope-safety.md) — keep empty filtered scopes selectable; disable downloads rather than leaving users on an unintended all-records export.
 - [Inventory phone density](inventory-phone-density.md) — prioritize records across every tab; use compact section navigation and collapsed Search & Tools like Work Orders.
-- [Inventory guided workflows](inventory-guided-workflows.md) — Start Inventory leads to a permission-aware task chooser before launching a task's step wizard.
+- [Inventory guided workflows](inventory-guided-workflows.md) — chooser-first manual entry; explicit ticket scans open a verified batch without posting stock or bypassing saved-command safety.
 - [Cycle count scope](inventory-cycle-count-scope.md) — new counts select products explicitly and edit on a page; preserve existing full-warehouse counts and unselected stock.
 - [Dialog background visibility](dialog-background-visibility.md) — avoid competing with Radix accessibility restoration when hiding retained lists behind inline editors.
 - [Category compatibility](inventory-category-compatibility.md) — project categories must preserve legacy item classifications, including after the last item is cleared.
