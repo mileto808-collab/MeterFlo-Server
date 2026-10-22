@@ -102,6 +102,13 @@ export async function prepareFulfillment(client: PoolClient, projectId: number, 
     return;
   }
   const input = fulfillmentCreateSchema.parse(data);
+  if (!!input.draftId !== !!input.draftRevision)
+    throw new InventoryError("Both saved draft identity and revision are required.");
+  if (input.draftId) {
+    const draft = state.fulfillmentDrafts?.find(draft => draft.id === input.draftId);
+    if (!draft || draft.revision !== input.draftRevision)
+      throw Object.assign(new InventoryError("This saved draft was changed, used, or cleared by another user. Reopen it from Resume saved batch before creating the batch."), { status: 409 });
+  }
   if (new Set(input.workOrders.map(w => w.workOrderId)).size !== input.workOrders.length)
     throw new InventoryError("Select each work order only once.");
   if (new Set([input.sourceId, input.stagingId, input.vehicleId]).size !== 3)
@@ -129,7 +136,8 @@ export async function prepareFulfillment(client: PoolClient, projectId: number, 
     throw new InventoryError("Choose scheduled work for one installer per vehicle batch.");
   if (input.mode === "crew" && new Set(orders.map(w => w.group)).size !== 1)
     throw new InventoryError("Choose one crew/group per batch; routes and zones may be combined.");
-  return { ...input, status: "active", revision: 1, createdBy: user.id, createdAt: new Date().toISOString(),
+  const { draftId: _draftId, draftRevision: _draftRevision, ...batchInput } = input;
+  return { ...batchInput, status: "active", revision: 1, createdBy: user.id, createdAt: new Date().toISOString(),
     workOrders: orders.map(w => ({ workOrderId: w.workOrderId, assignmentVersion: w.assignmentVersion, label: w.label,
       installerId: w.installerId, installer: w.installer, scheduledDate: w.scheduledDate })),
     lines: orders.flatMap(w => w.lines.map(line => ({ ...line, workOrderId: w.workOrderId,

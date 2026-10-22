@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, reservationSchema, savedCountDraftSchema, categoryNameSchema, categoryKey, type InventoryState } from "../shared/inventory";
 import { workPlanInputSchema } from "../shared/inventory-planning";
 import { fulfillmentBatchSchema } from "../shared/inventory-fulfillment";
+import { savedFulfillmentDraftSchema } from "../shared/inventory-fulfillment-drafts";
 import { z } from "zod";
 import { validateCustomerHandoffs } from "../shared/inventory-customer-handoffs";
 import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
@@ -72,6 +73,9 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   }
   const s = backup.state;
   const batches = z.array(fulfillmentBatchSchema).parse(s.fulfillmentBatches ?? []);
+  const fulfillmentDrafts = z.array(savedFulfillmentDraftSchema).parse(s.fulfillmentDrafts ?? []);
+  if (new Set(fulfillmentDrafts.map(draft => draft.id)).size !== fulfillmentDrafts.length)
+    throw new Error("Duplicate saved fulfillment draft identities in backup.");
   if (new Set(batches.map(batch => batch.id)).size !== batches.length) throw new Error("Duplicate fulfillment batch identity.");
   for (const batch of batches) {
     if (new Set(batch.workOrders.map(w => w.workOrderId)).size !== batch.workOrders.length ||

@@ -12,6 +12,9 @@ export type EntityModel = {
 const text = (...keys: string[]): Columns => Object.fromEntries(keys.map(key => [key, "text"]));
 const line = { itemId: "text", quantity: "integer" };
 export const relationalEntities: EntityModel[] = [
+  { name: "inventory_fulfillment_drafts", field: "fulfillmentDrafts",
+    columns: { ...text("id", "name", "mode", "createdBy", "updatedBy", "savedAt"), revision: "integer" },
+    json: ["capture"] },
   { name: "inventory_fulfillment_batches", field: "fulfillmentBatches",
     columns: { ...text("id", "name", "mode", "sourceId", "stagingId", "vehicleId", "status", "createdBy", "createdAt"), revision: "integer", pickupReady: "boolean" },
     children: [

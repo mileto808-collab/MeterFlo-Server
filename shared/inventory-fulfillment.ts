@@ -39,6 +39,7 @@ const id = z.string().min(1).max(100);
 export const fulfillmentCreateSchema = z.object({
   id: z.string().uuid(), name: z.string().trim().min(1).max(200), mode: z.enum(["crew", "scheduled"]),
   sourceId: id, stagingId: id, vehicleId: id,
+  draftId: z.string().uuid().optional(), draftRevision: z.number().int().positive().optional(),
   workOrders: z.array(z.object({ workOrderId: z.number().int().positive(),
     assignmentVersion: z.number().int().nonnegative() }).strict()).min(1).max(500),
 }).strict();
@@ -53,7 +54,7 @@ export const fulfillmentCloseSchema = z.object({
 export const fulfillmentReadySchema = z.object({
   id: z.string().uuid(), revision: z.number().int().positive(), ready: z.boolean(),
 }).strict();
-export const fulfillmentBatchSchema = fulfillmentCreateSchema.omit({ workOrders: true }).extend({
+export const fulfillmentBatchSchema = fulfillmentCreateSchema.omit({ workOrders: true, draftId: true, draftRevision: true }).extend({
   status: z.enum(["active", "completed", "cancelled"]), revision: z.number().int().positive(),
   pickupReady: z.boolean().optional(),
   issues: z.array(stagedIssueSchema).max(1000).optional(),

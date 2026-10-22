@@ -82,7 +82,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies", "fulfillmentBatches"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "fulfillmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies", "fulfillmentBatches"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -91,7 +91,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft | undefined) : prior || null,
         after: kind === "shipmentDrafts" ? shipmentDraftAudit(value as SavedShipmentDraft) : value }];
     });
-    if (["shipmentDrafts", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
+    if (["shipmentDrafts", "fulfillmentDrafts", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
       if (!(after[kind] ?? []).some(d => ((d as any).id ?? (d as any).workOrderId) === id))
         updates.push({ field: `${kind}/${id}`, before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft) : prior, after: null as any });
     }

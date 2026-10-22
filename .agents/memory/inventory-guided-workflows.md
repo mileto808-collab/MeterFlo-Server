@@ -27,11 +27,17 @@ New crew and scheduled-work selection show only eligible work orders, with their
 
 **How to apply:** When implementing guided inventory workflows, preserve that shared entry and enforce the permissions appropriate to each selected task. Do not assume Start Inventory should jump straight into removed-equipment acceptance.
 
-Opening Fulfill / Stage Work Orders must always show its main workflow choices, even when a previous draft exists. Returning to saved inputs is an explicit Continue saved workflow action.
+Opening Fulfill / Stage Work Orders must always show its main workflow choices, even when a previous draft exists. All saved setup drafts and unfinished batches are resumed through Resume saved batch, not a Continue saved workflow area.
 
 **Why:** The user wants a predictable entry screen rather than being taken automatically to the last fulfillment screen. This requirement applies to the Fulfill / Stage task button, not a change to Start Inventory.
 
 **How to apply:** Keep saved inputs and exact pending-operation identities intact behind the start screen. Confirm before replacing unrecorded inputs, and prevent a new workflow from bypassing an unresolved operation.
+
+Saving a new crew or scheduled-work setup is explicit: show Save Draft only after meaningful work, and Clear draft only for an explicitly saved draft. Saved drafts are shared with any authorized project user.
+
+**Why:** The user wants another authorized warehouse worker to pick up saved work, not browser-only drafts or drafts created by merely visiting the wizard.
+
+**How to apply:** Store explicit setup drafts in the relational database and list them in Resume saved batch. Browser recovery captures are unsaved inputs, not shared drafts; retain unknown-operation identities without exposing a second posting path.
 
 An explicit pick-ticket scan is an exception to the normal chooser-first entry: open that verified batch at the appropriate current step.
 

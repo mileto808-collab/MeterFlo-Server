@@ -37,11 +37,12 @@ import { normalizeInventoryLocations } from "../shared/inventory-location-types"
 import { readRelationalInventory } from "./inventoryRelational";
 import { registerInventoryPickupRoutes } from "./inventoryPickups";
 import { inventoryPickTicket } from "./inventoryPickTicket";
+import { registerFulfillmentDraftRoutes } from "./inventoryFulfillmentDrafts";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
   // transfers. Posting still requires the acting warehouse's access grant.
-  return { ...state, operations: {}, shipmentDrafts: (state.shipmentDrafts ?? []).filter(draft => {
+  return { ...state, operations: {}, fulfillmentDrafts: [], shipmentDrafts: (state.shipmentDrafts ?? []).filter(draft => {
     if (!admin && draft.ownerId !== actor) return false;
     if (permissions && !permissions.includes(draft.stage === "dispatch" ? inventoryPermissions.transfer : inventoryPermissions.receive)) return false;
     const warehouse = state.warehouses.find(w => w.id === draftWarehouse(state, draft.orderId, draft.stage));
@@ -101,6 +102,7 @@ export function registerInventoryRoutes(app: Express) {
     if (!inventoryCapabilities(permission => context.admin || context.permissions.includes(permission)).fulfillment)
       throw Object.assign(new InventoryError("Fulfillment requires inventory view, work-order view, assign, receive and transfer permissions."), { status: 403 });
   };
+  registerFulfillmentDraftRoutes(app, base, handler, requireFulfillment);
   app.post(`${base}/fulfillment/:id/check-serials`, handler(async (req, res) => {
     const c = res.locals.inventory;
     requireFulfillment(c);

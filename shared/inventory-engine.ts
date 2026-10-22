@@ -379,6 +379,11 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   } else if (a === "fulfillmentCreate") {
     assert(capabilities.fulfillmentBatch, "Fulfillment demand must be verified against current work orders.");
     const batch = fulfillmentBatchSchema.parse(capabilities.fulfillmentBatch);
+    if (d.draftId) {
+      const draft = s.fulfillmentDrafts?.find(draft => draft.id === d.draftId);
+      assert(draft && draft.revision === d.draftRevision, "Saved draft changed or was already used. Reopen it from Resume saved batch.");
+      s.fulfillmentDrafts = (s.fulfillmentDrafts ?? []).filter(draft => draft.id !== d.draftId);
+    }
     assert(!(s.fulfillmentBatches ?? []).some(b => b.id === batch.id), "Batch identity already exists.");
     access(batch.sourceId); access(batch.stagingId); access(batch.vehicleId);
     (s.fulfillmentBatches ??= []).push(batch);
