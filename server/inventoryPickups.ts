@@ -7,6 +7,7 @@ import { accessLockCapabilities } from "./accessLocks";
 import { subscribeInventoryEvents } from "./inventoryEvents";
 import { fulfillmentTicketNumber, type InventoryPickupResponse, type InventoryPickupNotice } from "../shared/inventory-pickups";
 import type { User, Project } from "../shared/schema";
+import { postInventory } from "./inventoryService";
 
 async function pickupAccess(userId: string): Promise<{ user: User; projects: Project[] }> {
   const user = await storage.getUser(userId);
@@ -41,9 +42,9 @@ export async function inventoryPickups(userId: string): Promise<InventoryPickupR
       concat_ws(' · ',nullif(s.code,''),nullif(s.location,''),nullif(s.address,'')) staging_location,
       coalesce(seen.revision,0) seen_revision,
       (SELECT max(r.occurred_at) FROM public.inventory_receipts r WHERE r.project_id=b.project_id
-        AND r.reference=b.id AND r.action IN ('fulfillmentMove','fulfillmentReady') AND r.warehouse_id=b.staging_id) ready_at,
+        AND r.reference=b.id AND r.action IN ('fulfillmentMove','fulfillmentReady','fulfillmentCorrect') AND r.warehouse_id=b.staging_id) ready_at,
       (SELECT r.reason FROM public.inventory_receipts r WHERE r.project_id=b.project_id AND r.reference=b.id
-        AND r.action IN ('fulfillmentMove','fulfillmentReady') AND r.warehouse_id=b.staging_id
+        AND r.action IN ('fulfillmentMove','fulfillmentReady','fulfillmentCorrect') AND r.warehouse_id=b.staging_id
         ORDER BY r._position DESC LIMIT 1) notes
       FROM public.inventory_fulfillment_batches b
       JOIN public.inventory_warehouses v ON v.project_id=b.project_id AND v.id=b.vehicle_id AND v.active AND v.type='vehicle'
@@ -52,10 +53,12 @@ export async function inventoryPickups(userId: string): Promise<InventoryPickupR
       WHERE b.project_id=ANY($1::int[]) AND b.status='active'
         AND (v.assigned_user_id=$2 OR EXISTS(SELECT 1 FROM public.inventory_warehouses_values vu
           WHERE vu.project_id=v.project_id AND vu.parent_id=v._key AND vu.field='userIds' AND vu.value=$2))
-        AND EXISTS(SELECT 1 FROM public.inventory_fulfillment_lines l WHERE l.project_id=b.project_id
-          AND l.parent_id=b._key AND l.staged_quantity>l.delivered_quantity)
-        AND (coalesce(b.pickup_ready,false) OR NOT EXISTS(SELECT 1 FROM public.inventory_fulfillment_lines l
-          WHERE l.project_id=b.project_id AND l.parent_id=b._key AND l.staged_quantity<l.quantity))
+         AND ((EXISTS(SELECT 1 FROM public.inventory_fulfillment_lines l WHERE l.project_id=b.project_id
+           AND l.parent_id=b._key AND l.staged_quantity>l.delivered_quantity)
+         AND (coalesce(b.pickup_ready,false) OR NOT EXISTS(SELECT 1 FROM public.inventory_fulfillment_lines l
+           WHERE l.project_id=b.project_id AND l.parent_id=b._key AND l.staged_quantity<l.quantity)))
+         OR EXISTS(SELECT 1 FROM public.inventory_fulfillment_issues issue
+           WHERE issue.project_id=b.project_id AND issue.parent_id=b._key AND issue.status='open'))
       ORDER BY b.created_at DESC,b._position DESC`, [projects.map(project => project.id), userId]);
     if (!batches.length) { await connection.query("COMMIT"); return { pickups: [], unreadCount: 0 }; }
     // A reassigned scheduled batch cannot invite its former vehicle to collect it.
@@ -85,6 +88,9 @@ export async function inventoryPickups(userId: string): Promise<InventoryPickupR
         ON i.project_id=l.project_id AND i.id=l.item_id
       WHERE (l.project_id,l.parent_id) IN (SELECT * FROM unnest($1::int[],$2::text[]))
       ORDER BY l.line_no`, [batches.map(batch => batch.project_id), batches.map(batch => batch._key)]);
+    const { rows: issues } = await connection.query(`SELECT project_id,parent_id,id,item_id,category,description,status,reported_at,quantity
+      FROM public.inventory_fulfillment_issues WHERE project_id=ANY($1::int[]) AND status<>'resolved'
+      ORDER BY line_no`, [projects.map(project => project.id)]);
     const pickups: InventoryPickupNotice[] = batches.filter(batch => !stale.has(`${batch.project_id}:${batch._key}`)).map(batch => {
       const project = projects.find(project => project.id === batch.project_id)!;
       const items = new Map<string, InventoryPickupNotice["items"][number]>();
@@ -102,7 +108,11 @@ export async function inventoryPickups(userId: string): Promise<InventoryPickupR
       return { projectId: project.id, projectName: project.name, timezone: project.timezone ?? "UTC",
         batchId: batch.id, batchName: batch.name, ticketNumber: fulfillmentTicketNumber(batch.created_at, batch._position),
         revision: batch.revision, createdAt: batch.created_at, readyAt: batch.ready_at ?? batch.created_at,
-        status: [...items.values()].some(item => item.remainingToStage > 0) ? "partial" : "ready",
+        status: issues.some(issue => issue.project_id === batch.project_id && issue.parent_id === batch._key && issue.status === "open")
+          ? "review" : [...items.values()].some(item => item.remainingToStage > 0) ? "partial" : "ready",
+        issues: issues.filter(issue => issue.project_id === batch.project_id && issue.parent_id === batch._key)
+          .map(issue => ({ id: issue.id, itemId: issue.item_id, category: issue.category, description: issue.description,
+            status: issue.status, reportedAt: issue.reported_at, ...(issue.quantity ? { quantity: issue.quantity } : {}) })),
         vehicleId: batch.vehicle_id, vehicleName: batch.vehicle_name, stagingName: batch.staging_name,
         stagingLocation: batch.staging_location, notes: batch.notes ?? "", unread: batch.seen_revision < batch.revision,
         items: [...items.values()].map(item => ({ ...item, serials: [...new Set(item.serials)] })) };
@@ -125,6 +135,29 @@ export function registerInventoryPickupRoutes(app: Express) {
   app.get("/api/inventory/pickups", isAuthenticated, async (req: any, res) => {
     res.set("Cache-Control", "no-store");
     try { res.json(await inventoryPickups(req.user.claims.sub)); } catch (failure) { error(res, failure); }
+  });
+  app.post("/api/inventory/pickups/:projectId/:batchId/problem", isAuthenticated, async (req: any, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const projectId = z.coerce.number().int().positive().parse(req.params.projectId);
+      const batchId = z.string().uuid().parse(req.params.batchId);
+      const { operationId, ...body } = z.object({
+        operationId: z.string().uuid(), revision: z.number().int().positive(),
+        itemId: z.string().min(1).max(100),
+        category: z.enum(["wrong_serial", "wrong_item", "quantity", "missing", "other"]),
+        description: z.string().trim().min(10).max(1000),
+      }).strict().parse(req.body);
+      const { user, projects } = await pickupAccess(req.user.claims.sub);
+      if (!projects.some(project => project.id === projectId))
+        return res.status(403).json({ message: "Pickup access required for this project." });
+      // The locked command rechecks current vehicle membership and protects the exact replay identity.
+      await postInventory(projectId, { operationId, action: "fulfillmentIssue", data: { id: batchId, ...body } },
+        user.id, await storage.isAdminUser(user));
+      res.json({ reported: true });
+    } catch (failure) {
+      if (failure instanceof z.ZodError) return res.status(400).json({ message: "Choose a pickup item and provide a description of at least 10 characters." });
+      error(res, failure);
+    }
   });
   app.post("/api/inventory/pickups/:projectId/:batchId/view", isAuthenticated, async (req: any, res) => {
     res.set("Cache-Control", "no-store");

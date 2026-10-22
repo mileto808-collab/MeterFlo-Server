@@ -77,7 +77,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
-    "fulfillmentCreate", "fulfillmentMove", "fulfillmentClose", "fulfillmentReady", "fulfillmentReassign", "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
+    "fulfillmentCreate", "fulfillmentMove", "fulfillmentClose", "fulfillmentReady", "fulfillmentReassign", "fulfillmentIssue", "fulfillmentCorrect", "fulfillmentInvestigate", "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy"]),
   data: z.record(z.unknown()),
 }).strict();
@@ -103,6 +103,7 @@ export type WorkRequirements = { workOrderId: number; lines: { itemId: string; q
   automaticLines?: { itemId: string; quantity: number }[]; manualLines?: PlannedLine[]; planRevision?: number };
 export type InventoryCount = { id: string; warehouseId: string; scope?: "selected" | "warehouse"; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
+  stagingCorrection?: import("./inventory-staging-corrections").StagingCorrectionEvidence;
   pallets?: ReceiptPallet[];
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
   labor?: import("./inventory-pricing").LaborCharge[];

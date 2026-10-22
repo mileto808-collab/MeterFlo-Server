@@ -28,7 +28,7 @@ export async function inventoryPickTicket(batch: FulfillmentBatch, state: Invent
   }
   const waiting = [...items.values()].some(item => item.staged > item.loaded);
   const full = batch.lines.every(line => line.stagedQuantity === line.quantity);
-  const status = batch.status !== "active" ? batch.status : !waiting ? "Picking / not yet staged" :
+  const status = batch.status !== "active" ? batch.status : batch.issues?.some(issue => issue.status === "open") ? "Pickup needs review — do not load" : !waiting ? "Picking / not yet staged" :
     full ? "Ready for pickup" : batch.pickupReady ? "Ready for partial pickup" : "Partially staged — not yet ready";
   const timezone = project.timezone ?? "UTC";
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -40,7 +40,7 @@ export async function inventoryPickTicket(batch: FulfillmentBatch, state: Invent
     @media print{button{display:none}body{font-size:11px;margin:0}thead{display:table-header-group}.table-scroll{overflow:visible}tr{break-inside:avoid}}
     @page{margin:12mm}</style></head><body><button onclick="window.print()">Print / Save PDF</button>
     <header><div><h1>Pick ticket · ${escape(ticket)}</h1><strong>${escape(project.name)} · ${escape(batch.name)}</strong>
-    <p>${escape(status)}</p><p>Created: ${escape(inventoryDateTime(batch.createdAt, timezone))}<br>
+    <p>${escape(status)} · Revision ${batch.revision}</p><p>Created: ${escape(inventoryDateTime(batch.createdAt, timezone))}<br>
     Printed: ${escape(inventoryDateTime(new Date().toISOString(), timezone))} · ${escape(timezone)}</p></div>
     <div><img src="${qr}" alt="Open this pickup in MeterFlo"><br><small>Scan to review pickup. Sign-in required.</small></div></header>
     <p><strong>Pick from:</strong> ${escape(source?.name ?? "Unavailable warehouse")}<br>

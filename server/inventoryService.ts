@@ -129,9 +129,15 @@ export async function postInventory(projectId: number, command: InventoryCommand
       const user = await storage.getUser(actor);
       if (!user || user.isLocked) throw Object.assign(new InventoryError("Sign in required."), { status: 403 });
       if (before.operations[command.operationId]) {
-        for (const permission of ["inventory.assign", "inventory.receive", "inventory.transfer", "workOrders.view"])
+        if (command.action === "fulfillmentIssue") await prepareFulfillment(client, projectId, before, command.action, command.data, user, admin);
+        for (const permission of command.action === "fulfillmentIssue" ? [] : ["inventory.assign", "inventory.receive", "inventory.transfer", "workOrders.view"])
           if (!await storage.hasPermission(user, permission))
             throw Object.assign(new InventoryError("Fulfillment permission required."), { status: 403 });
+        if (["fulfillmentCorrect", "fulfillmentInvestigate"].includes(command.action) &&
+            !await storage.hasPermission(user, "inventory.resolveExceptions") &&
+            !await storage.hasPermission(user, "inventory.maintain") &&
+            !await storage.hasPermission(user, "inventory.configure"))
+          throw Object.assign(new InventoryError("Inventory correction permission required."), { status: 403 });
       } else {
         if (p.wizard_mode === "reading_only") throw new InventoryError("Reading-only projects do not stage replacement inventory.");
         fulfillmentBatch = await prepareFulfillment(client, projectId, before, command.action, command.data, user, admin);

@@ -15,6 +15,7 @@ import { allocationSchema, reservationSchema, dispositionSchema, itemSchema, sto
   categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 import { InventoryError } from "./inventory-errors";
+import { applyStagingCorrection, pickupNeedsReview } from "./inventory-staging-corrections";
 import { updateWorkPlan, effectivePlannedLines } from "./inventory-planning";
 import { applyFulfillmentMove, fulfillmentBatchSchema, fulfillmentReserved, fulfillmentReadySchema } from "./inventory-fulfillment";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
@@ -143,7 +144,7 @@ function kitCycles(s: InventoryState) {
   for (const i of s.items) visit(i.id, []);
 }
 export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString(), capabilities: { manageLocations?: boolean; fulfillmentBatch?: import("./inventory-fulfillment").FulfillmentBatch } = {}) {
-  if (shipmentActions.includes(command.action) || ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(command.action))
+  if (shipmentActions.includes(command.action) || ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "fulfillmentCorrect"].includes(command.action))
     assert(new TextEncoder().encode(JSON.stringify(command.data)).length <= 8 * 1024 * 1024, "Shipment data exceeds the 8 MiB limit; no changes were posted.");
   if (command.action === "countSaveDraft" || command.action === "countPost")
     assert(countPayloadFits(command.data), "Count data exceeds the 8 MiB limit; no changes were posted.");
@@ -382,6 +383,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     access(batch.sourceId); access(batch.stagingId); access(batch.vehicleId);
     (s.fulfillmentBatches ??= []).push(batch);
     receipt(batch.id, batch.stagingId, [], `Fulfillment batch · ${batch.name}`);
+  } else if (["fulfillmentIssue", "fulfillmentCorrect", "fulfillmentInvestigate"].includes(a)) {
+    applyStagingCorrection(s, a, d, command.operationId, actor, now, {
+      access, receipt,
+      move: (warehouseId, input, sign, transitId, kind) => move(s, warehouseId, input, sign, undefined,
+        kind === "missing" ? { to: { kind: "retired", id: transitId } } :
+          kind === "recovered" ? { from: { kind: "retired", id: transitId } } :
+            sign < 0 ? { to: { kind: "transit", id: transitId } } : { from: { kind: "transit", id: transitId } }),
+    });
   } else if (a === "fulfillmentReassign") {
     const input = fulfillmentReassignSchema.parse(d);
     const batch = s.fulfillmentBatches?.find(value => value.id === input.id);
@@ -424,6 +433,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     const input = fulfillmentReadySchema.parse(d);
     const batch = s.fulfillmentBatches?.find(value => value.id === input.id);
     assert(batch && batch.status === "active", "Only an active batch can be made ready for pickup.");
+    assert(!pickupNeedsReview(batch), "Resolve the pickup problem before marking this batch ready.");
     assert(batch.revision === input.revision, "Batch changed. Reload before changing pickup readiness.");
     access(batch.sourceId); access(batch.stagingId); access(batch.vehicleId);
     assert(batch.lines.some(line => line.stagedQuantity > line.deliveredQuantity), "There is no stock at staging to pick up.");

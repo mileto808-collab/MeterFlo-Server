@@ -11,6 +11,7 @@ import type { InventoryItem, InventoryState, Warehouse } from "@shared/inventory
 import { fulfillmentReserved, type FulfillmentBatch, type FulfillmentResumeStatus } from "@shared/inventory-fulfillment";
 import { FulfillmentBatchHistory } from "./fulfillment-batch-history";
 import { FulfillmentReassignmentReview } from "./fulfillment-reassignment-review";
+import { FulfillmentStagingCorrections } from "./fulfillment-staging-corrections";
 import type { FulfillmentReassignmentReview as ReassignmentReview } from "@shared/inventory-fulfillment-reassignment";
 import { locationTypeFor, warehouseAccessible, isStagingType } from "@shared/inventory-location-types";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [showStart, setShowStart] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);
+  const [showCorrections, setShowCorrections] = useState(false);
   const [requestedMode, setRequestedMode] = useState<Draft["mode"] | null>(null);
   const [checkedOnEntry, setCheckedOnEntry] = useState(false);
   const [finishedNotice, setFinishedNotice] = useState("");
@@ -116,6 +118,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     (livePermissions !== undefined ? livePermissions.includes(permission) : hasPermission(permission));
   const canViewWorkOrders = canPermission("workOrders.view");
   const canPost = canViewWorkOrders && canPermission("inventory.assign") && canPermission("inventory.receive") && canPermission("inventory.transfer");
+  const canCorrect = canPost && (canPermission("inventory.resolveExceptions") || canPermission("inventory.maintain") || canPermission("inventory.configure"));
   useInventoryEvents(open && canViewWorkOrders ? projectId : null);
   const fulfillment = useQuery<FulfillmentResponse>({
     queryKey: dataKey,
@@ -201,6 +204,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setShowStart(true);
     setShowHistory(false);
     setShowBlocked(false);
+    setShowCorrections(false);
     setRequestedMode(null);
     setCheckedOnEntry(false);
     setFinishedNotice("");
@@ -702,7 +706,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useWizardStepFocus({
     open,
     ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff && requestedMode === null,
-    stepKey: `${showHistory}:${showBlocked}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
+    stepKey: `${showCorrections}:${showHistory}:${showBlocked}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
     rootRef: wizardRef,
     bodyRef: stepBodyRef,
     chooseTarget: root => {
@@ -716,7 +720,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       };
       if (showHistory) return find('[data-wizard-history]');
       if (showBlocked) return find('[data-wizard-blocked]');
-      if (showStart) return find('[data-wizard-continue]', '[data-testid="fulfillment-start-screen"] button');
+      if (showCorrections) return null; // the correction's own step controller manages focus
+      if (showStart) return find('[data-wizard-continue]', '[data-wizard-entry]', '[data-testid="fulfillment-start-screen"] button');
       if (reassignmentBatchId) return find('[data-wizard-reassignment]');
       if (draft.pending || draft.createAttempt) return find('[data-wizard-pending]', '[data-wizard-title]');
       if (draft.step === "review") return find('[data-wizard-review]');
@@ -740,7 +745,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           <DialogTitle data-wizard-title tabIndex={-1} className="mt-1 text-xl sm:text-2xl">Fulfill / Stage Work Orders</DialogTitle>
           <DialogDescription>Build one saved crew batch, move only what is physically in custody, then hand it to one vehicle.</DialogDescription>
         </DialogHeader>
-        {!showStart && !reassignmentBatchId && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
+        {!showStart && !reassignmentBatchId && !showCorrections && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
           {stepNames.map((name, index) => <div key={name} className="min-w-0">
             <div className={`h-1 rounded-full ${index <= currentStepIndex ? "bg-primary" : "bg-border"}`} />
             <p className={`mt-1 truncate text-[10px] sm:text-xs ${index === currentStepIndex ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{name}</p>
@@ -786,7 +791,34 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           <span>Work orders and authorized locations are required before this workflow can continue.</span>
           <Button type="button" size="sm" variant="outline" onClick={() => { void fulfillment.refetch(); void inventory.refetch(); }}>Retry</Button>
         </AlertDescription></Alert>}
-        {storageReady && checkedOnEntry && !fulfillment.isLoading && !inventory.isLoading && !fulfillment.isError && !inventory.isError && <>
+        {storageReady && checkedOnEntry && !fulfillment.isLoading && !inventory.isLoading && !fulfillment.isError && !inventory.isError && (showCorrections && state && fulfillment.data ?
+          <FulfillmentStagingCorrections
+            projectId={projectId}
+            userId={String(user?.id ?? "")}
+            storageKey={storageKey ?? ""}
+            state={state}
+            batches={fulfillment.data.batches as Array<FulfillmentBatch & { issues?: import("@shared/inventory-staging-corrections").StagedIssue[]; pickupReady?: boolean }>}
+            activeBatchId={activeBatch?.id}
+            blockedBatchIds={blockedBatches.map(batch => batch.id)}
+            canCorrect={canCorrect}
+            onBack={() => setShowCorrections(false)}
+            onCommand={(action, payload, onSuccess, onError) => {
+              const { operationId, ...data } = payload;
+              void apiRequest("POST", `/api/projects/${projectId}/inventory/commands`, { operationId, action, data })
+                .then(async () => {
+                  await Promise.all([queryClient.invalidateQueries({ queryKey: dataKey }), queryClient.invalidateQueries({ queryKey: inventoryKey })]);
+                  onSuccess();
+                })
+                .catch(error => {
+                  const failure = error instanceof Error ? error : new Error("Command outcome is unknown.");
+                  if (failure.message.startsWith("409:")) {
+                    void queryClient.invalidateQueries({ queryKey: dataKey });
+                    void queryClient.invalidateQueries({ queryKey: inventoryKey });
+                  }
+                  onError(failure);
+                });
+            }}
+          /> : <>
           {reassignmentBatchId && !showStart && <FulfillmentReassignmentReview projectId={projectId} batchId={reassignmentBatchId}
             canApply={canPost} blocked={hasUnrecordedMove || !!draft.pending || !!draft.createAttempt || busy}
             vehicleId={draft.reassignmentVehicleId} reason={draft.reassignmentReason}
@@ -806,7 +838,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               onRefresh={() => { void fulfillment.refetch(); void inventory.refetch(); }} onPrint={printBatchReceipt} />
           </div>}
           {showBlocked && <div data-wizard-blocked tabIndex={-1} className="space-y-3">
-            <h3 className="text-lg font-semibold">Batches needing review</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-lg font-semibold">Batches needing review</h3><Button type="button" variant="outline" size="sm" onClick={() => setShowCorrections(true)}>Review pickup problems</Button></div>
             <p className="text-sm text-muted-foreground">These active batches cannot be resumed. Review the reason and release any unfinished remainder without undoing physical stock movements.</p>
             {blockedBatches.length ? blockedBatches.map(batch => <div key={batch.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
               <div className="min-w-0"><p className="break-words font-medium">{batch.name}</p>
@@ -823,6 +855,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           {showStart && !showHistory && !showBlocked && <div className="space-y-4" data-testid="fulfillment-start-screen">
             <div><h3 className="text-lg font-semibold">Choose a fulfillment workflow</h3>
               <p className="text-sm text-muted-foreground">Start new work, resume an unfinished batch, or review completed batches.</p></div>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" data-testid="fulfillment-open-corrections-chooser" onClick={() => setShowCorrections(true)}>Review pickup problems and missing stock</Button>
             {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
             {hasSavedProgress && (checkedOnEntry || draft.pending || draft.createAttempt) && savedOutcome.kind !== "clear" &&
             <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
@@ -849,7 +882,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                 ["crew", "New crew batch", "Choose unclaimed work and prepare one crew's pull."],
                 ["scheduled", "Scheduled installer work", "Choose scheduled work for an installer and date."],
                 ["resume", "Resume saved batch", "Continue valid, unfinished batches only."],
-              ] as const).map(([mode, label, description]) => <button key={mode} type="button"
+              ] as const).map(([mode, label, description]) => <button key={mode} type="button" data-wizard-entry
                 disabled={busy || pendingLock || createLock}
                 onClick={() => hasSavedProgress ? setRequestedMode(mode) : startMode(mode)}
                 className="min-h-20 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50">
@@ -1021,6 +1054,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                   <p className="text-sm text-muted-foreground">{draft.step === "stage"
                     ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
                     : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p></div>
+                <Button type="button" variant="outline" size="sm" data-testid="fulfillment-open-corrections" onClick={() => setShowCorrections(true)}>Review pickup problems</Button>
                  <div className="flex flex-wrap gap-2"><Badge variant={activeBatch.pickupReady || stagingComplete ? "secondary" : "outline"}>{stagingComplete || activeBatch.pickupReady ? stagingComplete ? "Ready · full batch" : "Ready · partial" : "Not yet ready"}</Badge><Badge variant="secondary">Revision {activeBatch.revision}</Badge></div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
@@ -1156,7 +1190,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
             </>}
           </div>}
           </>}
-        </>}
+        </>)}
       </div>
       <DialogFooter className="min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
         {showHistory && <Button type="button" variant="outline" onClick={() => setShowHistory(false)}><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>}
@@ -1166,12 +1200,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           if (draft.batchId === reassignmentBatchId) setShowStart(false);
           else { setShowStart(true); setShowBlocked(true); }
         }}><ArrowLeft className="mr-2 h-4 w-4 shrink-0" />Back</Button>}
-        {!showStart && !reassignmentBatchId && <div className="flex gap-2">
+        {!showStart && !reassignmentBatchId && !showCorrections && <div className="flex gap-2">
           {draft.step !== "orders" && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} onClick={goBack}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
           {draft.step === "orders" && !draft.batchId && <Button type="button" variant="ghost" disabled={busy || pendingLock || createLock} onClick={reset}>Clear draft</Button>}
         </div>}
         <div className="flex flex-wrap justify-end gap-2">
-          {!showStart && !reassignmentBatchId && <>
+          {!showStart && !reassignmentBatchId && !showCorrections && <>
           {draft.step === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") && <Button type="button" disabled={!canCreate || busy || !storageReady || !stagingLocations.length} onClick={() => update({ step: "review" })}>Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create saved batch"}</Button>}
           {draft.step === "stage" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>
@@ -1182,7 +1216,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}
           </Button>}
           </>}
-          <Button type="button" variant="outline" disabled={busy} onClick={() => close(false)}>{showStart ? "Close" : "Save & leave"}</Button>
+          <Button type="button" variant="outline" disabled={busy} onClick={() => close(false)}>{showStart && !showCorrections ? "Close" : "Save & leave"}</Button>
         </div>
       </DialogFooter>
     </DialogContent>

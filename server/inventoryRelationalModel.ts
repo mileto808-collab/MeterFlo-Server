@@ -15,6 +15,9 @@ export const relationalEntities: EntityModel[] = [
   { name: "inventory_fulfillment_batches", field: "fulfillmentBatches",
     columns: { ...text("id", "name", "mode", "sourceId", "stagingId", "vehicleId", "status", "createdBy", "createdAt"), revision: "integer", pickupReady: "boolean" },
     children: [
+      { name: "inventory_fulfillment_issues", paths: ["issues"],
+        columns: { ...text("id", "itemId", "category", "description", "status", "reportedBy", "reportedAt", "resolvedBy", "resolvedAt", "resolution"),
+          quantity: "integer" }, arrays: ["serials"] },
       { name: "inventory_fulfillment_work_orders", paths: ["workOrders"],
         columns: { workOrderId: "integer", assignmentVersion: "integer", label: "text",
           ...text("installerId", "installer", "scheduledDate") } },
@@ -63,7 +66,7 @@ export const relationalEntities: EntityModel[] = [
     columns: { workOrderId: "integer", ...text("mode", "status"), revision: "integer", assignmentVersion: "integer" }, json: ["dispositions"],
     children: [{ name: "inventory_allocation_lines", paths: ["lines", "used"], columns: { ...line, warehouseId: "text", reservationMode: "text" }, arrays: ["serials"] }] },
   { name: "inventory_receipts", field: "receipts", columns: text("id", "action", "reference", "warehouseId", "actor", "occurredAt", "reason", "holdId", "resolution", "externalReference", "kitHoldId", "sourceReceiptId"),
-    json: ["holdDisposition", "kitConversion", "kitInspection"],
+    json: ["holdDisposition", "kitConversion", "kitInspection", "stagingCorrection"],
     children: [{ name: "inventory_receipt_lines", paths: ["lines", "components", "damaged", "closedShort"], columns: { ...line, warehouseId: "text", unidentifiedQuantity: "integer", reason: "text" }, arrays: ["serials", "expectedSerials"] },
       { name: "inventory_receipt_pallets", paths: ["pallets"], columns: { ...text("id", "itemId", "label", "exceptionReason"), expectedQuantity: "integer" }, arrays: ["serials"] },
       { name: "inventory_receipt_labor", paths: ["labor"], columns: { ...text("itemId", "sku", "name", "unit"), quantity: "numeric", cost: "numeric", billingRate: "numeric" } }] },

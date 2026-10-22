@@ -3,6 +3,7 @@ import type { InventoryState, StockLine } from "./inventory";
 import { stockLineSchema } from "./inventory";
 import { InventoryError } from "./inventory-errors";
 import { isStagingType, warehouseAccessible } from "./inventory-location-types";
+import { pickupNeedsReview, stagedIssueSchema } from "./inventory-staging-corrections";
 
 export type FulfillmentResumeStatus = { resumable: boolean; nextStep: "stage" | "vehicle"; reason?: string };
 /** Discovery mirrors movement rules without promising that stock is still available at posting time. */
@@ -14,6 +15,7 @@ export function fulfillmentResumeStatus(state: InventoryState, batch: Fulfillmen
   const nextStep = unstaged ? "stage" as const : "vehicle" as const;
   const invalid = (reason: string): FulfillmentResumeStatus => ({ resumable: false, nextStep, reason });
   if (batch.status !== "active") return invalid("This batch is no longer active.");
+  if (pickupNeedsReview(batch)) return invalid("A pickup problem was reported. Use Correct staged stock to verify the items, quantities and serials before handoff.");
   if (!unstaged && !staged) return invalid("There is no unfinished stock movement.");
   if (batch.lines.some(line => line.quantity > line.deliveredQuantity &&
     !state.items.some(item => item.id === line.itemId && item.active && item.kind !== "labor")))
@@ -54,6 +56,7 @@ export const fulfillmentReadySchema = z.object({
 export const fulfillmentBatchSchema = fulfillmentCreateSchema.omit({ workOrders: true }).extend({
   status: z.enum(["active", "completed", "cancelled"]), revision: z.number().int().positive(),
   pickupReady: z.boolean().optional(),
+  issues: z.array(stagedIssueSchema).max(1000).optional(),
   createdBy: id, createdAt: z.string().datetime(),
   workOrders: z.array(z.object({ workOrderId: z.number().int().positive(),
     assignmentVersion: z.number().int().nonnegative(), label: z.string().min(1).max(500),
@@ -113,6 +116,7 @@ export function applyFulfillmentMove(state: InventoryState, action: "fulfillment
   ensure(batch && batch.status === "active", "Choose an active fulfillment batch.");
   if (batch.revision !== input.revision) throw Object.assign(new InventoryError("This batch changed. Reload its latest progress; no stock moved."), { status: 409 });
   tools.access(batch.sourceId); tools.access(batch.stagingId); tools.access(batch.vehicleId);
+  ensure(!pickupNeedsReview(batch), "Pickup needs review. Correct the staged stock before moving stock or releasing its holds.");
   if (action === "fulfillmentClose") {
     // Release only this batch's staged quantity holds. This is NOT a physical return.
     if (batch.mode === "scheduled") for (const line of batch.lines) {

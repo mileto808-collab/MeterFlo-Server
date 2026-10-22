@@ -19,6 +19,9 @@ export function inventoryFulfillmentPrint(batch: FulfillmentBatch, state: Invent
     .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   const reviews = state.receipts.filter(receipt => receipt.reference === batch.id && receipt.action === "fulfillmentReassign")
     .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const corrections = state.receipts.filter(receipt => receipt.reference === batch.id &&
+    ["fulfillmentIssue", "fulfillmentCorrect", "fulfillmentInvestigate"].includes(receipt.action))
+    .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   const totals = new Map<string, { planned: number; staged: number; handedOff: number }>();
   for (const line of batch.lines) {
     const row = totals.get(line.itemId) ?? { planned: 0, staged: 0, handedOff: 0 };
@@ -63,5 +66,9 @@ export function inventoryFulfillmentPrint(batch: FulfillmentBatch, state: Invent
     ${reviews.length ? `<h2>Reassignment reviews — no stock movement</h2>${reviews.map(receipt =>
       `<section><p>${escape(inventoryDateTime(receipt.occurredAt, timezone))} · ${escape(inventoryActorLabel(receipt.actor, actors))}</p>
       <p>${escape(receipt.reason || "")}</p></section>`).join("")}` : ""}
+    ${corrections.length ? `<h2>Pickup problems and stock corrections</h2>${corrections.map(receipt =>
+      `<section><h3>${receipt.action === "fulfillmentIssue" ? "Pickup problem reported" : receipt.action === "fulfillmentCorrect" ? "Staged stock corrected" : "Missing-stock investigation resolved"}</h3>
+      <p>${escape(inventoryDateTime(receipt.occurredAt, timezone))} · ${escape(inventoryActorLabel(receipt.actor, actors))}</p>
+      <p style="white-space:pre-wrap">${escape(receipt.reason || "")}</p></section>`).join("")}` : ""}
     </body></html>`;
 }

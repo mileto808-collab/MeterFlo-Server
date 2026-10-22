@@ -7,7 +7,9 @@ export type InventoryPickupItem = {
 export type InventoryPickupNotice = {
   projectId: number; projectName: string; timezone: string;
   batchId: string; batchName: string; ticketNumber: string; revision: number;
-  createdAt: string; readyAt: string; status: "ready" | "partial";
+  createdAt: string; readyAt: string; status: "ready" | "partial" | "review";
+  issues?: Pick<import("./inventory-staging-corrections").StagedIssue,
+    "id" | "itemId" | "category" | "description" | "status" | "reportedAt" | "quantity" | "serials">[];
   vehicleId: string; vehicleName: string; stagingName: string; stagingLocation: string;
   notes: string; unread: boolean; items: InventoryPickupItem[];
 };

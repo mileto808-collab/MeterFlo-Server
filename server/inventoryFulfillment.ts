@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { visibleAssignedOrders } from "./workOrderVisibility";
 import { workRequirements } from "./inventoryRequirements";
 import type { InventoryState } from "../shared/inventory";
+import { fulfillmentIssueSchema, fulfillmentCorrectSchema, fulfillmentInvestigateSchema } from "../shared/inventory-staging-corrections";
 import { InventoryError, warehouseAccess } from "../shared/inventory-engine";
 import { fulfillmentCreateSchema, fulfillmentMoveSchema, fulfillmentCloseSchema, fulfillmentReadySchema, fulfillmentOutstanding,
   type FulfillmentBatch, type FulfillmentCandidate } from "../shared/inventory-fulfillment";
@@ -41,11 +42,27 @@ export async function fulfillmentOrders(client: Pick<PoolClient, "query">, proje
 }
 export async function prepareFulfillment(client: PoolClient, projectId: number, state: InventoryState,
   action: string, data: Record<string, unknown>, user: User, admin: boolean): Promise<FulfillmentBatch | undefined> {
+  if (action === "fulfillmentIssue") {
+    const report = fulfillmentIssueSchema.parse(data);
+    const batch = state.fulfillmentBatches?.find(row => row.id === report.id);
+    const vehicle = state.warehouses.find(row => row.id === batch?.vehicleId && row.active);
+    if (user.role === "customer" || vehicle?.type !== "vehicle" || ![vehicle.assignedUserId, ...vehicle.userIds].includes(user.id) ||
+        !await storage.hasPermission(user, "workOrders.view") && !await storage.hasPermission(user, "inventory.view"))
+      throw Object.assign(new InventoryError("Only a current vehicle assignee may report this pickup."), { status: 403 });
+    return;
+  }
   const required = ["inventory.assign", "inventory.receive", "inventory.transfer", "workOrders.view"];
   for (const permission of required) if (!await storage.hasPermission(user, permission))
     throw Object.assign(new InventoryError("Fulfillment requires work-order viewing and inventory assign, receive and transfer permissions."), { status: 403 });
+  if (["fulfillmentCorrect", "fulfillmentInvestigate"].includes(action) &&
+      !await storage.hasPermission(user, "inventory.resolveExceptions") &&
+      !await storage.hasPermission(user, "inventory.maintain") &&
+      !await storage.hasPermission(user, "inventory.configure"))
+    throw Object.assign(new InventoryError("An inventory exception resolver or inventory manager must confirm stock corrections."), { status: 403 });
   if (action !== "fulfillmentCreate") {
     const input = action === "fulfillmentMove" ? fulfillmentMoveSchema.parse(data) :
+      action === "fulfillmentCorrect" ? fulfillmentCorrectSchema.parse(data) :
+      action === "fulfillmentInvestigate" ? fulfillmentInvestigateSchema.parse(data) :
       action === "fulfillmentReassign" ? fulfillmentReassignSchema.parse(data) :
       action === "fulfillmentReady" ? fulfillmentReadySchema.parse(data) : fulfillmentCloseSchema.parse(data);
     const batch = state.fulfillmentBatches?.find(b => b.id === input.id);
