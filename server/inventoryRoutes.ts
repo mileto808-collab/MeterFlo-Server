@@ -23,6 +23,7 @@ import { auditingEnabled } from "./auditContext";
 import { inventoryPrint } from "./inventoryPrint";
 export { inventoryPrint } from "./inventoryPrint";
 import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipment-drafts";
+import { inventoryCapabilities } from "../shared/inventory-capabilities";
 import { serialQuerySchema, stockQuerySchema } from "../shared/inventory-stock-query";
 import { prepareStockQueries, queryStock, queryStockSerials, stockOptions, stockSummary } from "./inventoryStockQueries";
 import { workRequirements } from "./inventoryRequirements";
@@ -95,8 +96,13 @@ export function registerInventoryRoutes(app: Express) {
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth());
+  const requireFulfillment = (context: any) => {
+    if (!inventoryCapabilities(permission => context.admin || context.permissions.includes(permission)).fulfillment)
+      throw Object.assign(new InventoryError("Fulfillment requires inventory view, work-order view, assign, receive and transfer permissions."), { status: 403 });
+  };
   app.get(`${base}/fulfillment/:id/pick-ticket`, handler(async (req, res) => {
     const c = res.locals.inventory;
+    requireFulfillment(c);
     if (!c.project.inventoryEnabled || !await storage.hasPermission(c.user, "workOrders.view"))
       throw Object.assign(new InventoryError("Project inventory and work-order access required."), { status: 403 });
     const id = z.string().uuid().parse(req.params.id);
@@ -140,6 +146,7 @@ export function registerInventoryRoutes(app: Express) {
   }));
   app.get(`${base}/fulfillment`, handler(async (_req, res) => {
     const c = res.locals.inventory;
+    requireFulfillment(c);
     if (!c.project.inventoryEnabled) throw new InventoryError("Project inventory is disabled.");
     if (!await storage.hasPermission(c.user, "workOrders.view"))
       throw Object.assign(new InventoryError("Work-order view permission required."), { status: 403 });
@@ -298,8 +305,7 @@ export function registerInventoryRoutes(app: Express) {
   }));
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
-    if (req.params.kind === "fulfillment" && !c.admin && !c.permissions.includes("workOrders.view"))
-      throw Object.assign(new InventoryError("Work-order view permission required."), { status: 403 });
+    if (req.params.kind === "fulfillment") requireFulfillment(c);
     const record: any = req.params.kind === "activity"
       ? inventoryActivityGroups(state).find(group => group.receipts.some(receipt => receipt.id === req.params.id))
       : (req.params.kind === "fulfillment" ? state.fulfillmentBatches ?? [] : req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : req.params.kind === "customer-handoff" ? state.customerHandoffs ?? [] : []).find((r: any) => r.id === req.params.id);

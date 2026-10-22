@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { inventoryTabs } from "@/components/inventory-navigation";
+import { inventoryCapabilities } from "@shared/inventory-capabilities";
 import { StartInventoryButton } from "@/components/start-inventory-button";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { usePageHeader } from "@/contexts/page-header-context";
@@ -83,29 +84,32 @@ import { InventoryActivityEntry } from "@/components/inventory-activity-entry";
 // Keep this page's additional section local; do not mutate shared navigation state.
 const projectInventoryTabs = [...inventoryTabs, { value: "stock-discrepancies", label: "Stock discrepancies" }];
 
-function ProjectInventoryMobileMenu({ value, onValueChange, canManageCategories }: {
-  value: string; onValueChange: (value: string) => void; canManageCategories: boolean;
+function ProjectInventoryMobileMenu({ value, onValueChange, can }: {
+  value: string; onValueChange: (value: string) => void; can: (permission: string) => boolean;
 }) {
+  const capabilities = inventoryCapabilities(can);
+  const tabs = projectInventoryTabs.filter(tab => capabilities.tabs[tab.value as keyof typeof capabilities.tabs]);
   return <div className="inventory-mobile-menu min-w-0 flex-1 md:hidden">
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button type="button" variant="outline" className="h-9 w-full justify-between"
-        aria-label={`Inventory sections, current: ${projectInventoryTabs.find(tab => tab.value === value)?.label ?? "Stock & search"}`}
+        aria-label={`Inventory sections, current: ${tabs.find(tab => tab.value === value)?.label ?? "Stock & search"}`}
         data-testid="inventory-mobile-menu">
-        <span className="flex min-w-0 items-center gap-2"><Menu className="h-4 w-4 shrink-0" /><span className="truncate">{projectInventoryTabs.find(tab => tab.value === value)?.label ?? "Stock & search"}</span></span>
+        <span className="flex min-w-0 items-center gap-2"><Menu className="h-4 w-4 shrink-0" /><span className="truncate">{tabs.find(tab => tab.value === value)?.label ?? "Stock & search"}</span></span>
         <ChevronDown className="h-4 w-4 shrink-0" />
       </Button></DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-[min(70dvh,30rem)] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
-        {canManageCategories && <DropdownMenuItem onSelect={() => onValueChange("categories")}>Manage categories</DropdownMenuItem>}
-        {projectInventoryTabs.map(tab => <DropdownMenuItem key={tab.value} aria-label={tab.label}
+        {capabilities.tabs.categories && <DropdownMenuItem onSelect={() => onValueChange("categories")}>Manage categories</DropdownMenuItem>}
+        {tabs.map(tab => <DropdownMenuItem key={tab.value} aria-label={tab.label}
           data-testid={`inventory-mobile-menu-item-${tab.value}`} onSelect={() => onValueChange(tab.value)}>{tab.label}</DropdownMenuItem>)}
       </DropdownMenuContent>
     </DropdownMenu>
   </div>;
 }
 
-function ProjectInventoryDesktopTabs() {
+function ProjectInventoryDesktopTabs({ can }: { can: (permission: string) => boolean }) {
+  const capabilities = inventoryCapabilities(can);
   return <TabsList className="inventory-desktop-tabs hidden h-auto w-full flex-wrap justify-start gap-1 md:flex">
-    {projectInventoryTabs.map(tab => <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>)}
+    {projectInventoryTabs.filter(tab => capabilities.tabs[tab.value as keyof typeof capabilities.tabs]).map(tab => <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>)}
   </TabsList>;
 }
 
@@ -175,16 +179,37 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [selectedStockRow, setSelectedStockRow] = useState<StockBalanceRow | null>(null);
   const [resource, setResource] = useState<ResourceKind | null>(null);
   const [activeCount, setActiveCount] = useState<InventoryCount | null>(null);
+  const canFromRole = (permission: string) => hasPermission(permission);
+  const roleCapabilities = inventoryCapabilities(canFromRole);
   const stockContext = useQuery<Omit<Snapshot, "state" | "users"> & { summary: StockSummary }>({
     queryKey: [base, "stock", "context"], queryFn: () => fetchStock(`${base}/stock/context`),
-    enabled: inventoryTab === "stock",
+    enabled: inventoryTab === "stock" && roleCapabilities.tabs.stock,
   });
+  const cachedSnapshot = queryClient.getQueryData<Snapshot>(queryKey);
+  const snapshotCachedAt = queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0;
+  const permissionSource = cachedSnapshot && snapshotCachedAt >= stockContext.dataUpdatedAt
+    ? cachedSnapshot.permissions
+    : stockContext.data?.permissions ?? cachedSnapshot?.permissions;
+  const queryCan = (permission: string) => permissionSource
+    ? permissionSource.includes(permission)
+    : hasPermission(permission);
+  const queryCapabilities = inventoryCapabilities(queryCan);
   // Other tabs/editors retain the legacy contract; stock never subscribes to it in the background.
-  const snapshotQuery = useQuery<Snapshot>({ queryKey, enabled: inventoryTab !== "stock" || !!resource || vendorKitOpen });
+  const snapshotQuery = useQuery<Snapshot>({ queryKey, enabled: (inventoryTab !== "stock" &&
+    !!queryCapabilities.tabs[inventoryTab as keyof typeof queryCapabilities.tabs]) ||
+    (!!resource && queryCan("inventory.maintain")) || (vendorKitOpen && queryCan("inventory.receive")) });
   const stockSnapshot = useMemo<Snapshot | undefined>(() => stockContext.data ? {
     ...stockContext.data, state: emptyInventory(), users: [],
   } : undefined, [stockContext.data]);
   const data = inventoryTab === "stock" && !resource && !vendorKitOpen ? stockSnapshot : snapshotQuery.data;
+  const latestPermissionSnapshot = snapshotQuery.data && snapshotQuery.dataUpdatedAt >= stockContext.dataUpdatedAt
+    ? snapshotQuery.data
+    : stockContext.data ?? data;
+  const can = (permission: string) => latestPermissionSnapshot
+    ? latestPermissionSnapshot.permissions.includes(permission)
+    : hasPermission(permission);
+  const capabilities = inventoryCapabilities(can);
+  const allowedTabs = projectInventoryTabs.filter(tab => capabilities.tabs[tab.value as keyof typeof capabilities.tabs]);
   const { isLoading, isError } = inventoryTab === "stock" && !resource && !vendorKitOpen ? stockContext : snapshotQuery;
   const refetch = () => inventoryTab === "stock" && !resource && !vendorKitOpen ? stockContext.refetch() : snapshotQuery.refetch();
   const summary = inventoryTab === "stock" ? stockContext.data?.summary : undefined;
@@ -396,8 +421,30 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const categoryCatalog = state?.categoryCatalog ?? [];
   // Inventory SSE resyncs include fresh permissions; the global role cache may
   // still reflect an earlier session grant while an editor is open.
-  const can = (permission: string) => data ? data.permissions.includes(permission) : hasPermission(permission);
   const canManageLocationTypes = can("inventory.manageLocationTypes");
+  useEffect(() => {
+    if (allowedTabs.some(tab => tab.value === inventoryTab)) return;
+    setInventoryTab("stock");
+  }, [inventoryTab, allowedTabs.map(tab => tab.value).join("|")]);
+  useEffect(() => {
+    if (!capabilities.stats) setShowInventoryStats(false);
+    if (!capabilities.tabs.stock) {
+      setSelectedStockRow(null);
+      setVendorKitOpen(false);
+    }
+    if (resource && (resource === "warehouse" ? !can("inventory.maintain") : !can("inventory.maintain"))) {
+      setResource(null);
+      setResourceError(null);
+    }
+    if (activeCount && !capabilities.tabs.counts) setActiveCount(null);
+    if (orderEditorOpen && !capabilities.tabs.orders) setOrderEditorOpen(false);
+    if (locationTypesManagerOpen && !canManageLocationTypes) setLocationTypesManagerOpen(false);
+    if (kitDialogMode === "assemble" && !can("inventory.assemble")) setKitDialogMode(null);
+    if (kitDialogMode === "inspect" && !can("inventory.resolveExceptions")) setKitDialogMode(null);
+    if (kitDialogMode === "disassemble" && !can("inventory.assemble")) setKitDialogMode(null);
+  }, [capabilities.stats, capabilities.tabs.stock, capabilities.tabs.counts, capabilities.tabs.orders,
+    resource, activeCount, orderEditorOpen, locationTypesManagerOpen, canManageLocationTypes, kitDialogMode,
+    latestPermissionSnapshot?.permissions]);
   const command = useMutation({
     mutationFn: async ({ action, data: payload, operationId }: { action: InventoryCommand["action"]; data: Record<string, unknown>; operationId?: string }) => {
       const response = await apiRequest("POST", `${base}/commands`, { operationId: operationId ?? freshId(), action, data: payload } satisfies InventoryCommand);
@@ -1393,16 +1440,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     >
     <Tabs value={inventoryTab} onValueChange={value => requestCountTransition(() => requestOrderTransition(() => requestResourceTransition(() => requestMovementTransition(() => requestKitTransition(() => setInventoryTab(value))))))} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
       <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
-        <StartInventoryButton mobile projectId={Number(projectId)} permissions={data?.permissions} />
+        {capabilities.fulfillment && <StartInventoryButton mobile projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
-          <ProjectInventoryMobileMenu value={inventoryTab} onValueChange={setInventoryTab} canManageCategories={can("inventory.maintain")} />
+          <ProjectInventoryMobileMenu value={inventoryTab} onValueChange={setInventoryTab} can={can} />
           <div className="inventory-desktop-heading hidden min-w-0 md:block">
             <p className="mb-0.5 hidden text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:block">Project operations</p>
             <h1 className="text-xl font-semibold tracking-tight sm:text-3xl">Inventory</h1>
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Know what’s on hand, where it lives, and which serial leaves with each crew.</p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:flex-wrap sm:gap-2">
-            <StartInventoryButton projectId={Number(projectId)} permissions={data?.permissions} />
+            {capabilities.fulfillment && <StartInventoryButton projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
             <span
               data-testid="inventory-live-indicator"
               aria-live="polite"
@@ -1417,7 +1464,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             {inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" className="h-8 px-2 text-[11px] sm:text-xs" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>
               <RefreshCw className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline">Retry live</span>
             </Button>}
-            <Button
+            {capabilities.stats && <Button
               size="sm"
               variant={showInventoryStats ? "secondary" : "outline"}
               className="h-9 px-2 sm:px-3"
@@ -1430,10 +1477,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <BarChart3 className="h-4 w-4 sm:mr-1.5" />
               <span className="hidden sm:inline">{showInventoryStats ? "Hide Stats" : "Show Stats"}</span>
               {showInventoryStats ? <ChevronUp className="ml-1 hidden h-4 w-4 sm:block" /> : <ChevronDown className="ml-1 hidden h-4 w-4 sm:block" />}
-            </Button>
+            </Button>}
           </div>
         </div>
-        <div
+        {capabilities.stats && <div
           id="inventory-stats-region"
           role="region"
           aria-label="Inventory statistics"
@@ -1445,8 +1492,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <Metric label="Catalog items" value={summary?.items ?? items.filter(item => item.active).length} detail={`${summary?.serialized ?? items.filter(item => item.tracking === "serialized").length} serial tracked`} icon={<Package className="h-4 w-4" />} />
           <Metric label="Open orders" value={summary?.orders ?? orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
           <Metric label="Open counts" value={summary?.counts ?? state.counts.filter(count => count.status === "open").length} detail={summary ? "Snapshots awaiting a post" : `Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
-        </div>
-        <ProjectInventoryDesktopTabs />
+        </div>}
+        <ProjectInventoryDesktopTabs can={can} />
       </div>
 
     {/* Preserve the existing navigation policy, but let these toolbar surfaces
@@ -1454,12 +1501,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     <div className={`min-h-0 flex-1 ${["locations", "returns"].includes(inventoryTab) ? "flex flex-col overflow-y-auto overscroll-contain" : ["orders", "stock", "items", "vendors", "categories", "exceptions", "counts", "activity", "stock-discrepancies"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
     {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors", "categories"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
-      <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      {capabilities.tabs.stock && <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryStockWorkspace base={base} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           onViewSerials={setSelectedStockRow} canVerifyVendorKit={can("inventory.receive")}
           onVerifyVendorKit={() => { setVendorKitOpen(true); }} />
-      </TabsContent>
-      <TabsContent value="stock-discrepancies" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      </TabsContent>}
+      {capabilities.tabs["stock-discrepancies"] && <TabsContent value="stock-discrepancies" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryStockDiscrepancies projectId={projectId!} state={state} canResolve={can("inventory.resolveExceptions")} busy={command.isPending}
           timezone={timezone} projectName={data.projectName} actors={data.actors ?? []}
           workOrderLabels={data.workOrderLabels ?? {}} workOrderIdentifiers={data.workOrderIdentifiers}
@@ -1468,9 +1515,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             await command.mutateAsync({ action: "resolveStockDiscrepancy", data: payload });
             return true;
           }} />
-      </TabsContent>
-      <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
-        {locationTypesManagerOpen ? <LocationTypesManager state={state} pending={command.isPending} authorized={canManageLocationTypes} portalHost={editorHostRef.current}
+      </TabsContent>}
+      {capabilities.tabs.locations && <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        {locationTypesManagerOpen && canManageLocationTypes && can("inventory.maintain") ? <LocationTypesManager state={state} pending={command.isPending} authorized={canManageLocationTypes} portalHost={editorHostRef.current}
           onBack={() => setLocationTypesManagerOpen(false)}
           onCommand={(action, payload, onSuccess, onError) => command.mutate(
             { action: action as InventoryCommand["action"], data: payload },
@@ -1505,8 +1552,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               </div>{can("inventory.maintain") && (canManageLocationTypes || warehouseAccessible(state, warehouse, user?.id, user?.role === "admin")) && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div></article>;
           }} />
         }
-      </TabsContent>
-      <TabsContent value="items" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      </TabsContent>}
+      {capabilities.tabs.items && <TabsContent value="items" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryCatalogWorkspace kind="items" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
           canMaintain={can("inventory.maintain")} canAssemble={can("inventory.assemble")} canInspectKits={can("inventory.resolveExceptions")}
           onAssemble={() => setKitDialogMode("assemble")} onDisassemble={() => setKitDialogMode("disassemble")} onInspectKits={() => setKitDialogMode("inspect")}
@@ -1516,13 +1563,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           itemDeleteBlockers={item => itemDeletionBlockers(state, item.id)}
           itemDeletePending={command.isPending}
           onEditVendor={vendor => openResource("vendor", vendor)} />
-      </TabsContent>
-      <TabsContent value="vendors" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      </TabsContent>}
+      {capabilities.tabs.vendors && <TabsContent value="vendors" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryCatalogWorkspace kind="vendors" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
           canMaintain={can("inventory.maintain")} onRefresh={() => void refetch()} onAdd={() => openResource("vendor")}
           onEditItem={item => openResource("item", item)} onEditVendor={vendor => openResource("vendor", vendor)} />
-      </TabsContent>
-      <TabsContent value="categories" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      </TabsContent>}
+      {capabilities.tabs.categories && <TabsContent value="categories" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryRecordsWorkspace kind="categories" title="Item categories" description="Project-wide catalog groups. Existing item categories are included automatically."
           dataset={categoriesDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           headerAction={<InventoryCategoryCreateAction canMaintain={can("inventory.maintain")} pending={command.isPending}
@@ -1546,9 +1593,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               </div>
             </article>;
           }} />
-      </TabsContent>
+      </TabsContent>}
 
-      <TabsContent value="orders" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      {capabilities.tabs.orders && <TabsContent value="orders" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <Dialog open={shipmentDraftsOpen} onOpenChange={setShipmentDraftsOpen}>
           <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
             <DialogHeader><DialogTitle>Saved shipment drafts</DialogTitle><DialogDescription>Continue a saved receiving, dispatch, or arrival capture. Access remains owner-only, except administrators may take ownership.</DialogDescription></DialogHeader>
@@ -1739,16 +1786,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <Button size="sm" variant="outline" aria-label="Next order page" disabled={currentOrderPage >= orderPageCount - 1} onClick={() => { setOrderPage(currentOrderPage + 1); orderResultsElement?.scrollTo({ top: 0 }); }}>Next</Button>
           </nav>
         </section>
-      </TabsContent>
-      <TabsContent value="exceptions" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      </TabsContent>}
+      {capabilities.tabs.exceptions && <TabsContent value="exceptions" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryShipmentExceptions state={state} items={items} orders={orderItems} canResolve={can("inventory.resolveExceptions")}
           onDirtyChange={setMovementDirty}
           busy={command.isPending} onPrintOrder={id => openPrint("order", id)} onPrintReceipt={id => openPrint("receipt", id)}
           onResolve={payload => postWithStableIdentity("resolveHold", payload)} projectName={data.projectName} timezone={timezone}
           actors={data.actors ?? []} users={data.users} onRefresh={() => void refetch()} />
-      </TabsContent>
+      </TabsContent>}
 
-      <TabsContent value="counts" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      {capabilities.tabs.counts && <TabsContent value="counts" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <Dialog open={countStartOpen} onOpenChange={open => { if (!command.isPending) setCountStartOpen(open); }}>
           <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" onEscapeKeyDown={event => { if (command.isPending) event.preventDefault(); }} onPointerDownOutside={event => { if (command.isPending) event.preventDefault(); }}>
             <DialogHeader><DialogTitle>Start cycle count</DialogTitle><DialogDescription>Choose a location and counting scope. Stock changes only after the count is reviewed and posted.</DialogDescription></DialogHeader>
@@ -1973,8 +2020,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             </div>
           </>
         </InventoryEditorSurface>}
-      </TabsContent>
-      <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      </TabsContent>}
+      {capabilities.tabs.returns && <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         {Object.entries(returnInspect).filter(([id, draft]) => {
           const current = state.returns.find(value => value.id === id);
           const selectedItem = items.find(value => value.id === draft.itemId && value.active);
@@ -2001,7 +2048,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           headerAction={<div className="flex flex-wrap gap-2">
             {can("inventory.resolveReturns") && <Button size="sm" variant="outline" onClick={() => setCustomerHandoffIds([])}>Customer handoffs</Button>}
-            <RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} /></div>}
+            {can("inventory.manageRemovalRules") && <RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} />}</div>}
           renderRow={row => { const returned = state.returns.find(value => value.id === row.id); if (!returned) return null;
             return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{row.cells.status}</Badge></div>
@@ -2021,12 +2068,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 draft={returnInspect[returned.id]} onDraft={draft => setReturnInspect(current => { const next = { ...current }; if (draft) next[returned.id] = draft; else delete next[returned.id]; return next; })}
                 post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} /></div></article>;
           }} />
-      </TabsContent>
-      <TabsContent value="activity" data-testid="inventory-activity-entries" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+      </TabsContent>}
+      {capabilities.tabs.activity && <TabsContent value="activity" data-testid="inventory-activity-entries" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryRecordsWorkspace kind="activity" title="Stock movement ledger" description="Related transactions appear once. Expand or print the complete history, including batch operations. Filters match individual transactions; each matching summary retains its full history." dataset={activityDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           renderRow={row => { const group = activityGroupById.get(row.id); return group ?
             <InventoryActivityEntry group={group} row={row} state={state} receiptSummary={receiptSummary} print={openPrint} /> : null; }} />
-      </TabsContent>
+      </TabsContent>}
     </div>
     </Tabs>
     </div>
@@ -2034,7 +2081,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       initialIds={customerHandoffIds ?? []} state={state} timezone={timezone} workOrderLabels={data.workOrderLabels ?? {}}
       post={(payload, operationId) => command.mutateAsync({ action: "returnCustomerBatch", data: payload, operationId })}
       print={id => openPrint("customer-handoff", id)} />}
-    {kitDialogMode && <InventoryKitDialog key={kitDialogMode} state={state} projectId={projectId} mode={kitDialogMode}
+    {kitDialogMode && (kitDialogMode === "inspect" ? can("inventory.resolveExceptions") : can("inventory.assemble")) && <InventoryKitDialog key={kitDialogMode} state={state} projectId={projectId} mode={kitDialogMode}
       canResolve={can("inventory.resolveExceptions")} onDirtyChange={setKitDirty} onOperationPending={setKitOperationPending}
       onClose={() => { setKitDialogMode(null); setKitDirty(false); setKitOperationPending(false); }}
       onSaved={async () => { await queryClient.invalidateQueries({ queryKey }); return refetch(); }} />}
@@ -2059,7 +2106,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       />
     )}
 
-    {resource && <InventoryEditorSurface
+    {resource && can("inventory.maintain") && <InventoryEditorSurface
       inline={resource !== "vendor"}
       portalHost={editorHostRef.current}
       open={!!resource}

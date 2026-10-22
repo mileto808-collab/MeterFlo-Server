@@ -19,6 +19,12 @@ That can be mistaken for a missing-record or responsive-layout failure.
 normal role management, then separately verify create/edit/delete remain denied.
 An API read alone does not establish that the account can enter the page.
 
+Hide Inventory tabs, buttons and workflow entry points when the user lacks the applicable permissions; do not merely leave unusable actions visible.
+
+**Why:** The user explicitly said field technicians with View Inventory and Assign Inventory should not see warehouse-only areas or enter Start Inventory simply because they can view work orders.
+
+**How to apply:** Preserve authorized stock lookup, work-order inventory assignment and crew pickup access. Gate management areas by the relevant operational permissions, guard saved/deep-linked screens and permission revocation, and enforce warehouse commands on the server independently.
+
 Work-order viewing must not require warehouse-wide inventory access just to read that work order's inventory requirements and recorded usage.
 
 **Why:** A field technician's authorized work-order detail displayed an inventory loading error because the embedded read required broader inventory permission. Granting catalog/warehouse access solely to fix that panel would broaden access unnecessarily.

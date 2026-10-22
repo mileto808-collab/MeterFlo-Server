@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
+import { inventoryCapabilities } from "@shared/inventory-capabilities";
 
 type FulfillmentOrder = {
   workOrderId: number; label: string; status: string; group: string; installerId: string | null; installer: string;
@@ -106,24 +107,27 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
+  const roleCapabilities = inventoryCapabilities(hasPermission);
   const inventory = useQuery<InventorySnapshot>({
     queryKey: inventoryKey,
     queryFn: async () => (await apiRequest("GET", `/api/projects/${projectId}/inventory`)).json(),
-    enabled: open,
+    enabled: open && roleCapabilities.fulfillment,
     staleTime: 0,
     refetchOnMount: "always",
   });
   const livePermissions = inventory.data?.permissions;
-  const canPermission = (permission: string) => user?.role === "admin" ||
-    (livePermissions !== undefined ? livePermissions.includes(permission) : hasPermission(permission));
+  const canPermission = (permission: string) => livePermissions !== undefined
+    ? livePermissions.includes(permission)
+    : hasPermission(permission);
   const canViewWorkOrders = canPermission("workOrders.view");
-  const canPost = canViewWorkOrders && canPermission("inventory.assign") && canPermission("inventory.receive") && canPermission("inventory.transfer");
+  const canFulfill = inventoryCapabilities(canPermission).fulfillment;
+  const canPost = canFulfill;
   const canCorrect = canPost && (canPermission("inventory.resolveExceptions") || canPermission("inventory.maintain") || canPermission("inventory.configure"));
-  useInventoryEvents(open && canViewWorkOrders ? projectId : null);
+  useInventoryEvents(open && canFulfill ? projectId : null);
   const fulfillment = useQuery<FulfillmentResponse>({
     queryKey: dataKey,
     queryFn: async () => (await apiRequest("GET", `/api/projects/${projectId}/inventory/fulfillment`)).json(),
-    enabled: open && canViewWorkOrders,
+    enabled: open && canFulfill && !!inventory.data,
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnReconnect: "always",
@@ -228,6 +232,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useEffect(() => {
     if (open) setShowUnavailable(false);
   }, [open]);
+  useEffect(() => {
+    if (open && inventory.isFetchedAfterMount && !inventory.isFetching && !canFulfill) {
+      onOpenChange(false);
+    }
+    else if (open && !inventory.data && !roleCapabilities.fulfillment) onOpenChange(false);
+  }, [open, inventory.isFetchedAfterMount, inventory.isFetching, inventory.data, canFulfill, roleCapabilities.fulfillment, onOpenChange]);
   useEffect(() => { setSerialSearch({}); }, [open, draft.batchId, draft.step]);
   useEffect(() => {
     if (!storageKey || !storageReady) return;
@@ -737,7 +747,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     },
   });
 
-  return <><Dialog open={open} onOpenChange={close}>
+  return <><Dialog open={open && roleCapabilities.fulfillment && canFulfill} onOpenChange={close}>
     <DialogContent ref={wizardRef} className="!fixed !left-1/2 !top-2 !translate-x-[-50%] !translate-y-0 !flex !h-auto !max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-4xl !min-w-0 flex-col gap-0 overflow-hidden p-0 sm:rounded-xl" onInteractOutside={event => { if (busy) event.preventDefault(); }}>
       <div className="min-w-0 shrink-0 border-b bg-muted/35 px-4 py-3 pr-12 sm:px-6 sm:py-4">
         <DialogHeader className="min-w-0 text-left">
