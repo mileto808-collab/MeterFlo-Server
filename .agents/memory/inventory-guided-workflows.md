@@ -11,6 +11,12 @@ The Start Inventory task selection stays in a modal; Fulfill / Stage Work Orders
 
 **How to apply:** Preserve saved workflow state and scan entry while keeping the fulfillment workspace in the page. Confirmation and camera dialogs may still use their existing overlays.
 
+On the fulfillment entry screen, workflow selector cards sit directly below “Choose a fulfillment workflow.” QR scanning is a button above that heading opening a scan modal; pickup-problem review must be prominent.
+
+**Why:** The user requested a simpler entry screen without the expanded scanner form separating the heading from its choices.
+
+**How to apply:** Keep scanner and paste controls inside the ticket modal, keep HID entry available, and use a clearly visible colored pickup-review action.
+
 **Why:** The user described a common task-selection screen, not a button tied directly to a single receiving workflow.
 
 **How to apply:** When implementing guided inventory workflows, preserve that shared entry and enforce the permissions appropriate to each selected task. Do not assume Start Inventory should jump straight into removed-equipment acceptance.

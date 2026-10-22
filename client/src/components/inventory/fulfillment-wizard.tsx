@@ -28,8 +28,9 @@ import { ScannerInput } from "@/components/scanner-input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
 import { inventoryCapabilities } from "@shared/inventory-capabilities";
 
 type FulfillmentOrder = {
@@ -137,7 +138,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const [showSavedInputs, setShowSavedInputs] = useState(false);
   const [reassignmentBatchId, setReassignmentBatchId] = useState("");
   const [ticketInput, setTicketInput] = useState("");
-  const [cameraRequest, setCameraRequest] = useState(0);
+  const [showTicketScan, setShowTicketScan] = useState(false);
   const [ticketArrival, setTicketArrival] = useState(0);
   const ticketIdentityFocus = useRef<string | null>(null);
   const [ticketBusy, setTicketBusy] = useState(false);
@@ -262,6 +263,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     if (!open) {
       setStorageReady(false);
       setCheckedOnEntry(false);
+      setShowTicketScan(false);
       return;
     }
     if (!storageKey) return;
@@ -349,6 +351,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     setError("");
   };
   const showTicketHistory = (ticket: PickTicketLookup) => {
+    setShowTicketScan(false);
     setFinishedNotice(`This batch is ${ticket.batch.status}. It is read-only; review its record in Completed batches. Scanning did not move stock.`);
     setShowCorrections(false);
     setReassignmentBatchId("");
@@ -358,6 +361,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     setError("");
   };
   const showTicketReview = (ticket: PickTicketLookup) => {
+    setShowTicketScan(false);
     setShowCorrections(false);
     setReassignmentBatchId("");
     setShowStart(false);
@@ -430,6 +434,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
         return;
       }
       const ticket = { ...result, batch: freshBatch };
+      setShowTicketScan(false);
       if (ticket.batch.status === "completed" || ticket.batch.status === "cancelled") {
         showTicketHistory(ticket);
         return;
@@ -471,6 +476,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   };
   const applyPickTicket = (ticket: PickTicketLookup) => {
     if (draft.pending || draft.createAttempt) return;
+    setShowTicketScan(false);
     ticketIdentityFocus.current = ticket.batch.id;
     setTicketArrival(value => value + 1);
     setDraft({ ...emptyDraft(), mode: "resume", step: ticket.resume.nextStep, batchId: ticket.batch.id, name: ticket.batch.name });
@@ -1122,7 +1128,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
         </div>}
       </div>
       <div ref={stepBodyRef} data-testid="fulfillment-step-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
-        {error && <Alert variant="destructive" className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Workflow needs attention</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+        {error && !showTicketScan && <Alert variant="destructive" className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Workflow needs attention</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
         {draft.pending && <Alert data-wizard-pending tabIndex={-1} className="mb-4 border-amber-500/50 bg-amber-500/5">
           <AlertTriangle className="h-4 w-4" /><AlertTitle>{busy ? "Checking saved movement" : "Movement outcome needs confirmation"}</AlertTitle>
           <AlertDescription className="space-y-2"><span>The exact operation ID and payload are retained. Do not make another physical move until a matching receipt is found or this command is retried.</span>
@@ -1223,58 +1229,20 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             </div>) : <p role="status" className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No batches need review. Check Resume saved batch for unfinished work.</p>}
           </div>}
           {showStart && !showHistory && !showBlocked && <div className="space-y-4" data-testid="fulfillment-start-screen">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <Button type="button" data-testid="inventory-pick-ticket-camera" className="w-full justify-center sm:w-auto"
+                onClick={() => { setError(""); setShowTicketScan(true); }}>
+                <ScanLine className="mr-2 h-4 w-4" />Scan Pick Ticket QR Code
+              </Button>
+              <Button type="button" variant="outline" data-testid="fulfillment-open-corrections-chooser"
+                className="h-auto min-h-10 w-full justify-start whitespace-normal border-amber-600/50 bg-amber-100/80 text-left text-amber-950 hover:bg-amber-200/80 dark:border-amber-400/50 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-900/70 sm:w-auto"
+                onClick={() => setShowCorrections(true)}>
+                <AlertTriangle className="mr-2 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+                Review pickup problems and missing stock
+              </Button>
+            </div>
             <div><h3 className="text-lg font-semibold">Choose a fulfillment workflow</h3>
               <p className="text-sm text-muted-foreground">Start new work, resume an unfinished batch, or review completed batches.</p></div>
-            <section className="space-y-3 rounded-xl border bg-muted/15 p-4" aria-labelledby="pick-ticket-scan-heading">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h3 id="pick-ticket-scan-heading" className="font-semibold">Open a saved fulfillment ticket</h3>
-                  <p className="text-sm text-muted-foreground">Open the saved ticket to continue staging or handoff. Scanning never moves stock.</p></div>
-                <Button type="button" data-testid="inventory-pick-ticket-camera"
-                  onClick={() => setCameraRequest(value => value + 1)}>
-                  <Camera className="mr-2 h-4 w-4" />Scan Pick Ticket QR Code
-                </Button>
-              </div>
-              <ScannerInput value={ticketInput} onChange={value => {
-                changeTicketInput(value);
-                if (parsePickTicketQr(value, projectId).kind !== "invalid") void lookupPickTicket(value);
-              }} placeholder="Scan a printed pick ticket QR code"
-                data-testid="inventory-pick-ticket-scanner" openCameraRequest={cameraRequest} />
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input aria-label="Paste pick ticket QR link" data-testid="inventory-pick-ticket-paste"
-                  value={ticketInput} onChange={event => changeTicketInput(event.target.value)}
-                  onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void lookupPickTicket(ticketInput); } }}
-                  placeholder="Or paste the complete ticket link" />
-                <Button type="button" data-testid="inventory-pick-ticket-open"
-                  disabled={ticketBusy || !ticketInput.trim() || !!draft.pending || !!draft.createAttempt}
-                  onClick={() => void lookupPickTicket(ticketInput)}>
-                  {ticketBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanLine className="mr-2 h-4 w-4" />}
-                  Open ticket
-                </Button>
-              </div>
-              {(draft.pending || draft.createAttempt) && <p role="status" className="text-xs text-amber-800">Resolve the saved operation before opening a different ticket. Your retry identity is protected.</p>}
-            </section>
-            <Button type="button" variant="outline" className="w-full sm:w-auto" data-testid="fulfillment-open-corrections-chooser" onClick={() => setShowCorrections(true)}>Review pickup problems and missing stock</Button>
-            {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
-            {hasSavedProgress && (checkedOnEntry || draft.pending || draft.createAttempt) && savedOutcome.kind !== "clear" &&
-            <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-              <p className="text-sm text-muted-foreground">{savedOutcome.kind === "review"
-                ? `This saved batch is ${savedOutcome.status}. Local unrecorded inputs were kept for review, not for another stock movement.`
-                : draft.pending || draft.createAttempt
-                  ? "A saved operation still needs confirmation. Its exact identity and inputs have been retained."
-                  : "Your previous workflow inputs are saved. Continue when you are ready to return to them."}</p>
-              {savedOutcome.kind === "review"
-                ? <div className="flex flex-wrap gap-2">
-                  {draft.reassignmentBatchId && <Button data-testid="fulfillment-continue-reassignment" type="button" variant="outline" disabled={busy}
-                    onClick={() => { setReassignmentBatchId(draft.reassignmentBatchId); setShowStart(false); }}>Review saved reassignment</Button>}
-                  <Button type="button" variant="outline" onClick={() => setShowSavedInputs(value => !value)}>Review saved inputs</Button>
-                </div>
-                : <Button data-wizard-continue type="button" data-testid={draft.reassignmentBatchId ? "fulfillment-continue-reassignment" : undefined} disabled={busy}
-                  onClick={() => {
-                    if (draft.reassignmentBatchId) setReassignmentBatchId(draft.reassignmentBatchId);
-                    setShowStart(false);
-                  }}><RotateCcw className="mr-2 h-4 w-4" />{draft.reassignmentBatchId ? "Continue saved reassignment review" : "Continue saved workflow"}</Button>}
-              {savedOutcome.kind === "review" && showSavedInputs && <FulfillmentSavedInputs draft={draft} items={items} />}
-            </div>}
             <div className="grid gap-3 sm:grid-cols-2">
               {([
                 ["crew", "New crew batch", "Choose unclaimed work and prepare one crew's pull."],
@@ -1298,7 +1266,59 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 <span className="mt-1 block text-xs text-muted-foreground">{blockedBatches.length} unfinished batch{blockedBatches.length === 1 ? "" : "es"} cannot be resumed. Review why or release the remainder.</span>
               </button>}
             </div>
+            {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
+            {hasSavedProgress && (checkedOnEntry || draft.pending || draft.createAttempt) && savedOutcome.kind !== "clear" &&
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+              <p className="text-sm text-muted-foreground">{savedOutcome.kind === "review"
+                ? `This saved batch is ${savedOutcome.status}. Local unrecorded inputs were kept for review, not for another stock movement.`
+                : draft.pending || draft.createAttempt
+                  ? "A saved operation still needs confirmation. Its exact identity and inputs have been retained."
+                  : "Your previous workflow inputs are saved. Continue when you are ready to return to them."}</p>
+              {savedOutcome.kind === "review"
+                ? <div className="flex flex-wrap gap-2">
+                  {draft.reassignmentBatchId && <Button data-testid="fulfillment-continue-reassignment" type="button" variant="outline" disabled={busy}
+                    onClick={() => { setReassignmentBatchId(draft.reassignmentBatchId); setShowStart(false); }}>Review saved reassignment</Button>}
+                  <Button type="button" variant="outline" onClick={() => setShowSavedInputs(value => !value)}>Review saved inputs</Button>
+                </div>
+                : <Button data-wizard-continue type="button" data-testid={draft.reassignmentBatchId ? "fulfillment-continue-reassignment" : undefined} disabled={busy}
+                  onClick={() => {
+                    if (draft.reassignmentBatchId) setReassignmentBatchId(draft.reassignmentBatchId);
+                    setShowStart(false);
+                  }}><RotateCcw className="mr-2 h-4 w-4" />{draft.reassignmentBatchId ? "Continue saved reassignment review" : "Continue saved workflow"}</Button>}
+              {savedOutcome.kind === "review" && showSavedInputs && <FulfillmentSavedInputs draft={draft} items={items} />}
+            </div>}
             {(pendingLock || createLock) && <p className="text-sm text-muted-foreground">Continue the saved workflow to resolve its pending result before starting another workflow.</p>}
+            <Dialog open={showTicketScan} onOpenChange={setShowTicketScan}>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Scan or open a pick ticket</DialogTitle>
+                  <DialogDescription>Open the saved ticket to continue staging or handoff. Scanning never moves stock.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <ScannerInput value={ticketInput} onChange={value => {
+                    changeTicketInput(value);
+                    if (parsePickTicketQr(value, projectId).kind !== "invalid") void lookupPickTicket(value);
+                  }} placeholder="Scan a printed pick ticket QR code"
+                    data-testid="inventory-pick-ticket-scanner" />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input aria-label="Paste pick ticket QR link" data-testid="inventory-pick-ticket-paste"
+                      value={ticketInput} onChange={event => changeTicketInput(event.target.value)}
+                      onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void lookupPickTicket(ticketInput); } }}
+                      placeholder="Or paste the complete ticket link" />
+                    <Button type="button" data-testid="inventory-pick-ticket-open"
+                      disabled={ticketBusy || !ticketInput.trim() || !!draft.pending || !!draft.createAttempt}
+                      onClick={() => void lookupPickTicket(ticketInput)}>
+                      {ticketBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanLine className="mr-2 h-4 w-4" />}
+                      Open ticket
+                    </Button>
+                  </div>
+                  {(draft.pending || draft.createAttempt) && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">Resolve the saved operation before opening a different ticket. Your retry identity is protected.</p>}
+                  {error && <Alert variant="destructive" role="alert">
+                    <AlertTriangle className="h-4 w-4" /><AlertTitle>Ticket could not be opened</AlertTitle><AlertDescription>{error}</AlertDescription>
+                  </Alert>}
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>}
           {!showStart && <>
           {draft.step === "orders" && <div className="space-y-5">

@@ -250,12 +250,29 @@ const assert = require("node:assert/strict");
     await cameraPage.goto(`${baseURL}/projects/${fixture.projectId}/inventory`);
     await cameraPage.getByTestId("button-start-inventory-desktop").click();
     await cameraPage.getByTestId("inventory-task-fulfillment").click();
+    await expect(cameraPage.getByTestId("inventory-pick-ticket-paste")).toHaveCount(0);
+    await expect(cameraPage.getByTestId("fulfillment-open-corrections-chooser")).toBeVisible();
+    assert.ok(await cameraPage.getByRole("heading", { name: "Choose a fulfillment workflow", exact: true }).evaluate(heading =>
+      heading.parentElement.nextElementSibling?.querySelector('[data-wizard-entry]') !== null),
+    "Workflow cards immediately follow the workflow heading.");
+    await cameraPage.screenshot({ path: "generated-artifacts/inventory-pick-ticket/chooser-desktop.png" });
+    await cameraPage.setViewportSize({ width: 390, height: 844 });
+    await cameraPage.screenshot({ path: "generated-artifacts/inventory-pick-ticket/chooser-phone.png" });
+    await cameraPage.setViewportSize({ width: 1280, height: 720 });
     await cameraPage.getByRole("button", { name: "Scan Pick Ticket QR Code", exact: true }).click();
-    // The direct QR button starts the existing decoder; accepting the result opens the batch.
+    await expect(cameraPage.getByRole("dialog", { name: "Scan or open a pick ticket" })).toBeVisible();
+    await cameraPage.getByTestId("inventory-pick-ticket-paste").fill("not a ticket");
+    await cameraPage.getByTestId("inventory-pick-ticket-open").click();
+    await expect(cameraPage.getByRole("dialog").getByRole("alert")).toBeVisible();
+    await cameraPage.getByTestId("inventory-pick-ticket-paste").fill("");
+    await cameraPage.getByTestId("inventory-pick-ticket-scanner-mode-trigger").click();
+    await cameraPage.getByTestId("inventory-pick-ticket-scanner-mode-qrcode").click();
+    // Use the existing QR camera from the ticket modal; accepting the result opens the batch.
     const accept = cameraPage.locator('[data-testid$="-accept-scan"]').last();
     await expect(accept).toBeVisible({ timeout: 25000 });
     await accept.click();
     await expect(cameraPage.getByTestId("fulfillment-move-quantity-vehicle-scan-meter")).toBeVisible({ timeout: 25000 });
+    await expect(cameraPage.getByRole("dialog")).toHaveCount(0);
     assert.equal((await snapshot()).revision, before.revision);
     await cameraContext.close();
 
