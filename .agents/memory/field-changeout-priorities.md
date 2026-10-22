@@ -13,7 +13,7 @@ For most projects, utility-customer import files create MeterFlo work orders. Op
 
 **Why:** Technicians saturate one or multiple routes/zones as directed rather than each receiving an individually scheduled order.
 
-**How to apply:** The intended first-claim behavior is to remove a claimed order from every other technician's eligible work-order list through SSE, without waiting for completion. Treat this as the user's required behavior, not proof that the current implementation already does it.
+**How to apply:** Preserve shared group access when inventory is disabled: the user subsequently explicitly required every group technician to receive group work and completed work to disappear from everyone's active list. For inventory-enabled vehicle dispatch, use the direction in inventory-dispatch-policy.md; do not impose vehicle-batch scoping on inventory-disabled projects.
 
 Captured work-order wizard data must survive browser refreshes and interruptions, including closing or locking a mobile screen and reopening it during a long physical changeout.
 

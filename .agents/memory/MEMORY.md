@@ -67,6 +67,7 @@
 - [Support request context](support-request-context.md) — authenticated account/project associations and draft/attachment preservation across responsive navigation changes.
 - [Operational log cleanup](log-maintenance-scope.md) — failed imports are manual-only; protect retry/replay state; new retention categories require explicit opt-in.
 - [Field changeout priorities](field-changeout-priorities.md) — field-first completion, backend inventory reconciliation, shared Open-order claiming and interruption-safe wizard captures.
+- [Inventory dispatch policy](inventory-dispatch-policy.md) — preserve non-inventory group lists; inventory dispatch should follow staged vehicle batches and authorized multi-vehicle crews.
 - [Inventory planning intent](inventory-planning-fulfillment.md) — manual additions stay planned; future crew fulfillment must allow onsite selection of installed serials.
 - [Clean project copies](inventory-project-copy.md) — copy inventory setup only: Locations, Items, Categories and Vendors; no stock, operational history or location user assignments.
 - [Receiving pallet scope](receiving-pallet-scope.md) — optional receiving scan groups stay with receipt history; trusted serial-file import does not require pallet setup.
