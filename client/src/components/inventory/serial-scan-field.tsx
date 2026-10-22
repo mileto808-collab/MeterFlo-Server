@@ -37,20 +37,64 @@ export function SerialScanProgress({ scanned, expected, verification }: {
 type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange" | "onPaste" | "onKeyDown"> & {
   value: string; onChange: (value: string) => void; expected: string | number | null | undefined;
   blockedSerials?: string[]; requireTarget?: boolean;
+  verifyCommittedScans?: (serials: string[]) => Promise<{
+    status: "verified" | "invalid" | "error"; message: string; rejectedSerials?: string[];
+  }>;
+  verificationState?: { status: "checking" | "invalid" | "verified" | "error"; message: string };
 };
 
 /** Text and array-backed consumers share scanner commits while retaining unfinished text locally. */
-export function SerialScanField({ value, onChange, expected, blockedSerials = [], requireTarget = true, ...props }: Props) {
+export function SerialScanField({ value, onChange, expected, blockedSerials = [], requireTarget = true,
+  verifyCommittedScans, verificationState, ...props }: Props) {
   const [text, setText] = useState(value);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
+  const [verification, setVerification] = useState<{ status: "checking" | "invalid" | "verified" | "error"; message: string }>();
   const emitted = useRef(value);
   const fieldId = useRef(props.id);
+  const latestInput = useRef({ text, pending });
+  latestInput.current = { text, pending };
+  const validationSequence = useRef(0);
+  const validatorRef = useRef(verifyCommittedScans);
+  validatorRef.current = verifyCommittedScans;
+  const runVerificationRef = useRef<(serials: string[]) => void>(() => undefined);
+  runVerificationRef.current = serials => {
+    const validator = validatorRef.current;
+    const sequence = ++validationSequence.current;
+    if (!validator || !serials.length) {
+      setVerification(undefined);
+      return;
+    }
+    setVerification({ status: "checking", message: "Checking committed serials against current source stock…" });
+    void validator(serials).then(result => {
+      if (sequence !== validationSequence.current) return;
+      const rejected = new Set(result.rejectedSerials ?? []);
+      if (rejected.size) {
+        const latest = latestInput.current;
+        const latestTokens = serialTokens(latest.text);
+        const trailing = latest.pending ? latestTokens.pop() ?? "" : "";
+        const retained = latestTokens.filter(token => !rejected.has(token));
+        const nextText = `${retained.join("\n")}${retained.length ? "\n" : ""}${trailing}`;
+        latestInput.current = { text: nextText, pending: latest.pending };
+        setText(nextText);
+        setPending(latest.pending);
+        emitted.current = nextText;
+        onChange(nextText);
+        setNotice(result.message || `Unavailable serials rejected: ${[...rejected].join(", ")}.`);
+      }
+      setVerification({ status: result.status, message: result.message });
+    }).catch(() => {
+      if (sequence === validationSequence.current) setVerification({ status: "error", message: "Current source stock could not be verified. Keep the scans and retry." });
+    });
+  };
   useEffect(() => {
     // Array-backed parents may normalize delimiters. Do not replace a partly typed token on their echo.
     if (fieldId.current !== props.id || (value !== emitted.current &&
       serialTokens(value).join("\n") !== serialTokens(emitted.current).join("\n"))) {
-      setText(value); setPending(false); setNotice(""); emitted.current = value;
+      setText(value); setPending(false); setNotice(""); setVerification(undefined);
+      validationSequence.current += 1;
+      latestInput.current = { text: value, pending: false };
+      emitted.current = value;
     }
     fieldId.current = props.id;
   }, [value, props.id]);
@@ -66,8 +110,15 @@ export function SerialScanField({ value, onChange, expected, blockedSerials = []
     if (!commitLast) parts.pop();
     const tooLong = parts.map(part => part.trim()).filter(part => part.length > 100);
     const result = acceptSerialScans(input, [...blockedSerials, ...tooLong], commitLast, limit);
-    setText(result.text); setPending(!commitLast && !!result.text.trim() && !/[\r\n,;\t]$/.test(result.text));
+    const nextPending = !commitLast && !!result.text.trim() && !/[\r\n,;\t]$/.test(result.text);
+    const nextTokens = serialTokens(result.text);
+    const nextCommitted = nextPending ? nextTokens.slice(0, -1) : nextTokens;
+    const previousCommitted = pending ? tokens.slice(0, -1) : tokens;
+    const shouldVerify = nextCommitted.join("\n") !== previousCommitted.join("\n");
+    latestInput.current = { text: result.text, pending: nextPending };
+    setText(result.text); setPending(nextPending);
     emitted.current = result.text; onChange(result.text);
+    if (shouldVerify) runVerificationRef.current(nextCommitted);
     const nextNotice = [
       result.rejected.length ? `Rejected duplicate, unavailable, or invalid serials: ${result.rejected.join(", ")}.` : "",
       result.excess ? target === null || target === 0 ? "Enter the quantity before scanning." : `Scan target reached. ${result.excess} extra scan(s) rejected.` : "",
@@ -75,7 +126,7 @@ export function SerialScanField({ value, onChange, expected, blockedSerials = []
     if (nextNotice || target === null || scanned < target || serialTokens(result.text).join("\n") !== tokens.join("\n")) setNotice(nextNotice);
   };
   return <div className="space-y-2">
-    <SerialScanProgress scanned={scanned} expected={expected} />
+    <SerialScanProgress scanned={scanned} expected={expected} verification={verificationState ?? verification} />
     <Textarea {...props} value={text} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
       onChange={event => accept(event.target.value, false)}
       onKeyDown={event => {

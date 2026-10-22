@@ -18,6 +18,7 @@ import { InventoryError } from "./inventory-errors";
 import { applyStagingCorrection, pickupNeedsReview } from "./inventory-staging-corrections";
 import { updateWorkPlan, effectivePlannedLines } from "./inventory-planning";
 import { applyFulfillmentMove, fulfillmentBatchSchema, fulfillmentReserved, fulfillmentReadySchema } from "./inventory-fulfillment";
+import { applyVehicleTransfer } from "./inventory-vehicle-transfer";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
 import { fieldUseSplit, resolveStockDiscrepancySchema } from "./inventory-stock-discrepancies";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
@@ -452,6 +453,13 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       access,
       move: (warehouseId, input, sign, transitId) => move(s, warehouseId, input, sign, undefined,
         sign < 0 ? { to: { kind: "transit", id: transitId } } : { from: { kind: "transit", id: transitId } }),
+      receipt,
+    });
+  } else if (a === "vehicleTransfer") {
+    applyVehicleTransfer(s, d, command.operationId, {
+      access,
+      move: (warehouseId, lines, sign, transferId) => move(s, warehouseId, lines, sign, undefined,
+        sign < 0 ? { to: { kind: "transit", id: transferId } } : { from: { kind: "transit", id: transferId } }),
       receipt,
     });
   } else if (a === "plan") {

@@ -73,6 +73,14 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   }
   const s = backup.state;
   const batches = z.array(fulfillmentBatchSchema).parse(s.fulfillmentBatches ?? []);
+  for (const receipt of s.receipts ?? []) {
+    if (receipt.sourceId && !s.warehouses.some(warehouse => warehouse.id === receipt.sourceId))
+      throw new Error("Invalid receipt source location in backup.");
+    if (receipt.workOrderIds !== undefined && (!Array.isArray(receipt.workOrderIds) ||
+      receipt.workOrderIds.some(id => !Number.isSafeInteger(id) || !workOrderIds.includes(id)) ||
+      new Set(receipt.workOrderIds).size !== receipt.workOrderIds.length))
+      throw new Error("Invalid receipt work-order identities in backup.");
+  }
   for (const receipt of s.receipts) if (receipt.fulfillmentDeletion) {
     const deletion = z.object({ batch: fulfillmentBatchSchema, deletedBy: z.string().min(1),
       deletedAt: z.string().datetime() }).strict().parse(receipt.fulfillmentDeletion);
@@ -86,7 +94,8 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   if (new Set(batches.map(batch => batch.id)).size !== batches.length) throw new Error("Duplicate fulfillment batch identity.");
   for (const batch of batches) {
     if (new Set(batch.workOrders.map(w => w.workOrderId)).size !== batch.workOrders.length ||
-      batch.workOrders.some(w => !workOrderIds.includes(w.workOrderId)) ||
+      batch.workOrders.some(w => !workOrderIds.includes(w.workOrderId) ||
+        !!w.vehicleId && !s.warehouses.some(vehicle => vehicle.id === w.vehicleId)) ||
       [batch.sourceId, batch.stagingId, batch.vehicleId].some(id => !s.warehouses.some(w => w.id === id)) ||
       new Set([batch.sourceId, batch.stagingId, batch.vehicleId]).size !== 3 ||
       new Set(batch.lines.map(line => `${line.workOrderId}/${line.itemId}`)).size !== batch.lines.length)

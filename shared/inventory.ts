@@ -80,7 +80,7 @@ export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
     "fulfillmentCreate", "fulfillmentMove", "fulfillmentClose", "fulfillmentReady", "fulfillmentReassign", "fulfillmentIssue", "fulfillmentCorrect", "fulfillmentInvestigate", "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
-    "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy"]),
+    "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy", "vehicleTransfer"]),
   data: z.record(z.unknown()),
 }).strict();
 export type Warehouse = z.infer<typeof warehouseSchema>;
@@ -110,6 +110,8 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
   pallets?: ReceiptPallet[];
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
   labor?: import("./inventory-pricing").LaborCharge[];
+  sourceId?: string;
+  workOrderIds?: number[];
   damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[]; sourceReceiptId?: string;
   holdDisposition?: HoldDisposition; kitHoldId?: string; kitInspection?: StockLine;
   kitConversion?: { assemblyId: string; recovered: Array<import("./inventory-kits").KitRecovery> } };
@@ -137,6 +139,7 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
 export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], categories: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });
 export const commandPermission = (action: InventoryCommand["action"]) =>
+  action === "vehicleTransfer" ? inventoryPermissions.transfer :
   action === "plan" ? inventoryPermissions.plan :
   action === "assign" ? inventoryPermissions.reserve :
   action === "fieldSettings" ? inventoryPermissions.configure :

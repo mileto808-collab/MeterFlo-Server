@@ -15,6 +15,7 @@ import { fulfillmentReserved, type FulfillmentBatch, type FulfillmentResumeStatu
 import { FulfillmentBatchHistory } from "./fulfillment-batch-history";
 import { FulfillmentReassignmentReview } from "./fulfillment-reassignment-review";
 import { FulfillmentStagingCorrections } from "./fulfillment-staging-corrections";
+import { VehicleTransferPanel } from "./vehicle-transfer-panel";
 import type { FulfillmentReassignmentReview as ReassignmentReview } from "@shared/inventory-fulfillment-reassignment";
 import { locationTypeFor, warehouseAccessible, isStagingType } from "@shared/inventory-location-types";
 import { Button } from "@/components/ui/button";
@@ -1918,6 +1919,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           </div>}
           {showStart && !showHistory && !showBlocked && <div className="space-y-4" data-testid="fulfillment-start-screen">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <VehicleTransferPanel projectId={projectId} permissions={permissions ?? inventory.data?.permissions} />
               <Button type="button" data-testid="inventory-pick-ticket-camera" className="w-full justify-center sm:w-auto"
                 onClick={() => { setError(""); setShowTicketScan(true); }}>
                 <ScanLine className="mr-2 h-4 w-4" />Scan Pick Ticket QR Code

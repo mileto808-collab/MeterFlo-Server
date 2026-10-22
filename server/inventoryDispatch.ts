@@ -35,7 +35,7 @@ export async function inventoryDispatchScope(
     coalesce(sum(l.delivered_quantity),0)::int delivered,b.created_at,b._position
     FROM public.inventory_fulfillment_batches b
     JOIN public.inventory_fulfillment_work_orders saved ON saved.project_id=b.project_id AND saved.parent_id=b._key
-    JOIN public.inventory_warehouses v ON v.project_id=b.project_id AND v.id=b.vehicle_id
+    JOIN public.inventory_warehouses v ON v.project_id=b.project_id AND v.id=coalesce(saved.vehicle_id,b.vehicle_id)
     LEFT JOIN public.inventory_fulfillment_lines l ON l.project_id=b.project_id AND l.parent_id=b._key AND l.work_order_id=saved.work_order_id
     WHERE b.project_id=$1 AND saved.work_order_id=ANY($2::int[]) AND b.status<>'cancelled'
     GROUP BY b.project_id,b._key,saved.work_order_id,saved.assignment_version,saved.installer_id,v.project_id,v._key

@@ -40,6 +40,7 @@ import { registerInventoryPickupRoutes } from "./inventoryPickups";
 import { inventoryPickTicket } from "./inventoryPickTicket";
 import { registerFulfillmentDraftRoutes } from "./inventoryFulfillmentDrafts";
 import { workOrderInventoryCapabilities } from "../shared/work-order-inventory-capabilities";
+import { vehicleTransferOptions } from "./inventoryVehicleTransfer";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -321,6 +322,18 @@ export function registerInventoryRoutes(app: Express) {
     });
   app.get(`${base}/stock`, stockRead((client, req, res) =>
     queryStock(client, res.locals.inventory.project.id, stockQuerySchema.parse(req.query))));
+  app.get(`${base}/vehicle-transfers/options`, handler(async (req, res) => {
+    const c = res.locals.inventory;
+    const query = z.object({ sourceId: z.string().min(1).max(100).optional(), batchId: z.string().uuid().optional(),
+      workOrderIds: z.string().max(6000).optional() }).parse(req.query);
+    const ids = query.workOrderIds ? query.workOrderIds.split(",").map(id => z.coerce.number().int().positive().parse(id)) : [];
+    if (ids.length > 500) throw new InventoryError("Choose no more than 500 outstanding work orders per handover.");
+    const client = await pool.connect();
+    try {
+      return await vehicleTransferOptions(client, c.project.id, await inventoryState(c.project.id), c.user, c.admin,
+        query.sourceId, query.batchId, ids);
+    } finally { client.release(); }
+  }));
   app.get(`${base}/stock/serials`, stockRead((client, req, res) =>
     queryStockSerials(client, res.locals.inventory.project.id, serialQuerySchema.parse(req.query))));
   app.get(`${base}/stock/options`, stockRead((client, req, res) =>

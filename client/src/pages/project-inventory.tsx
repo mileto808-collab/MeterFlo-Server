@@ -49,6 +49,7 @@ import { LocationTypesManager } from "@/components/inventory/location-types-mana
 import { RemovalRulesManager } from "@/components/inventory/removal-rules-manager";
 import { RemovedEquipmentActions, type ReturnDecisionDraft } from "@/components/inventory/removed-equipment-actions";
 import { CountSerialsDialog } from "@/components/inventory/count-serials-dialog";
+import { VehicleTransferPanel } from "@/components/inventory/vehicle-transfer-panel";
 import { InventoryItemPricing } from "@/components/inventory/inventory-item-pricing";
 import { InventoryItemComponents } from "@/components/inventory/inventory-item-components";
 import { CountProductScanner } from "@/components/inventory/count-product-scanner";
@@ -1488,6 +1489,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:flex-wrap sm:gap-2">
             {capabilities.fulfillment && <StartInventoryButton projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
+            {can("inventory.view") && can("inventory.transfer") && can("inventory.receive") &&
+              <VehicleTransferPanel projectId={projectId} permissions={latestPermissionSnapshot?.permissions} />}
             <span
               data-testid="inventory-live-indicator"
               aria-live="polite"

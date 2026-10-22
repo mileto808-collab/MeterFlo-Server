@@ -43,7 +43,7 @@ export function inventoryActivityGroups(state: InventoryState, labels: Inventory
   state.receipts.forEach((receipt, index) => {
     const keys = [`receipt:${receipt.id}`, ...(contexts.get(receipt.id)?.removed ?? []).map(record => `return:${record.id}`)];
     const order = orders.get(receipt.reference);
-    if (receipt.action.startsWith("fulfillment") && state.fulfillmentBatches?.some(batch => batch.id === receipt.reference))
+    if ((receipt.action.startsWith("fulfillment") || receipt.action === "vehicleTransfer") && state.fulfillmentBatches?.some(batch => batch.id === receipt.reference))
       keys.push(`fulfillment:${receipt.reference}`);
     if (order) {
       keys.push(`order:${order.id}`);
@@ -88,7 +88,7 @@ export function inventoryActivityGroups(state: InventoryState, labels: Inventory
     const kitReceipt = receipts.find(receipt => ["assemble", "disassemble", "verifyVendorKit", "resolveKitHold"].includes(receipt.action));
     const kitItem = kitReceipt ? state.items.find(item => item.id === kitReceipt.reference) : undefined;
     const fulfillment = state.fulfillmentBatches?.find(batch => receipts.some(receipt =>
-      receipt.action.startsWith("fulfillment") && receipt.reference === batch.id));
+      (receipt.action.startsWith("fulfillment") || receipt.action === "vehicleTransfer") && receipt.reference === batch.id));
     const workOrders = workOrderIds.length === 1 ? `Work order ${inventoryWorkOrderLabel(workOrderIds[0], labels)}` : `${workOrderIds.length} work orders`;
     const title = fulfillment ? `Fulfillment · ${fulfillment.name} · ${workOrders}` :
       handoff ? `Customer return batch · ${handoff.lines.length} equipment ${handoff.reference ? `· ${handoff.reference}` : ""}` :

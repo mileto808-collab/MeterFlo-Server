@@ -26,3 +26,9 @@ Changes to unposted material planning may be reconciled automatically; changes a
 **Why:** The user accepted this separation between planning, actual custody, and recoverable saved work.
 
 **How to apply:** Do not use final posting eligibility as the sole gate for opening previously completed wizard steps. Keep historical movement evidence authoritative even when quantities have returned to zero.
+
+When outstanding work changes vehicles after pickup, retain the original batch's vehicle and pick evidence as history. Current custody belongs to the individual work order's effective vehicle; stock-only handovers do not change that ownership.
+
+**Why:** Crews may take only some of another crew's work. Copying fulfillment batches would count picked demand twice, while changing the original batch vehicle would rewrite history for orders that did not move.
+
+**How to apply:** Dispatch visibility, installation stock sources and compatible scheduled reassignment must follow the work order's effective vehicle, not blindly use its original batch vehicle. Move the selected work's picked materials and reservations with assignment updates in one transaction, preserve completed work, and require explicit resolution of active field drafts or prepared installation use first.

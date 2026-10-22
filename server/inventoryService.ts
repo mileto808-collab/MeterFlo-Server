@@ -15,6 +15,8 @@ import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
 import { actualEquipmentLines } from "../shared/inventory-requirements";
 import { workPlanInputSchema, samePlanOverrides } from "../shared/inventory-planning";
 import { visibleAssignedOrders } from "./workOrderVisibility";
+import { prepareVehicleTransfer, finishVehicleTransferAssignments, vehicleTransferPermissions } from "./inventoryVehicleTransfer";
+import type { VehicleTransfer } from "../shared/inventory-vehicle-transfer";
 import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inventory-field-stock";
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
 import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
@@ -126,6 +128,16 @@ export async function postInventory(projectId: number, command: InventoryCommand
     if (!p?.inventory_enabled) throw new InventoryError("Inventory is disabled for this project.");
     if (p.is_active === false) throw new InventoryError("Reactivate this project before posting inventory.");
     const before = await lockInventory(client, projectId);
+    let vehicleTransfer: VehicleTransfer | undefined;
+    if (command.action === "vehicleTransfer") {
+      const user = await storage.getUser(actor);
+      const access = user && !user.isLocked ? await vehicleTransferPermissions(user) : undefined;
+      if (!user || !access?.canStockTransfer || command.data.mode === "work" && !access.canWorkTransfer ||
+          !admin && !await storage.isUserAssignedToProject(actor, projectId))
+        throw Object.assign(new InventoryError("Vehicle transfer permission and active project access are required."), { status: 403 });
+      if (!before.operations[command.operationId])
+        vehicleTransfer = await prepareVehicleTransfer(client, projectId, before, command.data, user, admin);
+    }
     if (command.action === "plan" || command.action === "assign") {
       const user = await storage.getUser(actor);
       const required = command.action === "plan" ? inventoryPermissions.plan : inventoryPermissions.reserve;
@@ -259,6 +271,8 @@ export async function postInventory(projectId: number, command: InventoryCommand
       }
     }
     const result = applyInventoryCommand(before, command, actor, admin, undefined, { manageLocations: canManageLocations, fulfillmentBatch });
+    if (!result.replay && vehicleTransfer)
+      await finishVehicleTransferAssignments(client, projectId, result.state, vehicleTransfer);
     if (!result.replay && ["assign", "stageWorkOrder"].includes(command.action)) {
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       const { rows: [work] } = await client.query(`SELECT assignment_version FROM "${project.database_name}".work_orders WHERE id=$1`, [command.data.workOrderId]);
@@ -386,7 +400,8 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     const handedOff = (state.fulfillmentBatches ?? []).filter(batch => batch.mode === "scheduled" &&
       batch.status === "completed" && batch.workOrders.some(work => work.workOrderId === next.id));
     for (const original of handedOff) {
-      const vehicle = state.warehouses.find(value => value.id === original.vehicleId && value.active);
+      const vehicleId = original.workOrders.find(work => work.workOrderId === next.id)?.vehicleId ?? original.vehicleId;
+      const vehicle = state.warehouses.find(value => value.id === vehicleId && value.active);
       const compatible = next.assigned_user_id && vehicle &&
         (vehicle.assignedUserId === next.assigned_user_id || vehicle.userIds.includes(next.assigned_user_id)) &&
         String(next.status).toLowerCase() === "scheduled" &&

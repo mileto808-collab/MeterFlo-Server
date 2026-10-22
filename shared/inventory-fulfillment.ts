@@ -62,6 +62,7 @@ export const fulfillmentBatchSchema = fulfillmentCreateSchema.omit({ workOrders:
   workOrders: z.array(z.object({ workOrderId: z.number().int().positive(),
     assignmentVersion: z.number().int().nonnegative(), label: z.string().min(1).max(500),
     installerId: id.nullable().optional(), installer: z.string().max(500).optional(),
+    vehicleId: id.optional(),
     scheduledDate: z.string().optional(),
   }).strict()).min(1).max(500),
   lines: z.array(z.object({ workOrderId: z.number().int().positive(), itemId: id,
