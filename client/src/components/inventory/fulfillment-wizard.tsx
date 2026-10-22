@@ -123,7 +123,6 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selectionNotice, setSelectionNotice] = useState("");
-  const [showUnavailable, setShowUnavailable] = useState(false);
   const [confirmHandoff, setConfirmHandoff] = useState(false);
   const [serialSearch, setSerialSearch] = useState<Record<string, string>>({});
   const [scanNotices, setScanNotices] = useState<Record<string, string>>({});
@@ -292,9 +291,6 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     }
     setStorageReady(true);
   }, [storageKey, open]);
-  useEffect(() => {
-    if (open) setShowUnavailable(false);
-  }, [open]);
   useEffect(() => {
     if (open && inventory.isFetchedAfterMount && !inventory.isFetching && !canFulfill) {
       onOpenChange(false);
@@ -702,8 +698,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
         ? "A scheduled batch can contain work for one assigned installer only." : "")
       : "";
   const isOrderSelectable = (order: FulfillmentOrder) => order.eligible && order.missing.length === 0 && order.lines.length > 0;
-  const unavailableMatchingOrders = filteredOrders.filter(order => !isOrderSelectable(order));
-  const visibleOrders = showUnavailable ? filteredOrders : filteredOrders.filter(isOrderSelectable);
+  const visibleOrders = filteredOrders.filter(isOrderSelectable);
   const eligibleMatchingOrders = filteredOrders.filter(isOrderSelectable);
   const eligibleMatchingIds = new Set(eligibleMatchingOrders.map(order => order.workOrderId));
   const selectedMatchingCount = eligibleMatchingOrders.filter(order => draft.selectedIds.includes(order.workOrderId)).length;
@@ -1348,20 +1343,6 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 <div className="space-y-1"><Label htmlFor="fulfillment-installer">Installer</Label><Select value={draft.installer || "all"} onValueChange={value => update({ installer: value === "all" ? "" : value })}><SelectTrigger id="fulfillment-installer"><SelectValue placeholder="Any installer" /></SelectTrigger><SelectContent><SelectItem value="all">Any installer</SelectItem>{[...new Map(orders.filter(order => order.installerId).map(order => [order.installerId!, order.installer])).entries()].map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select></div>
                 {draft.mode === "scheduled" && <div className="space-y-1"><Label htmlFor="fulfillment-date">Scheduled date</Label><Input id="fulfillment-date" type="date" value={draft.date} onChange={event => update({ date: event.target.value })} /></div>}
               </div>
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/10 px-3 py-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Checkbox
-                    id="fulfillment-show-unavailable"
-                    data-testid="fulfillment-show-unavailable"
-                    checked={showUnavailable}
-                    onCheckedChange={checked => setShowUnavailable(checked === true)}
-                  />
-                  <Label htmlFor="fulfillment-show-unavailable" className="cursor-pointer text-sm">Show unavailable work orders</Label>
-                </div>
-                <Badge variant="secondary" aria-label={`${unavailableMatchingOrders.length} unavailable work orders matching current filters`}>
-                  {unavailableMatchingOrders.length} unavailable
-                </Badge>
-              </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/70 p-3">
                 <label className="flex min-w-0 items-center gap-2 text-sm">
                   <Checkbox
@@ -1399,7 +1380,11 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                   Nothing matching these filters can be added to a new batch. Existing reservations or planned/fulfilled batches may already cover demand; no uncovered lines does not confirm stock was physically picked. Other matches may be unavailable because mapped requirements are missing or their status/assignment does not fit this mode. Completed work orders no longer appear here. Resume existing custody records from Saved fulfillment batches.
                 </AlertDescription>
               </Alert>}
-              <div className="space-y-2">
+              <details key={draft.mode} className="rounded-lg border" data-testid="fulfillment-work-orders-list">
+                <summary className="cursor-pointer rounded-lg px-3 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Work orders ({visibleOrders.length}) — expand to verify or deselect
+                </summary>
+                <div className="space-y-2 p-3 pt-0">
                 {visibleOrders.map(order => {
                   const checked = draft.selectedIds.includes(order.workOrderId);
                   const limitBlocked = !checked && draft.selectedIds.length >= 500;
@@ -1414,8 +1399,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                     </span>
                   </label>;
                 })}
-                {!filteredOrders.length && <div className="rounded-lg border border-dashed p-8 text-center"><ClipboardList className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-medium">No matching work orders</p><p className="text-sm text-muted-foreground">No records match this mode and the current search, route, date, or assignment filters.</p></div>}
-              </div>
+                </div>
+              </details>
+              {!filteredOrders.length && <div className="rounded-lg border border-dashed p-8 text-center"><ClipboardList className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-medium">No matching work orders</p><p className="text-sm text-muted-foreground">No records match this mode and the current search, route, date, or assignment filters.</p></div>}
               <div className="space-y-3 rounded-lg border p-4">
                 <div><h3 className="font-semibold">Batch setup</h3><p className="text-xs text-muted-foreground">One source, physical Staging destination, and one vehicle for the entire batch.</p></div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1634,7 +1620,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           if (draft.batchId === reassignmentBatchId) setShowStart(false);
           else { setShowStart(true); setShowBlocked(true); }
         }}><ArrowLeft className="mr-2 h-4 w-4 shrink-0" />Back</Button>}
-        {!showStart && !reassignmentBatchId && !showCorrections && <div className="flex gap-2">
+        {!showStart && !reassignmentBatchId && !showCorrections && <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" disabled={busy || pendingLock || createLock}
+            onClick={() => { setShowStart(true); setShowHistory(false); setShowBlocked(false); }}
+            data-testid="fulfillment-back-to-workflows"><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>
           {draft.step !== "orders" && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} onClick={goBack}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
           {draft.step === "orders" && !draft.batchId && <Button type="button" variant="ghost" disabled={busy || pendingLock || createLock} onClick={reset}>Clear draft</Button>}
         </div>}

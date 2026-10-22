@@ -17,6 +17,12 @@ On the fulfillment entry screen, workflow selector cards sit directly below “C
 
 **How to apply:** Keep scanner and paste controls inside the ticket modal, keep HID entry available, and use a clearly visible colored pickup-review action.
 
+New crew and scheduled-work selection show only eligible work orders, with their list collapsed by default below Select all eligible matching orders and a sticky-footer return to workflow choices.
+
+**Why:** The user wants bulk selection without a long expanded list, while retaining optional verification and individual deselection.
+
+**How to apply:** Expanding or collapsing must not change selections; returning to workflow choices must preserve inputs and pending-command safety.
+
 **Why:** The user described a common task-selection screen, not a button tied directly to a single receiving workflow.
 
 **How to apply:** When implementing guided inventory workflows, preserve that shared entry and enforce the permissions appropriate to each selected task. Do not assume Start Inventory should jump straight into removed-equipment acceptance.

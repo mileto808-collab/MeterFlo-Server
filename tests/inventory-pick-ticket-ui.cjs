@@ -67,6 +67,19 @@ const assert = require("node:assert/strict");
     await command("fulfillmentMove", { id: batchA, revision: 1, phase: "stage", physicallyConfirmed: true,
       reason: "Verified actual meters placed at staging for the crew.", lines: [{ itemId: "scan-meter", quantity: 2, serials: ["QR-001", "QR-002"] }] });
     const ticketUrl = id => `${baseURL}/projects/${fixture.projectId}/work-orders?pickup=${id}`;
+    const selectionGroup = await request(admin, "POST", "/api/user-groups", {
+      name: `Selection crew ${crypto.randomUUID().slice(0, 8)}`, projectIds: [fixture.projectId],
+    });
+    for (const scheduled of [false, true]) {
+      const work = await request(admin, "POST", `/api/projects/${fixture.projectId}/work-orders`, {
+        customerWoId: scheduled ? "SELECT-SCHEDULED" : "SELECT-CREW", customerName: "Selection fixture",
+        serviceType: services[0].code, status: scheduled ? "Scheduled" : "Open",
+        ...(scheduled ? { assignedUserId: installer.id, scheduledAt: new Date(Date.now() + 86400000).toISOString() }
+          : { assignedGroupId: selectionGroup.name }),
+      });
+      await command("plan", { workOrderId: work.id, revision: 0,
+        lines: [{ id: crypto.randomUUID(), itemId: "scan-meter", kind: "addition", quantity: 1, reason: "Selection coverage" }] });
+    }
     const before = await snapshot();
     assert.equal((await request(admin, "GET", `${inventory}/fulfillment/${batchA}/ticket`)).resume.nextStep, "vehicle");
     assert.equal((await request(admin, "GET", `${inventory}/fulfillment/${batchB}/ticket`)).resume.nextStep, "stage");
@@ -80,6 +93,29 @@ const assert = require("node:assert/strict");
     assert.equal((await snapshot()).revision, before.revision, "Scan checks must not move or reserve stock");
     // Real entry: the wizard is still closed and a previously saved batch must load first.
     const coldPage = await adminPage();
+    await coldPage.getByTestId("button-start-inventory-desktop").click();
+    await coldPage.getByTestId("inventory-task-fulfillment").click();
+    for (const [mode, label] of [["New crew batch", "SELECT-CREW"], ["Scheduled installer work", "SELECT-SCHEDULED"]]) {
+      await coldPage.getByRole("button", { name: new RegExp(`^${mode}`) }).click();
+      await expect(coldPage.getByText("Show unavailable work orders", { exact: true })).toHaveCount(0);
+      const list = coldPage.getByTestId("fulfillment-work-orders-list");
+      await expect(list).not.toHaveAttribute("open");
+      const bulk = coldPage.getByRole("checkbox", { name: "Select all eligible matching orders", exact: true });
+      await bulk.check();
+      await expect(coldPage.getByTestId("fulfillment-selection-summary")).toContainText("Selected 1 / Eligible matching 1");
+      await list.locator("summary").click();
+      const order = list.locator("label").filter({ hasText: label }).getByRole("checkbox");
+      await expect(order).toBeChecked();
+      await order.uncheck();
+      await expect(bulk).not.toBeChecked();
+      if (mode === "New crew batch") {
+        await list.locator("summary").click();
+        await coldPage.screenshot({ path: "generated-artifacts/inventory-pick-ticket/collapsed-work-orders.png" });
+      }
+      await coldPage.getByTestId("fulfillment-back-to-workflows").click();
+      await expect(coldPage.getByRole("heading", { name: "Choose a fulfillment workflow", exact: true })).toBeVisible();
+    }
+    await coldPage.getByRole("button", { name: "Close", exact: true }).click();
     const actor = await request(admin, "GET", "/api/auth/user");
     const draftKey = `meterflo:fulfillment:${encodeURIComponent(actor.id)}:${fixture.projectId}`;
     await coldPage.evaluate(({ key, batchId }) => localStorage.setItem(key,
