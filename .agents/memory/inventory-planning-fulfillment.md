@@ -39,6 +39,12 @@ The user approved a Staging-location approach for the shared stock pool. The ful
 
 **How to apply:** Keep shared crew pools distinct from individually scheduled reservations. Treat Staging as physical custody, never installation, and retain onsite selection of actual installed serials.
 
+The user wants a printable pick ticket during physical picking, placed on the pulled stock in Staging. Technicians assigned to the intended vehicle need to know that stock is waiting and see its items and quantities to help verify loading.
+
+**Why:** Staging and vehicle pickup may occur at different times; the warehouse worker leaves the physical order waiting for its vehicle/crew.
+
+**How to apply:** Treat the ticket and vehicle-assignee pickup visibility as fulfillment requirements. Keep staging custody separate from the later recorded physical vehicle handoff.
+
 Keep completed fulfillment batches in searchable, filterable, exportable history, separate from resuming unfinished work. Active batches that cannot safely resume still need a distinct review/release path; do not silently hide their remaining holds.
 
 **Why:** The user expects “Resume saved batch” to contain only valid unfinished batches, while completed batches remain findable and warehouse workers still need to resolve interrupted or reassigned custody work.
