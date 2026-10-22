@@ -45,6 +45,12 @@ Keep completed fulfillment batches in searchable, filterable, exportable history
 
 **How to apply:** Recheck assignment, access, and physical location eligibility against current server state on every load and posting. A crew batch may hand off already-staged stock after an assignment change, but must not pull more; changed scheduled assignments require review before handoff. Preserve physical receipts and pending drafts.
 
+Opening or navigating a fulfillment workflow is not saved work. Do not offer “Continue saved workflow” or warn about replacing inputs unless the user made substantive selections or captures, or an operation needs recovery.
+
+**Why:** The user saw a false saved-workflow prompt after merely choosing a crew flow and leaving the screen open.
+
+**How to apply:** Treat mode/step changes, time spent on the page and exploratory search filters as viewing state. Retain selected orders, entered batch/location details, physical captures and protected retry identities. Remove empty local drafts so they cannot reappear after a refresh.
+
 After a staging pull is recorded, moving to the vehicle-handoff step must not require another reason or physical confirmation for that same pull.
 
 **Why:** The user found repeated pull controls confusing and expects to continue directly when staging is complete. Vehicle handoff is still a separate physical movement that must be recorded.

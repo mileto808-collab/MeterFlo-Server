@@ -9,6 +9,12 @@ Use the built frontend for browser acceptance checks when an isolated test serve
 
 **How to apply:** When testing with isolated dummy server credentials or a mock receiver, retain normal session authentication and exercise the production bundle. If testing the development bundle instead, support its WebSocket/HMR transport before treating transport errors as product regressions.
 
+Rebuild the production bundle after source changes before running isolated browser acceptance.
+
+**Why:** The isolated server serves the previous compiled application until it is rebuilt; source edits alone can make a correct fix appear to fail in browser tests.
+
+**How to apply:** Pair every source-changing acceptance run with a fresh build. A live development preview updating through HMR does not update the isolated production fixture.
+
 Acceptance proxies must preserve streaming API responses and cancel them when
 the browser disconnects; buffering a long-lived event response can keep test
 servers open after assertions finish.

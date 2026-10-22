@@ -9,6 +9,21 @@ export type SavedFulfillmentInputs = {
   physicallyConfirmed: boolean;
   closeReason: string;
 };
+export type FulfillmentDraftActivity = SavedFulfillmentInputs & {
+  name: string;
+  sourceId: string;
+  stagingId: string;
+  vehicleId: string;
+};
+
+/** Opening or filtering the wizard is not a saved workflow; a selection, capture or posting identity is. */
+export function hasMeaningfulFulfillmentWork(draft: FulfillmentDraftActivity): boolean {
+  return Boolean(draft.pending || draft.createAttempt || draft.batchId || draft.selectedIds.length ||
+    draft.name.trim() || draft.sourceId || draft.stagingId || draft.vehicleId ||
+    Object.values(draft.quantities ?? {}).some(value => value.trim() !== "" && Number(value) !== 0) ||
+    Object.values(draft.serialText ?? {}).some(value => value.trim() !== "") ||
+    draft.reason.trim() || draft.physicallyConfirmed || draft.closeReason.trim());
+}
 type Batch = { id: string; status: string; workOrders: { workOrderId: number }[] };
 type Order = { workOrderId: number; missing: unknown[]; lines: unknown[] };
 export type FulfillmentDraftOutcome =

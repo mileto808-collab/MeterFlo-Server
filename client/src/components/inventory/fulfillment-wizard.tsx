@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWizardStepFocus } from "@/hooks/useWizardStepFocus";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
-import { reconcileFulfillmentDraft } from "@/lib/fulfillment-draft-reconciliation";
+import { hasMeaningfulFulfillmentWork, reconcileFulfillmentDraft } from "@/lib/fulfillment-draft-reconciliation";
 import { FulfillmentSavedInputs } from "./fulfillment-saved-inputs";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -211,7 +211,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useEffect(() => { setSerialSearch({}); }, [open, draft.batchId, draft.step]);
   useEffect(() => {
     if (!storageKey || !storageReady) return;
-    try { window.localStorage.setItem(storageKey, JSON.stringify(draft)); }
+    try {
+      if (hasMeaningfulFulfillmentWork(draft)) window.localStorage.setItem(storageKey, JSON.stringify(draft));
+      else window.localStorage.removeItem(storageKey);
+    }
     catch { setError("Browser storage is unavailable. Physical moves stay disabled until their exact retry identity can be saved."); }
   }, [storageKey, storageReady, draft]);
   useEffect(() => {
@@ -246,9 +249,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setDraft(emptyDraft());
     setError("");
   };
-  const hasSavedProgress = Boolean(draft.batchId || draft.selectedIds.length || draft.pending || draft.createAttempt ||
-    draft.step !== "orders" || draft.mode !== "crew" || draft.name || draft.search || draft.route ||
-    draft.group || draft.zone || draft.installer || draft.date);
+  const hasSavedProgress = hasMeaningfulFulfillmentWork(draft);
   const startMode = (mode: Draft["mode"]) => {
     if (draft.pending || draft.createAttempt || busy) return;
     setDraft({ ...emptyDraft(), mode });
@@ -734,7 +735,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
             <div><h3 className="text-lg font-semibold">Choose a fulfillment workflow</h3>
               <p className="text-sm text-muted-foreground">Start new work, resume an unfinished batch, or review completed batches.</p></div>
             {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
-            {hasSavedProgress && savedOutcome.kind !== "clear" && <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+            {hasSavedProgress && (checkedOnEntry || draft.pending || draft.createAttempt) && savedOutcome.kind !== "clear" &&
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
               <p className="text-sm text-muted-foreground">{savedOutcome.kind === "review"
                 ? `This saved batch is ${savedOutcome.status}. Local unrecorded inputs were kept for review, not for another stock movement.`
                 : draft.pending || draft.createAttempt

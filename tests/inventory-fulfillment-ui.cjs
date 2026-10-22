@@ -120,6 +120,23 @@ const assert = require("node:assert/strict");
     };
     await launch();
     const dialog = page.getByRole("dialog");
+    const openFulfillmentChoices = async () => {
+      await page.getByRole("button", { name: "Start Inventory", exact: true }).filter({ visible: true }).click();
+      await page.getByRole("button", { name: /Fulfill \/ Stage Work Orders/ }).click();
+      await expect(page.getByTestId("fulfillment-start-screen")).toBeVisible();
+      return page.getByTestId("fulfillment-start-screen");
+    };
+    await dialog.getByRole("button", { name: "Save & leave", exact: true }).click();
+    let choices = await openFulfillmentChoices();
+    await expect(choices.getByRole("button", { name: "Continue saved workflow", exact: true })).toHaveCount(0);
+    await choices.getByRole("button", { name: /Scheduled installer work/ }).click();
+    await dialog.getByRole("button", { name: "Save & leave", exact: true }).click();
+    choices = await openFulfillmentChoices();
+    await expect(choices.getByRole("button", { name: "Continue saved workflow", exact: true })).toHaveCount(0);
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("meterflo:fulfillment:")).length), 0);
+    await choices.getByRole("button", { name: /New crew batch/ }).click();
+    await expect(page.getByRole("alertdialog", { name: "Replace saved workflow inputs?" })).toHaveCount(0);
+    await expect(dialog.getByLabel("Search orders", { exact: true })).toBeVisible();
     const physicalConfirmation = dialog.getByRole("checkbox", { name: /I confirm the listed stock has physically moved/ });
     let selectionPosts = 0;
     const countSelectionPosts = req => {
@@ -550,7 +567,7 @@ const assert = require("node:assert/strict");
     await expect(dialog.locator("[data-wizard-complete]")).toHaveAttribute("data-wizard-focus-target", "true");
     await expect(mirrorPage.getByRole("button", { name: "Continue saved workflow", exact: true })).toHaveCount(0);
     await expect(mirrorPage.getByText(/The saved work is already completed/)).toBeVisible();
-    await expect.poll(async () => mirrorPage.evaluate(key => JSON.parse(localStorage.getItem(key)).batchId, savedKey)).toBe("");
+    await expect.poll(async () => mirrorPage.evaluate(key => localStorage.getItem(key), savedKey)).toBeNull();
     await mirrorPage.screenshot({ path: "generated-artifacts/inventory-fulfillment/remote-completion-home.png" });
     // Reopening must reconcile old local storage against a fresh server snapshot as well.
     await mirrorPage.getByRole("button", { name: "Close", exact: true }).first().click();
