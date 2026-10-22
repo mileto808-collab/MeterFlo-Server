@@ -155,10 +155,44 @@ export default function ProjectInventory() {
 }
 
 function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
-  const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
   const { setHeaderContent } = usePageHeader();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
+  const fulfillmentSessionKey = `meterflo:fulfillment-workspace:${encodeURIComponent(String(user?.id ?? "pending"))}:${projectId}`;
+  const [fulfillmentOpen, setFulfillmentOpenState] = useState(false);
+  const [fulfillmentSessionReady, setFulfillmentSessionReady] = useState(false);
+  const restoredFulfillmentKey = useRef("");
+  useLayoutEffect(() => {
+    if (!user?.id) return;
+    if (restoredFulfillmentKey.current === fulfillmentSessionKey) return;
+    restoredFulfillmentKey.current = fulfillmentSessionKey;
+    try {
+      const saved = window.localStorage.getItem(fulfillmentSessionKey);
+      const open = saved ? (JSON.parse(saved) as { open?: unknown }).open === true : false;
+      setFulfillmentOpenState(open);
+    } catch {
+      setFulfillmentOpenState(false);
+    }
+    setFulfillmentSessionReady(true);
+  }, [fulfillmentSessionKey, user?.id]);
+  const setFulfillmentOpen = (open: boolean) => {
+    if (user?.id) {
+      try {
+        window.localStorage.setItem(fulfillmentSessionKey, JSON.stringify({ open }));
+      } catch {
+        console.warn("Browser storage is unavailable; the fulfillment workspace cannot be restored after refresh.");
+      }
+    }
+    setFulfillmentOpenState(open);
+  };
+  useLayoutEffect(() => {
+    if (!fulfillmentSessionReady || restoredFulfillmentKey.current !== fulfillmentSessionKey || !user?.id) return;
+    try {
+      window.localStorage.setItem(fulfillmentSessionKey, JSON.stringify({ open: fulfillmentOpen }));
+    } catch {
+      console.warn("Browser storage is unavailable; the fulfillment workspace cannot be restored after refresh.");
+    }
+  }, [fulfillmentOpen, fulfillmentSessionKey, fulfillmentSessionReady, user?.id]);
   const { toast } = useToast();
   const inventoryEvents = useInventoryEvents(projectId);
   const base = `/api/projects/${projectId}/inventory`;

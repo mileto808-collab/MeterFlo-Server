@@ -11,6 +11,9 @@ export const fulfillmentDraftCaptureSchema = z.object({
   sourceId: text, stagingId: text, vehicleId: text,
 }).strict();
 export type FulfillmentDraftCapture = z.infer<typeof fulfillmentDraftCaptureSchema>;
+export function emptyFulfillmentDraftCapture(mode: FulfillmentDraftCapture["mode"]): FulfillmentDraftCapture {
+  return fulfillmentDraftCaptureSchema.parse({ mode, step: "orders" });
+}
 export const savedFulfillmentDraftSchema = z.object({
   id: z.string().uuid(),
   revision: z.number().int().positive(),

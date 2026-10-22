@@ -30,9 +30,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Trash2, Truck } from "lucide-react";
 import { inventoryCapabilities } from "@shared/inventory-capabilities";
-import { fulfillmentDraftCaptureSchema, type SavedFulfillmentDraft } from "@shared/inventory-fulfillment-drafts";
+import { emptyFulfillmentDraftCapture, fulfillmentDraftCaptureSchema, meaningfulFulfillmentDraft, type SavedFulfillmentDraft } from "@shared/inventory-fulfillment-drafts";
 
 type FulfillmentOrder = {
   workOrderId: number; label: string; status: string; group: string; installerId: string | null; installer: string;
@@ -40,7 +40,7 @@ type FulfillmentOrder = {
   lines: Array<{ itemId: string; quantity: number }>;
   missing: Array<{ equipment: string; typeId: number | string }>; eligible: boolean;
 };
-type FulfillmentResponse = { orders: FulfillmentOrder[]; batches: FulfillmentBatch[]; resumeStatus: Record<string, FulfillmentResumeStatus>; timezone: string };
+type FulfillmentResponse = { orders: FulfillmentOrder[]; batches: FulfillmentBatch[]; resumeStatus: Record<string, FulfillmentResumeStatus>; deletableBatchIds?: string[]; timezone: string };
 type InventorySnapshot = { state: InventoryState; permissions: string[]; projectName?: string };
 type PickTicketLookup = { batch: FulfillmentBatch; resume: { resumable: boolean; nextStep: "stage" | "vehicle"; reason?: string } };
 type CorrectionDraftSnapshot = {
@@ -78,6 +78,7 @@ type PendingMove = {
   data: Record<string, unknown>;
 };
 type CreateAttempt = { operationId: string; id: string; data: Record<string, unknown> };
+type LocalSetupQueueEntry = { id: string; revision: number; capture: import("@shared/inventory-fulfillment-drafts").FulfillmentDraftCapture; conflict?: boolean };
 type Draft = {
   mode: "crew" | "scheduled" | "resume";
   step: "orders" | "review" | "stage" | "vehicle";
@@ -130,17 +131,24 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const [serialSearch, setSerialSearch] = useState<Record<string, string>>({});
   const [scanNotices, setScanNotices] = useState<Record<string, string>>({});
   const [editingSerialKey, setEditingSerialKey] = useState<string | null>(null);
-  const [showStart, setShowStart] = useState(true);
-  const [showResumeList, setShowResumeList] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showBlocked, setShowBlocked] = useState(false);
-  const [showCorrections, setShowCorrections] = useState(false);
-  const [requestedMode, setRequestedMode] = useState<Draft["mode"] | null>(null);
+  const [showStart, setShowStartState] = useState(true);
+  const [showResumeList, setShowResumeListState] = useState(false);
+  const [showHistory, setShowHistoryState] = useState(false);
+  const [showBlocked, setShowBlockedState] = useState(false);
+  const [showCorrections, setShowCorrectionsState] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+  const [draftAction, setDraftAction] = useState<{ kind: "clear" | "delete"; draft: SavedFulfillmentDraft } | null>(null);
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
+  const [batchToDelete, setBatchToDelete] = useState<FulfillmentBatch | null>(null);
+  const [localSetupQueue, setLocalSetupQueue] = useState<LocalSetupQueueEntry[]>([]);
+  const [queueOwnerKey, setQueueOwnerKey] = useState<string | null>(null);
+  const [draftStorageOwnerKey, setDraftStorageOwnerKey] = useState<string | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const lastQueuedCaptureRef = useRef("");
   const [checkedOnEntry, setCheckedOnEntry] = useState(false);
   const [finishedNotice, setFinishedNotice] = useState("");
-  const [reassignmentBatchId, setReassignmentBatchId] = useState("");
+  const [reassignmentBatchId, setReassignmentBatchIdState] = useState("");
   const [ticketInput, setTicketInput] = useState("");
   const [showTicketScan, setShowTicketScan] = useState(false);
   const [ticketArrival, setTicketArrival] = useState(0);
@@ -161,6 +169,24 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
   const inventoryKey = [`/api/projects/${projectId}/inventory`];
   const storageKey = user?.id ? `meterflo:fulfillment:${encodeURIComponent(String(user.id))}:${projectId}` : null;
+  const viewStorageKey = user?.id ? `meterflo:fulfillment-view:${encodeURIComponent(String(user.id))}:${projectId}` : null;
+  const draftOwnerKeyRef = useRef<string | null>(null);
+  const outboxOwnerKeyRef = useRef<string | null>(null);
+  const viewRef = useRef({ showStart, showResumeList, showHistory, showBlocked, showCorrections, reassignmentBatchId });
+  const persistViewPatch = (patch: Partial<typeof viewRef.current>) => {
+    const next = { ...viewRef.current, ...patch };
+    viewRef.current = next;
+    if (viewStorageKey && open && storageReady) {
+      try { window.localStorage.setItem(viewStorageKey, JSON.stringify(next)); }
+      catch { setError("The current fulfillment screen could not be saved for refresh recovery. Your operation inputs remain retained."); }
+    }
+  };
+  const setShowStart = (value: boolean) => { persistViewPatch({ showStart: value }); setShowStartState(value); };
+  const setShowResumeList = (value: boolean) => { persistViewPatch({ showResumeList: value }); setShowResumeListState(value); };
+  const setShowHistory = (value: boolean) => { persistViewPatch({ showHistory: value }); setShowHistoryState(value); };
+  const setShowBlocked = (value: boolean) => { persistViewPatch({ showBlocked: value }); setShowBlockedState(value); };
+  const setShowCorrections = (value: boolean) => { persistViewPatch({ showCorrections: value }); setShowCorrectionsState(value); };
+  const setReassignmentBatchId = (value: string) => { persistViewPatch({ reassignmentBatchId: value }); setReassignmentBatchIdState(value); };
   const correctionStorageKey = user?.id
     ? `meterflo:staging-corrections:${encodeURIComponent(String(user.id))}:${projectId}`
     : null;
@@ -278,31 +304,68 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       return;
     }
     if (!storageKey) return;
+    lastQueuedCaptureRef.current = "";
     setConfirmHandoff(false);
     setShowStart(true);
-    setShowResumeList(false);
-    setShowHistory(false);
-    setShowBlocked(false);
-    setShowCorrections(false);
-    setRequestedMode(null);
+    let savedView: Partial<{ showStart: boolean; showResumeList: boolean; showHistory: boolean; showBlocked: boolean; showCorrections: boolean; reassignmentBatchId: string }> = {};
+    try {
+      const rawView = viewStorageKey ? window.localStorage.getItem(viewStorageKey) : null;
+      if (rawView) savedView = JSON.parse(rawView);
+    } catch { /* A corrupt view never affects operation identities or captures. */ }
+    setShowResumeList(savedView.showResumeList === true);
+    setShowHistory(savedView.showHistory === true);
+    setShowBlocked(savedView.showBlocked === true);
+    setShowCorrections(savedView.showCorrections === true);
     setCheckedOnEntry(false);
     setFinishedNotice("");
-    setReassignmentBatchId("");
+    setReassignmentBatchId(savedView.reassignmentBatchId ?? "");
     setScanNotices({});
     setEditingSerialKey(null);
     setStorageReady(false);
     try {
       const saved = window.localStorage.getItem(storageKey);
       const parsed = saved ? JSON.parse(saved) as Partial<Draft> : null;
-      setDraft({ ...emptyDraft(), ...parsed, pending: parsed?.pending ?? null });
+      let hydrated: Draft = { ...emptyDraft(), ...parsed, pending: parsed?.pending ?? null };
+      const queueRaw = window.localStorage.getItem(`${storageKey}:shared-outbox`);
+      const queue = queueRaw ? JSON.parse(queueRaw) as LocalSetupQueueEntry[] : [];
+      const safeQueue = Array.isArray(queue) ? queue : [];
+      const localCapture = setupCapture(hydrated);
+      if (!hydrated.pending && !hydrated.createAttempt && !hydrated.batchId && localCapture.success &&
+        meaningfulFulfillmentDraft(localCapture.data)) {
+        const id = hydrated.sharedDraftId ?? crypto.randomUUID();
+        const revision = hydrated.sharedDraftRevision ?? 0;
+        hydrated = { ...hydrated, sharedDraftId: id, sharedDraftRevision: revision };
+        if (!safeQueue.some(entry => entry.id === id))
+          safeQueue.push({ id, revision, capture: localCapture.data });
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(hydrated));
+          window.localStorage.setItem(`${storageKey}:shared-outbox`, JSON.stringify(safeQueue));
+        } catch { setError("The local shared-draft retry could not be persisted. Keep this tab open and retry Save Draft."); }
+      }
+      currentDraftRef.current = hydrated;
+      draftOwnerKeyRef.current = storageKey;
+      outboxOwnerKeyRef.current = storageKey;
+      setDraft(hydrated);
+      setDraftStorageOwnerKey(storageKey);
+      setLocalSetupQueue(safeQueue);
+      setQueueOwnerKey(storageKey);
       setReassignmentBatchId(parsed?.reassignmentBatchId ?? "");
-      setShowStart(true);
+      setShowStart(!(savedView.showStart === false || savedView.showResumeList === true ||
+        savedView.showHistory === true || savedView.showBlocked === true || savedView.showCorrections === true));
     } catch {
       setDraft(emptyDraft());
       setError("Saved workflow inputs could not be read. A fresh draft is available; no inventory move was sent.");
     }
     setStorageReady(true);
-  }, [storageKey, open]);
+  }, [storageKey, viewStorageKey, open]);
+  useEffect(() => {
+    if (!storageKey || !storageReady || queueOwnerKey !== storageKey) return;
+    try {
+      window.localStorage.setItem(`${storageKey}:shared-outbox`, JSON.stringify(localSetupQueue));
+    } catch {
+      setError("A shared-draft retry could not be retained locally. Keep this workflow open and retry Save Draft before leaving.");
+    }
+  }, [storageKey, storageReady, localSetupQueue, queueOwnerKey]);
   useEffect(() => {
     if (open && inventory.isFetchedAfterMount && !inventory.isFetching && !canFulfill) {
       onOpenChange(false);
@@ -311,14 +374,24 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   }, [open, inventory.isFetchedAfterMount, inventory.isFetching, inventory.data, canFulfill, roleCapabilities.fulfillment, onOpenChange]);
   useEffect(() => { setSerialSearch({}); }, [open, draft.batchId, draft.step]);
   useEffect(() => {
-    if (!storageKey || !storageReady) return;
+    if (!storageKey || !storageReady || draftStorageOwnerKey !== storageKey) return;
     try {
       if (hasMeaningfulFulfillmentWork(draft) || draft.reassignmentVehicleId || draft.reassignmentReason.trim())
         window.localStorage.setItem(storageKey, JSON.stringify(draft));
       else window.localStorage.removeItem(storageKey);
     }
     catch { setError("Browser storage is unavailable. Physical moves stay disabled until their exact retry identity can be saved."); }
-  }, [storageKey, storageReady, draft]);
+  }, [storageKey, storageReady, draftStorageOwnerKey, draft]);
+  useEffect(() => {
+    if (!viewStorageKey || !storageReady || !open) return;
+    try {
+      window.localStorage.setItem(viewStorageKey, JSON.stringify({
+        showStart, showResumeList, showHistory, showBlocked, showCorrections, reassignmentBatchId,
+      }));
+    } catch {
+      setError("The current fulfillment screen could not be saved for refresh recovery. Your operation inputs remain retained.");
+    }
+  }, [viewStorageKey, storageReady, open, showStart, showResumeList, showHistory, showBlocked, showCorrections, reassignmentBatchId]);
   useEffect(() => {
     if (draft.pending && receipts.some(receipt => receipt.id === draft.pending?.operationId)) {
       const completedPending = draft.pending;
@@ -347,7 +420,22 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     return () => window.clearInterval(refresh);
   }, [open, canViewWorkOrders, projectId]);
 
-  const update = (changes: Partial<Draft>) => setDraft(current => ({ ...current, ...changes }));
+  const update = (changes: Partial<Draft>) => {
+    const next = { ...currentDraftRef.current, ...changes };
+    currentDraftRef.current = next;
+    draftOwnerKeyRef.current = storageKey;
+    setDraftStorageOwnerKey(storageKey);
+    if (storageKey && storageReady) {
+      try {
+        if (hasMeaningfulFulfillmentWork(next) || next.reassignmentVehicleId || next.reassignmentReason.trim())
+          window.localStorage.setItem(storageKey, JSON.stringify(next));
+        else window.localStorage.removeItem(storageKey);
+      } catch {
+        setError("Browser storage is unavailable. Physical moves stay disabled until their exact retry identity can be saved.");
+      }
+    }
+    setDraft(next);
+  };
   const changeTicketInput = (value: string) => {
     ticketSequence.current += 1;
     setTicketBusy(false);
@@ -600,7 +688,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     stagingId: source.stagingId,
     vehicleId: source.vehicleId,
   });
-  const startMode = (mode: Draft["mode"]) => {
+  const startMode = async (mode: Draft["mode"]) => {
     if (savingDraft) return;
     if (mode === "resume") {
       setShowStart(false);
@@ -611,126 +699,267 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       return;
     }
     if (draft.pending || draft.createAttempt || busy) return;
-    setDraft({ ...emptyDraft(), mode });
+    const current = currentDraftRef.current;
+    const currentCapture = setupCapture(current);
+    if (!current.batchId && currentCapture.success && meaningfulFulfillmentDraft(currentCapture.data) &&
+      !(await persistSetupDraft(false))) return;
+    const next = { ...emptyDraft(), mode };
+    currentDraftRef.current = next;
+    setDraft(next);
     setShowResumeList(false);
     setError("");
     setFinishedNotice("");
-    setRequestedMode(null);
     setShowStart(false);
   };
+  const persistSetupDraft = (showResume = false): Promise<boolean> => {
+    const task = saveQueueRef.current.then(async () => {
+      if (deletingDraftId) return false;
+      if (!storageKey || draftStorageOwnerKey !== storageKey || draftOwnerKeyRef.current !== storageKey) return false;
+      const current = currentDraftRef.current;
+      if (current.pending || current.createAttempt || current.batchId ||
+        (current.mode !== "crew" && current.mode !== "scheduled")) return false;
+      const parsed = setupCapture(current);
+      if (!parsed.success || !meaningfulFulfillmentDraft(parsed.data)) return true;
+      const captureKey = JSON.stringify(parsed.data);
+      const alreadyShared = current.sharedDraftId
+        ? sharedDrafts.data?.drafts.find(entry => entry.id === current.sharedDraftId)
+        : undefined;
+      if (alreadyShared && alreadyShared.revision === current.sharedDraftRevision &&
+        JSON.stringify(alreadyShared.capture) === captureKey) {
+        if (showResume) {
+          setShowStart(false); setShowHistory(false); setShowBlocked(false); setShowResumeList(true);
+        }
+        return true;
+      }
+      const id = current.sharedDraftId ?? crypto.randomUUID();
+      let priorQueue: LocalSetupQueueEntry[] = [];
+      try {
+        const raw = window.localStorage.getItem(`${storageKey}:shared-outbox`);
+        const decoded = raw ? JSON.parse(raw) as LocalSetupQueueEntry[] : [];
+        if (Array.isArray(decoded)) priorQueue = decoded;
+      } catch { /* Storage failure is handled before sending below. */ }
+      const pendingExact = priorQueue.find(entry => entry.id === id);
+      const requestCapture = pendingExact?.capture ?? parsed.data;
+      const revision = pendingExact?.revision ?? current.sharedDraftRevision ?? 0;
+      const queued: LocalSetupQueueEntry = pendingExact ?? { id, revision, capture: requestCapture };
+      const prepared = { ...current, sharedDraftId: id, sharedDraftRevision: revision };
+      if (!storageKey || !storageReady) {
+        setError("Browser storage is not ready. No shared draft request was sent; the current inputs remain on screen.");
+        return false;
+      }
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(prepared));
+        const nextQueue = [...priorQueue.filter(entry => entry.id !== id), queued];
+        window.localStorage.setItem(`${storageKey}:shared-outbox`, JSON.stringify(nextQueue));
+        currentDraftRef.current = prepared;
+        setDraft(prepared);
+        setLocalSetupQueue(nextQueue);
+      } catch {
+        setError("Could not retain the shared draft ID, revision, and exact capture. No request was sent.");
+        return false;
+      }
+      lastQueuedCaptureRef.current = JSON.stringify(requestCapture);
+      setSavingDraft(true);
+      setError("");
+      try {
+        let saved: SavedFulfillmentDraft | null = null;
+        if (pendingExact) {
+          const lookup = await apiRequest("GET", `/api/projects/${projectId}/inventory/fulfillment-drafts`);
+          const list = await lookup.json() as { drafts: SavedFulfillmentDraft[] };
+          const serverDraft = list.drafts.find(entry => entry.id === id);
+          if (serverDraft && JSON.stringify(serverDraft.capture) === JSON.stringify(requestCapture)) saved = serverDraft;
+          else if (serverDraft && serverDraft.revision !== revision)
+            throw new Error("409: The shared draft changed since this exact local request.");
+        }
+        if (!saved) {
+          const response = await apiRequest("POST", `/api/projects/${projectId}/inventory/fulfillment-drafts/${encodeURIComponent(id)}`, {
+            revision, capture: requestCapture,
+          });
+          saved = (await response.json() as { draft: SavedFulfillmentDraft }).draft;
+        }
+        const result = { draft: saved };
+        const latest = currentDraftRef.current;
+        if (latest.sharedDraftId === id) {
+          const advanced = { ...latest, sharedDraftRevision: result.draft.revision };
+          currentDraftRef.current = advanced;
+          setDraft(advanced);
+          try { window.localStorage.setItem(storageKey, JSON.stringify(advanced)); } catch { /* Outbox still has the exact request identity. */ }
+        }
+        const afterSuccess = priorQueue.filter(entry => entry.id !== id);
+        try { window.localStorage.setItem(`${storageKey}:shared-outbox`, JSON.stringify(afterSuccess)); } catch { /* Server save already succeeded. */ }
+        setLocalSetupQueue(afterSuccess);
+        await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/inventory/fulfillment-drafts`] });
+        const latestCapture = setupCapture(currentDraftRef.current);
+        if (latestCapture.success && JSON.stringify(latestCapture.data) !== JSON.stringify(requestCapture))
+          window.setTimeout(() => { void persistSetupDraft(false); }, 0);
+        if (showResume) {
+          setShowStart(false);
+          setShowHistory(false);
+          setShowBlocked(false);
+          setShowResumeList(true);
+        }
+        return true;
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "The setup draft could not be synchronized.";
+        const conflict = message.startsWith("409");
+        setLocalSetupQueue(entries => entries.map(entry => entry.id === id ? { ...entry, conflict } : entry));
+        setError(conflict
+          ? "This shared draft was changed by another user. Your local capture is retained and was not written over theirs. Resume or save as a separate draft after reviewing the shared version."
+          : `${message} The exact capture and revision are retained locally and will retry when online.`);
+        if (!conflict && navigator.onLine) window.setTimeout(() => syncSetupOutbox(), 5000);
+        if (showResume) {
+          setShowStart(false); setShowHistory(false); setShowBlocked(false); setShowResumeList(true);
+        }
+        return true;
+      } finally {
+        setSavingDraft(false);
+      }
+    });
+    saveQueueRef.current = task.then(() => undefined, () => undefined);
+    return task;
+  };
   const saveSetupDraft = async () => {
-    if (!hasSaveableSetup || savingDraft || busy || draft.pending || draft.createAttempt) return;
-    const parsed = setupCapture();
-    if (!parsed.success) {
-      setError("These setup inputs could not be saved safely. Review the batch name and selections; your current inputs remain here.");
-      return;
-    }
-    const id = draft.sharedDraftId ?? crypto.randomUUID();
-    const revision = draft.sharedDraftRevision ?? 0;
-    const preparedDraft = { ...draft, sharedDraftId: id, sharedDraftRevision: revision };
-    if (!storageKey || !storageReady) {
-      setError("Browser storage is not ready. The save identity could not be retained safely, so no shared draft request was sent.");
-      return;
-    }
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(preparedDraft));
-      setDraft(preparedDraft);
-    } catch {
-      setError("Could not retain the shared draft ID and revision for a safe retry. No save request was sent.");
-      return;
-    }
-    setSavingDraft(true);
+    if (!hasSaveableSetup || busy || draft.pending || draft.createAttempt) return;
+    const saved = await persistSetupDraft(true);
+    if (!saved) return;
+  };
+  const setupCaptureKey = (() => {
+    const parsed = setupCapture(draft);
+    return parsed.success ? JSON.stringify(parsed.data) : "";
+  })();
+  useEffect(() => {
+    if (!open || !storageReady || !hasSaveableSetup || deletingDraftId || draft.pending || draft.createAttempt || draft.batchId) return;
+    const parsed = setupCapture(draft);
+    if (!parsed.success || !meaningfulFulfillmentDraft(parsed.data)) return;
+    const shared = draft.sharedDraftId ? sharedDrafts.data?.drafts.find(entry => entry.id === draft.sharedDraftId) : undefined;
+    if (shared && shared.revision === draft.sharedDraftRevision && JSON.stringify(shared.capture) === JSON.stringify(parsed.data)) return;
+    if (lastQueuedCaptureRef.current === setupCaptureKey) return;
+    const timer = window.setTimeout(() => { void persistSetupDraft(false); }, 500);
+    return () => window.clearTimeout(timer);
+  }, [open, storageReady, draftStorageOwnerKey, hasSaveableSetup, deletingDraftId, draft, setupCaptureKey, sharedDrafts.data]);
+  const syncSetupOutbox = () => {
+    if (!storageKey || !storageReady || queueOwnerKey !== storageKey || outboxOwnerKeyRef.current !== storageKey || !navigator.onLine) return;
+    const task = saveQueueRef.current.then(async () => {
+      let entries: LocalSetupQueueEntry[] = [];
+      try {
+        const raw = window.localStorage.getItem(`${storageKey}:shared-outbox`);
+        const decoded = raw ? JSON.parse(raw) as LocalSetupQueueEntry[] : [];
+        entries = Array.isArray(decoded) ? decoded : [];
+      } catch { return; }
+      for (const entry of entries) {
+        if (entry.conflict) continue;
+        try {
+          const lookup = await apiRequest("GET", `/api/projects/${projectId}/inventory/fulfillment-drafts`);
+          const list = await lookup.json() as { drafts: SavedFulfillmentDraft[] };
+          const serverDraft = list.drafts.find(value => value.id === entry.id);
+          let saved = serverDraft && JSON.stringify(serverDraft.capture) === JSON.stringify(entry.capture)
+            ? serverDraft : null;
+          if (serverDraft && !saved && serverDraft.revision !== entry.revision) {
+            entries = entries.map(value => value.id === entry.id ? { ...value, conflict: true } : value);
+            continue;
+          }
+          if (!saved) {
+            const response = await apiRequest("POST", `/api/projects/${projectId}/inventory/fulfillment-drafts/${encodeURIComponent(entry.id)}`, {
+              revision: entry.revision, capture: entry.capture,
+            });
+            saved = (await response.json() as { draft: SavedFulfillmentDraft }).draft;
+          }
+          entries = entries.filter(value => value.id !== entry.id);
+          const current = currentDraftRef.current;
+          if (current.sharedDraftId === entry.id) {
+            const advanced = { ...current, sharedDraftRevision: saved.revision };
+            currentDraftRef.current = advanced;
+            setDraft(advanced);
+            try { window.localStorage.setItem(storageKey, JSON.stringify(advanced)); } catch { /* Exact outbox still protects retry. */ }
+          }
+        } catch {
+          if (navigator.onLine) window.setTimeout(() => syncSetupOutbox(), 5000);
+          break;
+        }
+      }
+      try { window.localStorage.setItem(`${storageKey}:shared-outbox`, JSON.stringify(entries)); } catch { return; }
+      setLocalSetupQueue(entries);
+      void queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/inventory/fulfillment-drafts`] });
+    });
+    saveQueueRef.current = task.then(() => undefined, () => undefined);
+  };
+  useEffect(() => {
+    if (!storageReady || !localSetupQueue.length) return;
+    const retry = () => syncSetupOutbox();
+    window.addEventListener("online", retry);
+    if (navigator.onLine) retry();
+    return () => window.removeEventListener("online", retry);
+  }, [open, storageReady, localSetupQueue.length, storageKey, queueOwnerKey, projectId]);
+  const clearSetupDraft = async (saved: SavedFulfillmentDraft) => {
+    if (deletingDraftId || busy || savingDraft || draft.pending || draft.createAttempt) return;
+    setDeletingDraftId(saved.id);
     setError("");
     try {
-      const response = await apiRequest("POST", `/api/projects/${projectId}/inventory/fulfillment-drafts/${encodeURIComponent(id)}`, {
-        revision,
-        capture: parsed.data,
+      await saveQueueRef.current;
+      const response = await apiRequest("POST", `/api/projects/${projectId}/inventory/fulfillment-drafts/${encodeURIComponent(saved.id)}/clear`, {
+        revision: saved.revision,
       });
       const result = await response.json() as { draft: SavedFulfillmentDraft };
-      update({ sharedDraftId: result.draft.id, sharedDraftRevision: result.draft.revision });
-      await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/inventory/fulfillment-drafts`] });
-      const currentCapture = setupCapture(currentDraftRef.current);
-      if (!currentCapture.success || JSON.stringify(currentCapture.data) !== JSON.stringify(parsed.data)) {
-        setError("A setup input changed while saving. The shared revision was saved safely; save again to include the newer local inputs.");
-        return;
+      const current = currentDraftRef.current;
+      if (current.sharedDraftId === saved.id) {
+        const cleared = {
+          ...emptyDraft(),
+          ...emptyFulfillmentDraftCapture(result.draft.mode),
+          sharedDraftId: result.draft.id,
+          sharedDraftRevision: result.draft.revision,
+        };
+        currentDraftRef.current = cleared;
+        setDraft(cleared);
       }
-      setShowStart(false);
-      setShowHistory(false);
-      setShowBlocked(false);
-      setShowResumeList(true);
+      const remaining = localSetupQueue.filter(entry => entry.id !== saved.id);
+      try { window.localStorage.setItem(`${storageKey}:shared-outbox`, JSON.stringify(remaining)); } catch { /* Server was cleared. */ }
+      setLocalSetupQueue(remaining);
+      await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/inventory/fulfillment-drafts`] });
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "The setup draft could not be saved.";
-      setError(`${message} Your selections and setup remain available to retry.`);
+      const message = cause instanceof Error ? cause.message : "The shared draft could not be cleared.";
+      setError(`${message} The saved inputs were kept; a stale or conflicting revision was not overwritten.`);
     } finally {
-      setSavingDraft(false);
+      setDeletingDraftId(null);
+      setDraftAction(null);
     }
   };
   const deleteSetupDraft = async (saved: SavedFulfillmentDraft) => {
     if (deletingDraftId || busy || savingDraft || draft.pending || draft.createAttempt) return;
-    const localBeforeDelete = currentDraftRef.current;
-    const localCapture = setupCapture(localBeforeDelete);
-    const localWasUnchangedShared = localBeforeDelete.sharedDraftId === saved.id &&
-      localBeforeDelete.sharedDraftRevision === saved.revision &&
-      localCapture.success &&
-      JSON.stringify(localCapture.data) === JSON.stringify(saved.capture);
-    const localSnapshot = JSON.stringify(localBeforeDelete);
     setDeletingDraftId(saved.id);
     setError("");
     try {
-      await apiRequest("DELETE", `/api/projects/${projectId}/inventory/fulfillment-drafts/${encodeURIComponent(saved.id)}`, {
-        revision: saved.revision,
-      });
+      await saveQueueRef.current;
+      await apiRequest("DELETE", `/api/projects/${projectId}/inventory/fulfillment-drafts/${encodeURIComponent(saved.id)}`, { revision: saved.revision });
       await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/inventory/fulfillment-drafts`] });
-      if (localWasUnchangedShared && JSON.stringify(currentDraftRef.current) === localSnapshot &&
-        currentDraftRef.current.sharedDraftId === saved.id)
-        setDraft(emptyDraft());
-      else setDraft(current => current.sharedDraftId === saved.id
-        ? { ...current, sharedDraftId: undefined, sharedDraftRevision: undefined } : current);
+      const local = currentDraftRef.current;
+      if (local.sharedDraftId === saved.id && local.sharedDraftRevision === saved.revision) {
+        const detached = { ...local, sharedDraftId: undefined, sharedDraftRevision: undefined };
+        currentDraftRef.current = detached;
+        setDraft(detached);
+      }
+      const remaining = localSetupQueue.filter(entry => entry.id !== saved.id);
+      try { window.localStorage.setItem(`${storageKey}:shared-outbox`, JSON.stringify(remaining)); } catch { /* Server delete succeeded. */ }
+      setLocalSetupQueue(remaining);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "The saved setup draft could not be cleared.";
-      setError(`${message} The draft and its inputs remain intact.`);
+      const message = cause instanceof Error ? cause.message : "The shared setup draft could not be deleted.";
+      setError(`${message} The shared draft and local inputs remain intact.`);
     } finally {
       setDeletingDraftId(null);
+      setDraftAction(null);
     }
   };
-  const resumeSharedDraft = (saved: SavedFulfillmentDraft) => {
+  const resumeSharedDraft = async (saved: SavedFulfillmentDraft) => {
     if (draft.pending || draft.createAttempt || savingDraft || busy) {
       setError("Recover the exact pending local operation before opening a shared setup. Its identity and payload remain protected.");
       return;
     }
     const current = currentDraftRef.current;
-    const currentCapture = setupCapture(current);
-    const currentShared = current.sharedDraftId
-      ? sharedDrafts.data?.drafts.find(entry => entry.id === current.sharedDraftId)
-      : undefined;
-    const currentIsUnchangedShared = !!currentShared &&
-      current.sharedDraftRevision === currentShared.revision &&
-      currentCapture.success &&
-      JSON.stringify(currentCapture.data) === JSON.stringify(currentShared.capture);
-    if (current.sharedDraftId === saved.id) {
-      if (current.sharedDraftRevision !== saved.revision) {
-        setError("This shared draft changed on the server. Your local inputs were kept; refresh the saved-draft list before resuming.");
-        void sharedDrafts.refetch();
-        return;
-      }
-      if (!currentCapture.success || JSON.stringify(currentCapture.data) !== JSON.stringify(saved.capture)) {
-        setError("You have unsaved local edits to this shared draft. Save Draft to update it before resuming; your edits were kept.");
-        return;
-      }
-      setShowStart(false);
-      setShowResumeList(false);
-      setShowHistory(false);
-      setShowBlocked(false);
-      setError("");
-      return;
-    }
-    if (hasSavedProgress && !currentIsUnchangedShared) {
-      setError("These local inputs differ from their saved shared setup. Save Draft or return to workflow choices before opening another shared draft; your edits were kept.");
-      return;
-    }
+    const localCapture = setupCapture(current);
+    if (current.sharedDraftId !== saved.id && !current.batchId && localCapture.success &&
+      meaningfulFulfillmentDraft(localCapture.data) && !(await persistSetupDraft(false))) return;
     const capture = saved.capture;
-    setDraft(current => ({
-      ...current,
+    const resumed = {
+      ...emptyDraft(),
       mode: capture.mode,
       step: capture.step,
       name: capture.name,
@@ -747,15 +976,47 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       batchId: "",
       sharedDraftId: saved.id,
       sharedDraftRevision: saved.revision,
-    }));
+    };
+    currentDraftRef.current = resumed;
+    setDraft(resumed);
     setShowStart(false);
     setShowResumeList(false);
     setShowHistory(false);
     setShowBlocked(false);
     setError("");
   };
-  const close = (next: boolean) => {
+  const resumeQueuedSetup = (entry: LocalSetupQueueEntry) => {
+    if (draft.pending || draft.createAttempt || busy || savingDraft) return;
+    const capture = entry.capture;
+    const resumed: Draft = {
+      ...emptyDraft(), mode: capture.mode, step: capture.step, name: capture.name,
+      selectedIds: capture.selectedIds, search: capture.search, route: capture.route, group: capture.group,
+      zone: capture.zone, installer: capture.installer, date: capture.date, sourceId: capture.sourceId,
+      stagingId: capture.stagingId, vehicleId: capture.vehicleId, sharedDraftId: entry.id, sharedDraftRevision: entry.revision,
+    };
+    currentDraftRef.current = resumed;
+    setDraft(resumed);
+    setShowStart(false);
+    setShowResumeList(false);
+    setShowHistory(false);
+    setShowBlocked(false);
+    setError(entry.conflict ? "This local capture conflicts with a newer shared revision. It remains available here and will not overwrite the other user's work." : "");
+  };
+  const close = async (next: boolean) => {
     if (!next && (busy || savingDraft)) return;
+    if (!next) {
+      const capture = setupCapture(currentDraftRef.current);
+      if (!currentDraftRef.current.batchId && capture.success && meaningfulFulfillmentDraft(capture.data) &&
+        !(await persistSetupDraft(false))) return;
+      if (viewStorageKey) {
+        try {
+          window.localStorage.setItem(viewStorageKey, JSON.stringify({
+            showStart: true, showResumeList: false, showHistory: false, showBlocked: false,
+            showCorrections: false, reassignmentBatchId: "",
+          }));
+        } catch { setError("The workspace exit screen could not be saved. Your workflow inputs remain retained."); }
+      }
+    }
     onOpenChange(next);
     if (!next) setError("");
   };
@@ -1205,9 +1466,55 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       quantities: { ...draft.quantities, [key]: String(serials.length) },
     });
   };
-  const startResume = (batch: FulfillmentBatch) => update({ batchId: batch.id, mode: "resume",
-    step: fulfillment.data?.resumeStatus?.[batch.id]?.nextStep ??
-      (batch.lines.some(line => line.quantity > line.stagedQuantity) ? "stage" : "vehicle") });
+  const startResume = (batch: FulfillmentBatch) => {
+    const step = fulfillment.data?.resumeStatus?.[batch.id]?.nextStep ??
+      (batch.lines.some(line => line.quantity > line.stagedQuantity) ? "stage" : "vehicle");
+    if (currentDraftRef.current.batchId === batch.id) update({ batchId: batch.id, mode: "resume", step });
+    else {
+      const next: Draft = { ...emptyDraft(), batchId: batch.id, mode: "resume", step, name: batch.name };
+      currentDraftRef.current = next;
+      setDraft(next);
+    }
+  };
+  const resumeFulfillmentBatch = async (batch: FulfillmentBatch) => {
+    if (draft.pending || draft.createAttempt || busy || savingDraft) return;
+    const capture = setupCapture(currentDraftRef.current);
+      if (!currentDraftRef.current.batchId && capture.success && meaningfulFulfillmentDraft(capture.data) &&
+        !(await persistSetupDraft(false))) return;
+    setShowResumeList(false);
+    setShowStart(false);
+    setShowBlocked(false);
+    setShowHistory(false);
+    startResume(batch);
+  };
+  const deleteFulfillmentBatch = async (batch: FulfillmentBatch) => {
+    if (deletingBatchId || busy || savingDraft || draft.pending || draft.createAttempt) return;
+    if (currentDraftRef.current.batchId === batch.id && hasUnrecordedMove) {
+      setError("This batch has unrecorded local movement entries. Keep or clear those entries before deleting the batch.");
+      return;
+    }
+    setDeletingBatchId(batch.id);
+    setError("");
+    try {
+      await apiRequest("DELETE", `/api/projects/${projectId}/inventory/fulfillment/${encodeURIComponent(batch.id)}`, {
+        revision: batch.revision,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: dataKey }),
+        queryClient.invalidateQueries({ queryKey: inventoryKey }),
+      ]);
+      if (currentDraftRef.current.batchId === batch.id) {
+        currentDraftRef.current = emptyDraft();
+        setDraft(emptyDraft());
+      }
+      setBatchToDelete(null);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "The batch could not be deleted.";
+      setError(`${message} The server may reject deletion if any stock movement has ever been posted; no receipt or inventory history is removed.`);
+    } finally {
+      setDeletingBatchId(null);
+    }
+  };
   const printBatchReceipt = (id: string) => window.open(`/api/projects/${projectId}/inventory/print/fulfillment/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
   const printPickTicket = (id: string) => window.open(`/api/projects/${projectId}/inventory/fulfillment/${encodeURIComponent(id)}/pick-ticket`, "_blank", "noopener,noreferrer");
   const makePartialReady = async () => {
@@ -1230,14 +1537,6 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
 
   const stepNames = draft.mode === "resume" ? ["Stage stock", "Vehicle handoff"] : ["Choose work", "Review batch", "Stage stock", "Vehicle handoff"];
   const currentStepIndex = draft.mode === "resume" ? (draft.step === "vehicle" ? 1 : 0) : ({ orders: 0, review: 1, stage: 2, vehicle: 3 } as const)[draft.step];
-  const currentSetupCapture = setupCapture(draft);
-  const persistedLocalDraft = draft.sharedDraftId
-    ? sharedDrafts.data?.drafts.find(saved => saved.id === draft.sharedDraftId)
-    : undefined;
-  const localSetupMatchesShared = !!persistedLocalDraft &&
-    draft.sharedDraftRevision === persistedLocalDraft.revision &&
-    currentSetupCapture.success &&
-    JSON.stringify(currentSetupCapture.data) === JSON.stringify(persistedLocalDraft.capture);
   const goBack = () => {
     if (draft.pending) return;
     if (draft.step === "review") update({ step: "orders" });
@@ -1255,7 +1554,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
 
   useWizardStepFocus({
     open,
-    ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff && requestedMode === null,
+    ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff,
       stepKey: `${ticketArrival}:${showCorrections}:${showHistory}:${showBlocked}:${showResumeList}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
     rootRef: wizardRef,
     bodyRef: stepBodyRef,
@@ -1406,8 +1705,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
               {batch.mode === "scheduled" && <Button type="button" variant="default" size="sm" data-testid={`fulfillment-review-reassignment-${batch.id}`}
                 disabled={!canPost || fulfillment.isFetching || !!draft.pending || !!draft.createAttempt}
                 onClick={() => { setReassignmentBatchId(batch.id); setShowBlocked(false); setShowStart(false); }}>Review reassignment</Button>}
-              <Button type="button" variant="outline" size="sm" disabled={!canPost || fulfillment.isFetching}
-                onClick={() => { setShowBlocked(false); startResume(batch); }}>Review / release remainder</Button>
+              <Button type="button" variant="outline" size="sm" disabled={!canPost || fulfillment.isFetching || !!draft.pending || !!draft.createAttempt || savingDraft}
+                onClick={() => void resumeFulfillmentBatch(batch)}>Review / release remainder</Button>
               </div>
             </div>) : <p role="status" className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No batches need review. Check Resume saved batch for unfinished work.</p>}
           </div>}
@@ -1433,7 +1732,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 ["resume", "Resume saved batch", "Continue valid, unfinished batches only."],
               ] as const).map(([mode, label, description]) => <button key={mode} type="button" data-wizard-entry
                 disabled={savingDraft || (mode !== "resume" && (busy || pendingLock || createLock))}
-                onClick={() => mode === "resume" ? startMode(mode) : hasSavedProgress ? setRequestedMode(mode) : startMode(mode)}
+                onClick={() => void startMode(mode)}
                 className="min-h-20 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50">
                 <span className="block font-semibold">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span>
               </button>)}
@@ -1489,7 +1788,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             </div>
             {!!sharedDrafts.isError && <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" /><AlertTitle>Saved drafts could not be loaded</AlertTitle>
-              <AlertDescription><span className="mr-2">Your local recovery inputs remain available below.</span>
+              <AlertDescription><span className="mr-2">Local captures remain available in the saved-batch list.</span>
                 <Button type="button" size="sm" variant="outline" onClick={() => void sharedDrafts.refetch()}>Retry</Button>
               </AlertDescription>
             </Alert>}
@@ -1505,31 +1804,31 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                   <RotateCcw className="mr-2 h-4 w-4" />Resume saved batch
                 </Button>
                 <Button type="button" size="sm" variant="outline" disabled={busy || savingDraft || deletingDraftId === saved.id || !!draft.pending || !!draft.createAttempt}
-                  onClick={() => void deleteSetupDraft(saved)}>
-                  {deletingDraftId === saved.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Clear draft
+                  onClick={() => setDraftAction({ kind: "clear", draft: saved })}>Clear draft
+                </Button>
+                <Button type="button" size="sm" variant="destructive" disabled={busy || savingDraft || deletingDraftId === saved.id || !!draft.pending || !!draft.createAttempt}
+                  onClick={() => setDraftAction({ kind: "delete", draft: saved })}>Delete draft
                 </Button>
               </div>
             </div>)}
-            {hasSavedProgress && (draft.pending || draft.createAttempt || !localSetupMatchesShared) && savedOutcome.kind !== "clear" && <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-medium">{draft.createAttempt ? "Batch creation needs recovery" : draft.pending ? "Movement needs recovery" : "Unsaved inputs on this device"}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{savedOutcome.kind === "review"
-                    ? `This batch is ${savedOutcome.status}. Local unrecorded inputs are retained for review only.`
-                    : draft.pending || draft.createAttempt
-                      ? "The original operation identity and payload are protected. Recover these inputs to reconcile or retry the same operation."
-                      : "These browser-local selections and setup inputs have not been shared as a saved setup draft."}</p>
-                </div>
-                <Button type="button" variant="outline" disabled={busy} onClick={() => {
-                  setShowResumeList(false);
-                  setShowStart(false);
-                  if (draft.reassignmentBatchId) setReassignmentBatchId(draft.reassignmentBatchId);
-                }}>Recover local inputs</Button>
+            {localSetupQueue.map(entry => <div key={`local-${entry.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 font-medium">{entry.capture.name || "Local setup capture"}<Badge variant="outline">{entry.capture.mode === "crew" ? "Crew" : "Scheduled"}</Badge></div>
+                <p className="mt-1 text-xs text-muted-foreground">{entry.capture.selectedIds.length} selected work orders · {entry.conflict ? "Shared revision conflict; local copy preserved" : "Waiting to sync shared capture"}</p>
               </div>
-              {savedOutcome.kind === "review" && <div className="mt-3"><FulfillmentSavedInputs draft={draft} items={items} /></div>}
+              <Button type="button" size="sm" variant="outline" disabled={busy || savingDraft || !!draft.pending || !!draft.createAttempt}
+                onClick={() => resumeQueuedSetup(entry)}><RotateCcw className="mr-2 h-4 w-4" />Resume saved batch</Button>
+            </div>)}
+            {(draft.pending || draft.createAttempt) && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+              <div className="min-w-0"><p className="font-medium">{draft.createAttempt ? "Batch creation · local operation" : "Inventory movement · local operation"}</p>
+                <p className="break-all font-mono text-xs text-muted-foreground">{draft.createAttempt?.operationId ?? draft.pending?.operationId}</p></div>
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => {
+                setShowResumeList(false); setShowStart(false); setShowHistory(false); setShowBlocked(false);
+                if (draft.reassignmentBatchId) setReassignmentBatchId(draft.reassignmentBatchId);
+              }}><RotateCcw className="mr-2 h-4 w-4" />Resume saved batch</Button>
             </div>}
             {!resumableBatches.length && !sharedDrafts.data?.drafts.length &&
-              !(hasSavedProgress && (draft.pending || draft.createAttempt || !localSetupMatchesShared)) &&
+              !localSetupQueue.length && !(draft.pending || draft.createAttempt) &&
               <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No saved setup drafts or resumable batches. Start a new workflow or review completed batches.</div>}
             {resumableBatches.map(batch => <div key={batch.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
               <div className="min-w-0">
@@ -1540,17 +1839,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
               <div className="flex flex-wrap gap-2">
                 {receipts.some(receipt => ["fulfillmentMove", "fulfillmentClose"].includes(receipt.action) && receipt.reference === batch.id) &&
                   <Button type="button" size="sm" variant="outline" onClick={() => printBatchReceipt(batch.id)}><Printer className="mr-2 h-4 w-4" />Print combined receipt</Button>}
-                <Button type="button" size="sm" disabled={!canPost || fulfillment.isFetching} onClick={() => {
-                  if (hasSavedProgress) {
-                    setError("Recover the current local inputs before opening another batch. Its exact saved operation identity is protected.");
-                    return;
-                  }
-                  setShowResumeList(false);
-                  startResume(batch);
-                }}><RotateCcw className="mr-2 h-4 w-4" />Resume batch</Button>
+                <Button type="button" size="sm" disabled={!canPost || fulfillment.isFetching || !!draft.pending || !!draft.createAttempt || savingDraft}
+                  onClick={() => void resumeFulfillmentBatch(batch)}><RotateCcw className="mr-2 h-4 w-4" />Resume batch</Button>
+                {fulfillment.data?.deletableBatchIds?.includes(batch.id) && <Button type="button" size="sm" variant="destructive"
+                  disabled={!!deletingBatchId || !!draft.pending || !!draft.createAttempt || (draft.batchId === batch.id && hasUnrecordedMove)}
+                  onClick={() => setBatchToDelete(batch)}><Trash2 className="mr-2 h-4 w-4" />Delete batch</Button>}
               </div>
             </div>)}
-            <Button type="button" variant="ghost" onClick={() => { setShowResumeList(false); setShowStart(true); }}>Back to workflow choices</Button>
           </div>}
           {!showStart && !showResumeList && <>
           {draft.step === "orders" && <div className="space-y-5">
@@ -1561,7 +1856,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 ["resume", "Resume saved batch", "Continue a batch without claiming or reassigning work orders."],
               ] as const).map(([mode, label, description]) => <button key={mode} type="button"
                 disabled={savingDraft || (mode !== "resume" && (busy || pendingLock || createLock))}
-                onClick={() => mode === "resume" ? startMode(mode) : hasSavedProgress ? setRequestedMode(mode) : startMode(mode)}
+                onClick={() => void startMode(mode)}
                 className={`min-h-20 rounded-lg border p-3 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50 ${draft.mode === mode ? "border-primary bg-primary/5" : "bg-card"}`}>
                 <span className="block font-semibold">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span>
               </button>)}
@@ -1684,6 +1979,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                     ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
                     : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p></div>
                 <Button type="button" variant="outline" size="sm" data-testid="fulfillment-open-corrections" onClick={() => setShowCorrections(true)}>Review pickup problems</Button>
+                 {fulfillment.data?.deletableBatchIds?.includes(activeBatch.id) && <Button type="button" variant="destructive" size="sm"
+                   disabled={busy || savingDraft || pendingLock || createLock || hasUnrecordedMove}
+                   onClick={() => setBatchToDelete(activeBatch)}><Trash2 className="mr-2 h-4 w-4" />Delete batch</Button>}
                  <div className="flex flex-wrap gap-2"><Badge variant={activeBatch.pickupReady || stagingComplete ? "secondary" : "outline"}>{stagingComplete || activeBatch.pickupReady ? stagingComplete ? "Ready · full batch" : "Ready · partial" : "Not yet ready"}</Badge><Badge variant="secondary">Revision {activeBatch.revision}</Badge></div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
@@ -1836,6 +2134,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
         </>)}
       </div>
       <div className="flex min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
+        {showResumeList && <Button type="button" variant="outline" onClick={() => { setShowResumeList(false); setShowStart(true); }}>
+          <ArrowLeft className="mr-2 h-4 w-4" />Back to workflow choices
+        </Button>}
         {showHistory && <Button type="button" variant="outline" onClick={() => setShowHistory(false)}><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>}
         {showBlocked && <Button type="button" variant="outline" onClick={() => setShowBlocked(false)}><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>}
         {reassignmentBatchId && <Button type="button" variant="outline" className="min-w-0 whitespace-normal" onClick={() => {
@@ -1865,21 +2166,49 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}
           </Button>}
           </>}
-          <Button type="button" variant="outline" disabled={busy || savingDraft} onClick={() => close(false)}>
+          <Button type="button" variant="outline" disabled={busy || savingDraft} onClick={() => void close(false)}>
             {showStart || showResumeList || (!draft.batchId && (draft.mode === "crew" || draft.mode === "scheduled") && (draft.step === "orders" || draft.step === "review")) ? "Close" : "Save & leave"}
           </Button>
         </div>
       </div>
     </div>}
-    <AlertDialog open={open && requestedMode !== null} onOpenChange={next => { if (!next) setRequestedMode(null); }}>
+    <AlertDialog open={open && !!draftAction} onOpenChange={next => { if (!next && !deletingDraftId) setDraftAction(null); }}>
       <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>Replace saved workflow inputs?</AlertDialogTitle>
-          <AlertDialogDescription>Starting a different workflow replaces the current saved selections and unrecorded inputs. Recorded batches, receipts and stock movements are not changed. Cancel to keep your saved workflow.</AlertDialogDescription>
+          <AlertDialogTitle>{draftAction?.kind === "clear" ? "Clear saved draft inputs?" : "Delete this shared draft?"}</AlertDialogTitle>
+          <AlertDialogDescription>{draftAction?.kind === "clear"
+            ? "This resets all setup inputs while keeping the shared draft record and its identity. You can use it again later."
+            : "This permanently removes the shared setup draft record. It does not delete any created batch, receipt, or inventory history."}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Keep saved workflow</AlertDialogCancel>
-          <AlertDialogAction disabled={busy || savingDraft || pendingLock || createLock} onClick={() => { if (requestedMode) startMode(requestedMode); }}>Start selected workflow</AlertDialogAction>
+          <AlertDialogCancel disabled={!!deletingDraftId}>Cancel</AlertDialogCancel>
+          <AlertDialogAction disabled={!!deletingDraftId || busy || !!draft.pending || !!draft.createAttempt}
+            onClick={event => {
+              event.preventDefault();
+              if (!draftAction) return;
+              void (draftAction.kind === "clear" ? clearSetupDraft(draftAction.draft) : deleteSetupDraft(draftAction.draft));
+            }}>
+            {deletingDraftId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {draftAction?.kind === "clear" ? "Clear draft" : "Delete draft"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={open && !!batchToDelete} onOpenChange={next => { if (!next && !deletingBatchId) setBatchToDelete(null); }}>
+      <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this active batch?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {batchToDelete?.name} will be removed only if the server confirms that no stock movement has ever been posted. Creation audit and replay identity are retained. Posted inventory and receipts are never removed.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={!!deletingBatchId}>Cancel</AlertDialogCancel>
+          <AlertDialogAction disabled={!batchToDelete || !!deletingBatchId || !!draft.pending || !!draft.createAttempt}
+            onClick={event => { event.preventDefault(); if (batchToDelete) void deleteFulfillmentBatch(batchToDelete); }}>
+            {deletingBatchId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            Delete batch
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

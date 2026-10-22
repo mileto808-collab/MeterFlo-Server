@@ -5,13 +5,14 @@ import { pool } from "./db";
 import { lockInventory, saveInventory } from "./inventoryService";
 import { readRelationalInventory } from "./inventoryRelational";
 import { fulfillmentOrders } from "./inventoryFulfillment";
-import { canonicalInventoryJson, InventoryError } from "../shared/inventory-engine";
+import { canonicalInventoryJson, InventoryError, warehouseAccess } from "../shared/inventory-engine";
 import {
-  fulfillmentDraftCaptureSchema, meaningfulFulfillmentDraft, savedFulfillmentDraftSchema,
+  emptyFulfillmentDraftCapture, fulfillmentDraftCaptureSchema, meaningfulFulfillmentDraft, savedFulfillmentDraftSchema,
   type SavedFulfillmentDraft,
 } from "../shared/inventory-fulfillment-drafts";
 import type { InventoryState } from "../shared/inventory";
 import type { PoolClient } from "pg";
+import { canDeleteUnpostedFulfillmentBatch } from "../shared/inventory-fulfillment";
 
 const conflict = (message: string) => Object.assign(new InventoryError(message), { status: 409 });
 async function canReadDraft(client: PoolClient, context: any, state: InventoryState, draft: SavedFulfillmentDraft) {
@@ -43,11 +44,11 @@ export function registerFulfillmentDraftRoutes(
     } catch (error) { await client.query("ROLLBACK"); throw error; }
     finally { client.release(); }
   }));
-  const mutate = (remove: boolean) => handler(async (req, res) => {
+  const mutate = (remove: boolean, clear = false) => handler(async (req, res) => {
     const c = res.locals.inventory;
     requireFulfillment(c);
     const id = z.string().uuid().parse(req.params.id);
-    const input = (remove
+    const input = (remove || clear
       ? z.object({ revision: z.number().int().positive() }).strict()
       : z.object({ revision: z.number().int().nonnegative(), capture: fulfillmentDraftCaptureSchema }).strict()
     ).parse(req.body);
@@ -65,16 +66,20 @@ export function registerFulfillmentDraftRoutes(
         await client.query("COMMIT");
         return { deleted: true };
       }
+      if (clear && !previous) throw conflict("This draft was deleted or used to create a batch. Reload Resume saved batch.");
+      const capture = remove ? undefined : clear
+        ? emptyFulfillmentDraftCapture(previous!.mode)
+        : fulfillmentDraftCaptureSchema.parse("capture" in input ? input.capture : undefined);
       if (!remove && previous && previous.revision === input.revision + 1 &&
-          previous.updatedBy === c.user.id && "capture" in input &&
-          canonicalInventoryJson(previous.capture) === canonicalInventoryJson(input.capture)) {
+          previous.updatedBy === c.user.id &&
+          canonicalInventoryJson(previous.capture) === canonicalInventoryJson(capture)) {
         if (!await canReadDraft(client, c, before, previous))
           throw Object.assign(new InventoryError("Work-order access is required for this saved draft."), { status: 403 });
         await client.query("COMMIT");
         return { draft: previous };
       }
       if ((previous?.revision ?? 0) !== input.revision)
-        throw conflict("This draft was changed, used, or cleared by another user. Reopen it from Resume saved batch; your inputs have been kept.");
+        throw conflict("This draft was changed, used, or deleted by another user. Reopen it from Resume saved batch; your inputs have been kept.");
       if (previous && !await canReadDraft(client, c, before, previous))
         throw Object.assign(new InventoryError("Work-order access is required for this saved draft."), { status: 403 });
       const after = structuredClone(before);
@@ -83,8 +88,8 @@ export function registerFulfillmentDraftRoutes(
         if (!previous) throw conflict("This saved draft is no longer available.");
         after.fulfillmentDrafts = (after.fulfillmentDrafts ?? []).filter(draft => draft.id !== id);
       } else {
-        const capture = fulfillmentDraftCaptureSchema.parse("capture" in input ? input.capture : undefined);
-        if (!meaningfulFulfillmentDraft(capture)) throw new InventoryError("Choose work orders or enter batch setup before saving a draft.");
+        if (!capture) throw new InventoryError("Draft inputs are required.");
+        if (!clear && !meaningfulFulfillmentDraft(capture)) throw new InventoryError("Choose work orders or enter batch setup before saving a draft.");
         if (new Set(capture.selectedIds).size !== capture.selectedIds.length)
           throw new InventoryError("Select each work order only once.");
         saved = savedFulfillmentDraftSchema.parse({
@@ -97,12 +102,53 @@ export function registerFulfillmentDraftRoutes(
         after.fulfillmentDrafts = [...(after.fulfillmentDrafts ?? []).filter(draft => draft.id !== id), saved];
       }
       after.revision++;
-      await saveInventory(client, c.project.id, before, after, randomUUID(), remove ? "fulfillmentDraftDelete" : "fulfillmentDraftSave");
+      await saveInventory(client, c.project.id, before, after, randomUUID(),
+        remove ? "fulfillmentDraftDelete" : clear ? "fulfillmentDraftClear" : "fulfillmentDraftSave");
       await client.query("COMMIT");
       return remove ? { deleted: true } : { draft: saved };
     } catch (error) { await client.query("ROLLBACK"); throw error; }
     finally { client.release(); }
   });
   app.post(`${base}/fulfillment-drafts/:id`, mutate(false));
+  app.post(`${base}/fulfillment-drafts/:id/clear`, mutate(false, true));
   app.delete(`${base}/fulfillment-drafts/:id`, mutate(true));
+  app.delete(`${base}/fulfillment/:id`, handler(async (req, res) => {
+    const c = res.locals.inventory;
+    requireFulfillment(c);
+    const id = z.string().uuid().parse(req.params.id);
+    const { revision } = z.object({ revision: z.number().int().positive() }).strict().parse(req.body);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { rows: [project] } = await client.query(
+        "SELECT inventory_enabled,is_active,wizard_mode FROM public.projects WHERE id=$1 FOR SHARE", [c.project.id]);
+      if (!project?.inventory_enabled || project.is_active === false || project.wizard_mode === "reading_only")
+        throw new InventoryError("An active inventory-enabled changeout project is required.");
+      const before = await lockInventory(client, c.project.id);
+      const batch = before.fulfillmentBatches?.find(value => value.id === id);
+      if (!batch) {
+        await client.query("COMMIT");
+        return { deleted: true };
+      }
+      const orders = await fulfillmentOrders(client, c.project.id, before, c.user, batch.workOrders.map(work => work.workOrderId));
+      if (!batch.workOrders.every(work => orders.some(order => order.workOrderId === work.workOrderId)))
+        throw Object.assign(new InventoryError("Work-order access is required to delete this batch."), { status: 403 });
+      for (const warehouse of [batch.sourceId, batch.stagingId, batch.vehicleId])
+        warehouseAccess(before, warehouse, c.user.id, c.admin);
+      if (batch.revision !== revision) throw conflict("This batch changed. Reload its latest progress before deleting it.");
+      // A correction can reduce current quantities to zero; that does not erase prior postings.
+      if (!canDeleteUnpostedFulfillmentBatch(before, batch)) {
+        throw conflict("This batch has posted inventory or custody history and cannot be deleted. Correct the stock or release the unfinished remainder instead.");
+      }
+      const after = structuredClone(before);
+      after.fulfillmentBatches = (after.fulfillmentBatches ?? []).filter(value => value.id !== id);
+      after.revision++;
+      // Retain creation receipts, operation replay identities and the audit record.
+      // Batch-only demand holds disappear with the batch; independent reservations stay intact.
+      await saveInventory(client, c.project.id, before, after, randomUUID(), "fulfillmentBatchDelete");
+      await client.query("COMMIT");
+      return { deleted: true };
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }));
 }
