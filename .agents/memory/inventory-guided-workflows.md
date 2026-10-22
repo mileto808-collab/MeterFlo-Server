@@ -39,6 +39,12 @@ Show Save Draft only after meaningful work, and Clear draft only for a saved dra
 
 **How to apply:** Store meaningful setup drafts in the relational database and list them in Resume saved batch, including automatically recovered work. Do not expose a separate browser-local warning or Recover local inputs workflow. Retain unknown-operation identities without exposing a second posting path. Back to workflow choices belongs in the bottom sticky footer.
 
+Authorized users must be able to delete a fulfillment batch if inventory has not been posted.
+
+**Why:** The user explicitly requested deletion of unposted batches and questioned whether Clear meant the same thing.
+
+**How to apply:** Distinguish deletion of an unposted draft or batch from releasing the remainder of a batch with physical movement history. Do not treat zero current stock as proof that nothing was ever posted.
+
 An explicit pick-ticket scan is an exception to the normal chooser-first entry: open that verified batch at the appropriate current step.
 
 **Why:** The user needs warehouse staff to retrieve a staged order quickly when a crew arrives later, using an HID scanner anywhere in Inventory or the fulfillment camera. The technician's pickup notice/report must also show a QR that the warehouse can scan.
