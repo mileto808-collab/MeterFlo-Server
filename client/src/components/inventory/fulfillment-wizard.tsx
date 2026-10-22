@@ -548,6 +548,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     update({ [field]: { ...draft[field], [key]: value } });
     if (field === "quantities") setScanNotices(current => ({ ...current, [key]: "" }));
   };
+  const setMoveQuantity = (key: string, value: string, limit: number) => {
+    // A number input's max only affects validity/spinners; typing and paste
+    // must also respect the current demand and available physical stock.
+    if (value !== "" && (!/^\d+$/.test(value) ||
+      !Number.isSafeInteger(Number(value)) || Number(value) > Math.max(0, limit))) return;
+    setLineValue(key, value, "quantities");
+  };
   const scanSerials = (key: string, text: string, commitLast = false) => {
     if (pendingLock || createLock || !canPost) return;
     const quantity = Number(draft.quantities[key] ?? 0);
@@ -989,7 +996,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{row.item?.name}</p><p className="text-xs text-muted-foreground">{row.item?.sku} · {row.item?.unit ?? "units"}</p></div>
                       <div className="text-right text-xs"><span className="block text-muted-foreground">Remaining to {draft.step === "stage" ? "stage" : "handoff"}</span><strong className="font-mono text-base">{remaining}</strong><span className="ml-1">{row.item?.unit ?? "units"}</span></div></div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
-                      <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-wizard-needs-input={!scanTarget || enteredQuantity > moveLimit ? "true" : undefined} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setLineValue(key, event.target.value, "quantities")} placeholder="0" /></div>
+                      <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-wizard-needs-input={!scanTarget || enteredQuantity > moveLimit ? "true" : undefined} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} aria-describedby={`qty-limit-${key}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setMoveQuantity(key, event.target.value, moveLimit)} placeholder="0" /><p id={`qty-limit-${key}`} className="text-xs text-muted-foreground">Maximum {moveLimit} {row.item?.unit ?? "units"}</p></div>
                       {row.item?.tracking === "serialized" && <div className="space-y-1">
                         <Label htmlFor={`serial-${key}`}>Custody serials</Label>
                         <div data-testid={`fulfillment-scan-progress-${draft.step}-${row.itemId}`}>
