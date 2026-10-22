@@ -12,7 +12,10 @@ export const vehicleTransferSchema = z.object({
   installerId: z.string().min(1).max(100).nullable().optional(),
   lines: z.array(stockLineSchema).min(1).max(500),
   reason: z.string().trim().min(10).max(1000), physicallyConfirmed: z.literal(true),
+  draftId: z.string().uuid().optional(), draftRevision: z.number().int().positive().optional(),
 }).strict().superRefine((input, context) => {
+  if (!!input.draftId !== (input.draftRevision !== undefined))
+    context.addIssue({ code: "custom", message: "A saved handover requires both draft identity and revision." });
   if (input.sourceId === input.destinationId)
     context.addIssue({ code: "custom", message: "Choose two different vehicles." });
   if (input.mode === "work" ? !input.batchId || !input.batchRevision || !input.workOrders.length :

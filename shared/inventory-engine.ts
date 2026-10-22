@@ -19,6 +19,7 @@ import { applyStagingCorrection, pickupNeedsReview } from "./inventory-staging-c
 import { updateWorkPlan, effectivePlannedLines } from "./inventory-planning";
 import { applyFulfillmentMove, fulfillmentBatchSchema, fulfillmentReserved, fulfillmentReadySchema } from "./inventory-fulfillment";
 import { applyVehicleTransfer } from "./inventory-vehicle-transfer";
+import { assertVehicleTransferDraftCommand, completeVehicleTransferDraft } from "./inventory-vehicle-transfer-drafts";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
 import { fieldUseSplit, resolveStockDiscrepancySchema } from "./inventory-stock-discrepancies";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
@@ -152,7 +153,16 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   const fingerprint = canonicalInventoryJson({ action: command.action,
     data: isShipmentDraftAction(command.action) ? draftFingerprintCommand(command) : command.data, actor });
   if (original.operations[command.operationId]) {
-    assert(original.operations[command.operationId] === fingerprint, "Posting identifier was already used for a different operation.");
+    const sharedHandover = command.action === "vehicleTransfer" && command.data.draftId
+      ? original.vehicleTransferDrafts?.find(draft => draft.id === command.data.draftId && draft.status === "posted")
+      : undefined;
+    if (sharedHandover) assertVehicleTransferDraftCommand(original, command, canonicalInventoryJson);
+    const originalHandoverFingerprint = sharedHandover && canonicalInventoryJson({
+      action: command.action, data: command.data, actor: sharedHandover.updatedBy,
+    });
+    assert(original.operations[command.operationId] === fingerprint ||
+      original.operations[command.operationId] === originalHandoverFingerprint,
+    "Posting identifier was already used for a different operation.");
     if (isShipmentDraftAction(command.action)) validateDraftReplay(original, command, actor, canonicalInventoryJson);
     return { state: original, replay: true };
   }
@@ -456,12 +466,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       receipt,
     });
   } else if (a === "vehicleTransfer") {
+    assertVehicleTransferDraftCommand(s, command, canonicalInventoryJson);
     applyVehicleTransfer(s, d, command.operationId, {
       access,
       move: (warehouseId, lines, sign, transferId) => move(s, warehouseId, lines, sign, undefined,
         sign < 0 ? { to: { kind: "transit", id: transferId } } : { from: { kind: "transit", id: transferId } }),
       receipt,
     });
+    completeVehicleTransferDraft(s, command, actor, now);
   } else if (a === "plan") {
     updateWorkPlan(s, d, actor, now);
   } else if (a === "stageWorkOrder") {

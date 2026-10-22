@@ -11,6 +11,7 @@ import type { StockDiscrepancy } from "./inventory-stock-discrepancies";
 import type { PlannedLine, WorkPlan } from "./inventory-planning";
 import type { ReceiptPallet } from "./inventory-receiving-pallets";
 import type { SavedFulfillmentDraft } from "./inventory-fulfillment-drafts";
+import type { SavedVehicleTransferDraft } from "./inventory-vehicle-transfer-drafts";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -135,6 +136,7 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
   receipts: InventoryReceipt[]; returns: EquipmentReturn[]; operations: Record<string, string>; revision: number;
   serialOccupancy?: { itemId: string; serial: string; workOrderId: number | null }[];
   shipmentHolds?: ShipmentHold[]; shipmentDrafts?: SavedShipmentDraft[]; fulfillmentDrafts?: SavedFulfillmentDraft[];
+  vehicleTransferDrafts?: SavedVehicleTransferDraft[];
   kitAssemblies?: KitAssembly[]; kitHolds?: KitHold[] };
 export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], categories: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });

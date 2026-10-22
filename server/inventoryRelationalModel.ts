@@ -91,6 +91,9 @@ export const relationalEntities: EntityModel[] = [
     ] },
   { name: "inventory_kit_holds", field: "kitHolds", columns: { ...text("id", "assemblyId", "receiptId", "itemId", "warehouseId", "reason", "status", "actor", "occurredAt"), quantity: "integer" }, arrays: ["serials"], json: ["resolution", "dispositions"] },
   { name: "inventory_serial_occupancy", field: "serialOccupancy", key: "_position", columns: { itemId: "text", serial: "text", workOrderId: "integer" } },
+  { name: "inventory_vehicle_transfer_drafts", field: "vehicleTransferDrafts",
+    columns: { ...text("id", "status", "createdBy", "updatedBy", "savedAt", "saveId", "receiptId"), revision: "integer" },
+    json: ["capture", "command"] },
 ];
 export const columnName = (field: string) => field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 export const arrayTable = (name: string) => `${name}_values`;

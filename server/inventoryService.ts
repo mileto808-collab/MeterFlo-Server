@@ -15,7 +15,8 @@ import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
 import { actualEquipmentLines } from "../shared/inventory-requirements";
 import { workPlanInputSchema, samePlanOverrides } from "../shared/inventory-planning";
 import { visibleAssignedOrders } from "./workOrderVisibility";
-import { prepareVehicleTransfer, finishVehicleTransferAssignments, vehicleTransferPermissions } from "./inventoryVehicleTransfer";
+import { prepareVehicleTransfer, finishVehicleTransferAssignments, vehicleTransferPermissions, canReadVehicleTransferCapture } from "./inventoryVehicleTransfer";
+import { assertVehicleTransferDraftCommand } from "../shared/inventory-vehicle-transfer-drafts";
 import type { VehicleTransfer } from "../shared/inventory-vehicle-transfer";
 import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inventory-field-stock";
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
@@ -86,7 +87,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "fulfillmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies", "fulfillmentBatches"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "fulfillmentDrafts", "vehicleTransferDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies", "fulfillmentBatches"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -95,7 +96,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft | undefined) : prior || null,
         after: kind === "shipmentDrafts" ? shipmentDraftAudit(value as SavedShipmentDraft) : value }];
     });
-    if (["shipmentDrafts", "fulfillmentDrafts", "fulfillmentBatches", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
+    if (["shipmentDrafts", "fulfillmentDrafts", "vehicleTransferDrafts", "fulfillmentBatches", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
       if (!(after[kind] ?? []).some(d => ((d as any).id ?? (d as any).workOrderId) === id))
         updates.push({ field: `${kind}/${id}`, before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft) : prior, after: null as any });
     }
@@ -130,11 +131,16 @@ export async function postInventory(projectId: number, command: InventoryCommand
     const before = await lockInventory(client, projectId);
     let vehicleTransfer: VehicleTransfer | undefined;
     if (command.action === "vehicleTransfer") {
+      assertVehicleTransferDraftCommand(before, command, canonicalInventoryJson);
       const user = await storage.getUser(actor);
       const access = user && !user.isLocked ? await vehicleTransferPermissions(user) : undefined;
       if (!user || !access?.canStockTransfer || command.data.mode === "work" && !access.canWorkTransfer ||
           !admin && !await storage.isUserAssignedToProject(actor, projectId))
         throw Object.assign(new InventoryError("Vehicle transfer permission and active project access are required."), { status: 403 });
+      if (command.data.draftId && before.operations[command.operationId] &&
+          !await canReadVehicleTransferCapture(client, projectId, before,
+            before.vehicleTransferDrafts!.find(draft => draft.id === command.data.draftId)!.capture, user, admin))
+        throw Object.assign(new InventoryError("Access to this saved handover is no longer available."), { status: 403 });
       if (!before.operations[command.operationId])
         vehicleTransfer = await prepareVehicleTransfer(client, projectId, before, command.data, user, admin);
     }

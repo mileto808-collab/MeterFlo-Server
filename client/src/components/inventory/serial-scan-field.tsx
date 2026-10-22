@@ -41,13 +41,16 @@ type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChan
     status: "verified" | "invalid" | "error"; message: string; rejectedSerials?: string[];
   }>;
   verificationState?: { status: "checking" | "invalid" | "verified" | "error"; message: string };
+  /** Raw handover drafts preserve the next unfinished barcode, unlike normalized array-backed fields. */
+  preserveUncommittedTail?: boolean;
 };
 
 /** Text and array-backed consumers share scanner commits while retaining unfinished text locally. */
 export function SerialScanField({ value, onChange, expected, blockedSerials = [], requireTarget = true,
-  verifyCommittedScans, verificationState, ...props }: Props) {
+  verifyCommittedScans, verificationState, preserveUncommittedTail = false, ...props }: Props) {
   const [text, setText] = useState(value);
-  const [pending, setPending] = useState(false);
+  const rawPending = (input: string) => preserveUncommittedTail && !!input.trim() && !/[\r\n,;\t]\s*$/.test(input);
+  const [pending, setPending] = useState(rawPending(value));
   const [notice, setNotice] = useState("");
   const [verification, setVerification] = useState<{ status: "checking" | "invalid" | "verified" | "error"; message: string }>();
   const emitted = useRef(value);
@@ -90,14 +93,14 @@ export function SerialScanField({ value, onChange, expected, blockedSerials = []
   useEffect(() => {
     // Array-backed parents may normalize delimiters. Do not replace a partly typed token on their echo.
     if (fieldId.current !== props.id || (value !== emitted.current &&
-      serialTokens(value).join("\n") !== serialTokens(emitted.current).join("\n"))) {
-      setText(value); setPending(false); setNotice(""); setVerification(undefined);
+      (preserveUncommittedTail || serialTokens(value).join("\n") !== serialTokens(emitted.current).join("\n")))) {
+      setText(value); setPending(rawPending(value)); setNotice(""); setVerification(undefined);
       validationSequence.current += 1;
-      latestInput.current = { text: value, pending: false };
+      latestInput.current = { text: value, pending: rawPending(value) };
       emitted.current = value;
     }
     fieldId.current = props.id;
-  }, [value, props.id]);
+  }, [value, props.id, preserveUncommittedTail]);
   const target = targetCount(expected);
   const tokens = serialTokens(text);
   const committed = pending ? tokens.slice(0, -1) : tokens;

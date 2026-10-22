@@ -8,8 +8,10 @@ const fs = require("node:fs/promises");
   const baseURL = require("./support/workspace-ui-base.cjs")();
   const admin = await browser.newContext({ baseURL });
   const operator = await browser.newContext({ baseURL });
+  const otherOperator = await browser.newContext({ baseURL });
   const techs = [await browser.newContext({ baseURL }), await browser.newContext({ baseURL })];
   const root = `/api/projects/${fixture.projectId}`, inv = `${root}/inventory`;
+  let handoverPage;
   const request = async (method, path, data, context = admin) => {
     const response = await context.request.fetch(path, { method, data });
     assert.ok(response.ok(), `${method} ${path}: ${response.status()} ${await response.text()}`);
@@ -42,11 +44,15 @@ const fs = require("node:fs/promises");
       people.push(user);
       await request("POST", "/api/auth/local/login", credentials, i === 2 ? operator : techs[i]);
     }
+    const otherCredentials = { username: `handover-other-${crypto.randomUUID().slice(0, 8)}`, password: `Aa1!${crypto.randomUUID()}` };
+    const otherUser = await request("POST", "/api/users", { ...otherCredentials, firstName: "Second", lastName: "Warehouse",
+      role: "user", subroleId: role.id, projectIds: [fixture.projectId] });
+    await request("POST", "/api/auth/local/login", otherCredentials, otherOperator);
     for (const id of ["vt-whse", "vt-stage"]) await cmd("warehouse", { id, code: id, name: id, type: "physical",
       address: "Owned handover fixture", ...(id === "vt-stage" ? { locationTypeId: "57e15eca-f991-4328-a091-000000000003" } : {}) });
     for (let i = 0; i < 2; i++) await cmd("warehouse", { id: `vt-${i}`, code: `VT${i}`, name: `Handover Vehicle ${i}`,
       type: "vehicle", vin: i ? "1HGCM82633A004353" : "1HGCM82633A004352", plate: `VT${i}`, plateState: "CO",
-      userIds: [people[i].id, people[2].id] });
+      userIds: [people[i].id, people[2].id, otherUser.id] });
     await cmd("vendor", { id: "vt-vendor", name: "Handover vendor" });
     await cmd("item", { id: "vt-meter", sku: "VT-METER", name: "Handover meter", tracking: "serialized" });
     await cmd("item", { id: "vt-part", sku: "VT-PART", name: "Spare fitting", tracking: "regular" });
@@ -57,6 +63,9 @@ const fs = require("node:fs/promises");
     };
     await receive("vt-po", "vt-whse", "vt-meter", 5, ["VT-A", "VT-B", "VT-C", "VT-D", "VT-E"]);
     await receive("vt-spares", "vt-0", "vt-part", 5);
+    await require("./support/vehicle-transfer-draft-acceptance.cjs")({
+      request, operator, otherOperator, tech: techs[0], inv,
+    });
     const services = await request("GET", "/api/service-types");
     const works = [];
     for (let i = 0; i < 2; i++) {
@@ -115,12 +124,16 @@ const fs = require("node:fs/promises");
     await receivingPage.goto(`/projects/${fixture.projectId}/work-orders`);
     await expect(receivingPage.getByText("TAKEOVER-0", { exact: true })).toHaveCount(0);
     const page = await operator.newPage();
+    handoverPage = page;
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await page.getByTestId("button-vehicle-transfers").first().click();
     const dialog = page.getByTestId("vehicle-transfer-dialog");
     await page.getByTestId("transfer-mode-work").click();
+    await page.waitForTimeout(1100);
+    assert.deepEqual((await request("GET", `${inv}/vehicle-transfer-drafts`, undefined, operator)).drafts, [],
+      "opening a mode without real inputs must not create a ghost draft");
     const select = async (testId, name) => {
       await page.getByTestId(testId).click();
       await page.getByRole("option", { name, exact: false }).click();
@@ -137,7 +150,22 @@ const fs = require("node:fs/promises");
     await serials.press("Enter");
     await expect(serials).toHaveValue(/VT-A/);
     await page.getByTestId("transfer-reason").fill("Both crews verified the meter and outstanding work");
+    let sharedDraft;
+    await expect.poll(async () => {
+      sharedDraft = (await request("GET", `${inv}/vehicle-transfer-drafts`, undefined, otherOperator)).drafts
+        .find(value => value.capture.mode === "work" && value.capture.selectedOrders.includes(String(works[0].id)) &&
+          value.capture.reason === "Both crews verified the meter and outstanding work" &&
+          value.capture.scans["vt-meter"]?.includes("VT-A"));
+      return !!sharedDraft;
+    }).toBe(true);
+    await page.reload();
+    await page.getByTestId("button-vehicle-transfers").first().click();
+    await page.locator(`[data-testid="transfer-draft-resume"][data-draft-id="${sharedDraft.id}"]`).click();
+    await expect(serials).toHaveValue(/VT-A/);
+    await expect(page.getByTestId("transfer-reason")).toHaveValue("Both crews verified the meter and outstanding work");
+    await expect(page.getByTestId("transfer-review")).toBeEnabled();
     await page.getByTestId("transfer-review").click();
+    await expect(page.getByTestId("transfer-physical-confirm")).not.toBeChecked();
     await page.getByTestId("transfer-physical-confirm").click();
     await fs.mkdir("generated-artifacts/vehicle-transfers", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/vehicle-transfers/desktop.jpg" });
@@ -164,7 +192,9 @@ const fs = require("node:fs/promises");
       } else await route.continue();
     });
     await page.getByTestId("transfer-post").click();
-    await expect(page.getByTestId("transfer-retry")).toBeVisible();
+    await expect(page.getByTestId("transfer-retry")).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => Boolean(committed), { timeout: 30_000 }).toBe(true);
+    await expect(page.getByTestId("transfer-retry")).toBeEnabled();
     assert.ok(committed);
     const rejectedRetry = page.waitForResponse(response => response.url().endsWith("/inventory/commands") && response.status() === 403);
     await page.getByTestId("transfer-retry").click();
@@ -224,6 +254,7 @@ const fs = require("node:fs/promises");
     assert.deepEqual(errors, []);
     console.log("PASS normal warehouse/technician permissions, stock-only isolation, immediate scan rejection, selected-work takeover, atomic assignment/custody, live dispatch scope, unknown-outcome browser recovery, replay exactly once, preserved pick history, scheduled installer/holds, receipt printing and phone layout.");
   } finally {
+    await handoverPage?.unrouteAll({ behavior: "ignoreErrors" });
     await operator.close(); await admin.close(); await Promise.all(techs.map(context => context.close())); await browser.close();
   }
 })().catch(error => { console.error(error); process.exit(1); });

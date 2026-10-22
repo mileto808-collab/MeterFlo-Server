@@ -14,6 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { SerialScanField } from "@/components/inventory/serial-scan-field";
 import { AlertTriangle, ArrowLeftRight, Check, Loader2, Printer, RefreshCw, Truck } from "lucide-react";
+import { VehicleTransferDraftList, VehicleTransferDraftSaveStatus } from "@/components/inventory/vehicle-transfer-draft-list";
+import { useVehicleTransferDrafts, type SavedVehicleTransferDraft, type VehicleTransferDraftCapture } from "@/components/inventory/use-vehicle-transfer-drafts";
+import { inventoryDateTime } from "@shared/inventory-date-time";
+import type { VehicleTransfer } from "@shared/inventory-vehicle-transfer";
 
 type TransferMode = "stock" | "work";
 type Vehicle = { id: string; code: string; name: string; members: Array<{ id: string; name: string }> };
@@ -28,15 +32,8 @@ type Options = {
   stock: Array<{ itemId: string; quantity: number; available: number; serials: string[] }>; batches: Batch[];
 };
 type TransferLine = { itemId: string; quantity: number; serials: string[] };
-type TransferCommand = {
-  operationId: string; action: "vehicleTransfer";
-  data: {
-    mode: TransferMode; revision: number; sourceId: string; destinationId: string; batchId?: string;
-    batchRevision?: number; workOrders: Array<{ workOrderId: string | number; assignmentVersion: number }>;
-    installerId?: string | null; lines: TransferLine[]; reason: string; physicallyConfirmed: true;
-  };
-};
-type PendingTransfer = { command: TransferCommand; savedAt: string };
+type TransferCommand = { operationId: string; action: "vehicleTransfer"; data: VehicleTransfer };
+type PendingTransfer = { command: TransferCommand; savedAt: string; draftId?: string };
 type TransferResponse = { operationId?: string; state?: { receipts?: Array<{ id: string; reference?: string }> }; reference?: string };
 
 const parseErrorStatus = (error: unknown) => {
@@ -63,7 +60,9 @@ const selectedQuantity = (value: string) => {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
 };
 
-export function VehicleTransferPanel({ projectId, permissions }: { projectId: string | number; permissions?: string[] }) {
+export function VehicleTransferPanel({ projectId, permissions, timezone }: {
+  projectId: string | number; permissions?: string[]; timezone?: string;
+}) {
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const userId = user?.id ? String(user.id) : "";
@@ -86,6 +85,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
   const [reason, setReason] = useState("");
   const [physicallyConfirmed, setPhysicallyConfirmed] = useState(false);
   const [step, setStep] = useState<"details" | "review">("details");
+  const [resumeRefreshToken, setResumeRefreshToken] = useState(0);
   const [message, setMessage] = useState("");
   const [conflict, setConflict] = useState(false);
   const [pending, setPending] = useState<PendingTransfer | null>(null);
@@ -95,6 +95,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
   const [receiptId, setReceiptId] = useState("");
   const [posting, setPosting] = useState(false);
   const verificationRuns = useRef(new Map<string, number>());
+  const identityRef = useRef(`${projectId}:${userId}`);
   const base = `/api/projects/${projectId}/inventory`;
   const transferKey = userId ? storageKeyFor(projectId, userId) : "";
   const selectedWorkIds = selectedOrders.slice().sort().join(",");
@@ -187,6 +188,22 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
     staleTime: 0,
     refetchOnWindowFocus: false,
   });
+  const optionsRefetch = useRef(optionsQuery.refetch);
+  optionsRefetch.current = optionsQuery.refetch;
+  useEffect(() => {
+    if (!resumeRefreshToken) return;
+    verificationRuns.current.forEach((run, itemId) => verificationRuns.current.set(itemId, run + 1));
+    setScanChecks({});
+    void optionsRefetch.current().finally(() => setScanChecks({}));
+  }, [resumeRefreshToken]);
+  const projectTimezoneQuery = useQuery<{ timezone: string }>({
+    queryKey: [base, "stock", "context"],
+    queryFn: async () => (await apiRequest("GET", `${base}/stock/context`)).json(),
+    enabled: open && !!userId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const projectTimezone = timezone || projectTimezoneQuery.data?.timezone || "UTC";
   const options = optionsQuery.data;
   const vehicles = options?.vehicles ?? [];
   const source = vehicles.find(vehicle => vehicle.id === sourceId);
@@ -195,6 +212,18 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
   const stockByItem = useMemo(() => new Map((options?.stock ?? []).map(row => [row.itemId, row])), [options?.stock]);
   const batch = options?.batches.find(value => value.id === batchId);
   const selectedWorkOrders = useMemo(() => (batch?.workOrders ?? []).filter(order => selectedOrders.includes(String(order.workOrderId))), [batch, selectedOrders]);
+  const draftCapture = useMemo<VehicleTransferDraftCapture>(() => ({
+    mode, sourceId, destinationId, batchId, selectedOrders: [...selectedOrders], installerId,
+    quantities: { ...quantities }, scans: { ...scans }, reason,
+    ...(batch ? { batchRevision: batch.revision } : {}),
+    ...(selectedWorkOrders.length ? { workOrders: selectedWorkOrders.flatMap(order => {
+      const workOrderId = Number(order.workOrderId);
+      return Number.isSafeInteger(workOrderId) ? [{ workOrderId, assignmentVersion: order.assignmentVersion }] : [];
+    }) } : {}),
+  }), [mode, sourceId, destinationId, batchId, selectedOrders, installerId, quantities, scans, reason, batch, selectedWorkOrders]);
+  const draftStore = useVehicleTransferDrafts({
+    base, userId, enabled: open, capture: draftCapture, paused: posting || !!pending,
+  });
   const demand = useMemo(() => {
     const totals = new Map<string, number>();
     for (const order of selectedWorkOrders) for (const line of order.lines)
@@ -241,6 +270,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
       ? !!destination?.members.some(member => member.id === installerId)
       : !installerId || !!destination?.members.some(member => member.id === installerId));
   const selectedOrdersEligible = mode !== "work" || (selectedWorkOrders.length > 0 && selectedWorkOrders.length === selectedOrders.length && selectedWorkOrders.every(orderIsSelectable));
+  const reasonValid = reason.trim().length >= 10;
   const workDestinationBlocked = mode === "work" && !!destinationId &&
     (!destination || destination.members.length === 0);
   const canReview = !!options && (mode === "stock" ? options.canStockTransfer : options.canWorkTransfer) &&
@@ -248,7 +278,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
     !workDestinationBlocked && (mode !== "work" || (!!batch && selectedOrdersEligible && installerValid)) &&
     transferLines.length > 0 && enoughStock && quantityErrors.length === 0 && unavailableCaptureIds.length === 0 &&
     serialErrors.length === 0 && serialChecksReady &&
-    !!reason.trim() && !optionsQuery.isFetching && !optionsQuery.isError && !storageError;
+     reasonValid && !optionsQuery.isFetching && !optionsQuery.isError && !storageError && draftStore.syncStatus !== "conflict";
   const canSubmit = canReview && physicallyConfirmed;
 
   useEffect(() => {
@@ -266,6 +296,22 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
     setMessage("");
     setConflict(false);
   };
+  useEffect(() => {
+    const identity = `${projectId}:${userId}`;
+    if (identityRef.current === identity) return;
+    identityRef.current = identity;
+    setOpen(false);
+    setMode("stock");
+    setSourceId("");
+    setDestinationId("");
+    setBatchId("");
+    setSelectedOrders([]);
+    setInstallerId("");
+    resetCaptures();
+    setMessage("");
+    setReceiptId("");
+    draftStore.startNew();
+  }, [projectId, userId]);
   const guardedChange = (hasCapture: boolean, label: string, change: () => void) => {
     if (hasCapture && !window.confirm(`${label} will clear the current quantities, serial scans, reason, and confirmation. Continue?`)) return;
     if (hasCapture) resetCaptures();
@@ -347,6 +393,8 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
   };
   const serialVerificationState = (itemId: string) => {
     if (!scans[itemId]?.trim()) return undefined;
+    if (!/[\r\n,;\t]\s*$/.test(scans[itemId]))
+      return { status: "checking" as const, message: "Finish the current barcode with Enter or Tab. The unfinished token is retained, not verified." };
     const signature = committedSerialTokens(scans[itemId] ?? "").join("\n");
     const check = scanChecks[itemId];
     if (!check || check.signature !== signature)
@@ -404,7 +452,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
       ...(mode === "work" && freshBatch ? { batchId: freshBatch.id, batchRevision: freshBatch.revision } : {}),
       workOrders: mode === "work" && freshBatch ? freshBatch.workOrders.filter(order =>
         selectedOrders.includes(String(order.workOrderId))).map(order => ({
-          workOrderId: order.workOrderId, assignmentVersion: order.assignmentVersion,
+          workOrderId: Number(order.workOrderId), assignmentVersion: order.assignmentVersion,
         })) : [],
       ...(mode === "work" ? { installerId: installerId && installerId !== "__crew_pool__" ? installerId : null } : {}),
       lines: transferLines,
@@ -439,6 +487,80 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
       throw new Error("Transfer not sent because the retry identity could not be saved.");
     }
   };
+  const recoverFrozenDraft = async (draftId: string) => {
+    const refreshed = await draftStore.refreshDrafts();
+    if (refreshed.isError) return false;
+    const current = (refreshed.data as { drafts?: SavedVehicleTransferDraft[] } | undefined)?.drafts
+      ?.find(value => value.id === draftId);
+    if (!current || current.status !== "submitting" || !current.command) return false;
+    try {
+      persistPending({ command: current.command as TransferCommand, savedAt: current.savedAt, draftId: current.id });
+      setStep("details");
+      setMessage("The server has a frozen request. Retry sends its exact saved command; no replacement was created.");
+      return true;
+    } catch {
+      setMessage("The server has a frozen request, but its local retry copy could not be confirmed. No request was sent.");
+      return true;
+    }
+  };
+  const applyDraftCapture = (capture: VehicleTransferDraftCapture) => {
+    setMode(capture.mode);
+    setSourceId(capture.sourceId);
+    setDestinationId(capture.destinationId);
+    setBatchId(capture.batchId);
+    setSelectedOrders([...capture.selectedOrders]);
+    setInstallerId(capture.installerId);
+    setQuantities({ ...capture.quantities });
+    setScans({ ...capture.scans });
+    setScanChecks({});
+    verificationRuns.current.forEach((run, itemId) => verificationRuns.current.set(itemId, run + 1));
+    setReason(capture.reason);
+    setPhysicallyConfirmed(false);
+    setStep("details");
+    setConflict(false);
+    setMessage("Draft resumed. Refresh availability and reverify captured serials before review.");
+    void optionsQuery.refetch();
+  };
+  useEffect(() => {
+    // Only successful fresh loads revalidate captures; typing alone must not turn an old snapshot green.
+    if (!open || !options || optionsQuery.isFetching || optionsQuery.isError || pending ||
+        !Object.values(scans).some(value => committedSerialTokens(value).length)) return;
+    validateFreshOptions(options, optionsQuery.dataUpdatedAt);
+  }, [open, optionsQuery.dataUpdatedAt, optionsQuery.isFetching, optionsQuery.isError]);
+  const resumeDraft = async (draft: SavedVehicleTransferDraft) => {
+    const refreshed = await draftStore.refreshDrafts();
+    if (refreshed.isError) {
+      setConflict(true);
+      setMessage("The latest shared draft could not be loaded. Nothing was overwritten; retry the draft list.");
+      return;
+    }
+    const latest = (refreshed.data as { drafts?: SavedVehicleTransferDraft[] } | undefined)?.drafts
+      ?.find(value => value.id === draft.id);
+    if (!latest) {
+      setConflict(true);
+      setMessage("This shared draft is no longer available. Your local capture, if any, remains preserved.");
+      return;
+    }
+    const capture = draftStore.resume(latest);
+    applyDraftCapture(capture);
+    setOpen(true);
+    if (latest.status === "submitting") {
+      if (!latest.command) {
+        setStorageError("This draft is submitting, but its exact stored command is unavailable. No new command will be created.");
+        return;
+      }
+      const exactCommand = latest.command as TransferCommand;
+      try {
+        persistPending({ command: exactCommand, savedAt: latest.savedAt, draftId: latest.id });
+        setStep("details");
+        setMessage("A shared transfer is awaiting outcome. Retry sends the exact stored command.");
+      } catch {
+        setMessage("The shared command is frozen, but its local retry copy could not be verified. No request was sent.");
+      }
+    } else {
+      setResumeRefreshToken(value => value + 1);
+    }
+  };
   const removePending = (command: TransferCommand, key: string) => {
     try {
       if (!key) throw new Error("No durable retry identity is available.");
@@ -461,7 +583,37 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
     recoverOldestPending();
     return true;
   };
-  const postCommand = async (command: TransferCommand, retryKey: string) => {
+  const unlockRejectedDraft = async (draftId: string, command: TransferCommand): Promise<{
+    posted: boolean; receiptId?: string; replacement?: SavedVehicleTransferDraft; gone?: boolean;
+  }> => {
+    const revision = command.data.draftRevision;
+    if (!revision) throw new Error("The frozen command has no draft revision.");
+    const basis = { id: draftId, revision } as SavedVehicleTransferDraft;
+    let result: { draft: SavedVehicleTransferDraft; receiptId?: string; inactiveOperationId?: string };
+    try {
+      result = await draftStore.unlock(basis, command.operationId);
+    } catch (error) {
+      if (parseErrorStatus(error) !== 409) throw error;
+      const refreshed = await draftStore.refreshDrafts();
+      if (refreshed.isError) throw error;
+      const latest = (refreshed.data as { drafts?: SavedVehicleTransferDraft[] } | undefined)?.drafts
+        ?.find(value => value.id === draftId);
+      if (latest?.status === "editing") return { posted: false as const };
+      if (!latest || latest.status !== "submitting" || latest.command?.operationId !== command.operationId) throw error;
+      result = await draftStore.unlock(latest, command.operationId);
+    }
+    if (result.receiptId) {
+      draftStore.clearLocal(draftId);
+      return { posted: true, receiptId: result.receiptId };
+    }
+    if (result.inactiveOperationId && result.draft.status === "submitting" && result.draft.command)
+      return { posted: false, replacement: result.draft };
+    if (result.inactiveOperationId && result.draft.status === "deleted")
+      return { posted: false, gone: true };
+    if (result.draft.status !== "editing") throw new Error("The pending request could not be safely unlocked.");
+    return { posted: false as const };
+  };
+  const postCommand = async (command: TransferCommand, retryKey: string, draftId = pending?.draftId) => {
     if (!retryKey) {
       setStorageError("No durable retry identity is available. No request was sent.");
       setMessage("Retry protection is missing; no request was sent.");
@@ -487,16 +639,24 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
       const receipt = result.state?.receipts?.find(value => value.id === command.operationId);
       const id = receipt?.id ?? result.operationId ?? command.operationId;
       const retryCleared = removePending(command, retryKey);
+      if (draftId) draftStore.clearLocal(draftId);
+      void draftStore.refreshDrafts();
       setReceiptId(id);
       setMessage(`Transfer posted${receipt?.reference || result.reference ? ` · ${receipt?.reference ?? result.reference}` : ""}.${retryCleared ? "" : " The exact retry identity remains saved for safe reconciliation."}`);
       setStep("details");
       if (retryCleared) {
+        setSourceId("");
+        setDestinationId("");
+        setBatchId("");
+        setSelectedOrders([]);
+        setInstallerId("");
         setQuantities({});
         setScans({});
         setScanChecks({});
         setReason("");
         setPhysicallyConfirmed(false);
         setConflict(false);
+        draftStore.startNew();
       }
       void queryClient.invalidateQueries({ queryKey: [base] });
       void queryClient.invalidateQueries({ queryKey: [base, "vehicle-transfer-options"] });
@@ -504,6 +664,53 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
       const status = parseErrorStatus(error);
       // Losing access on a retry cannot prove whether an earlier attempt committed.
       if (status && status >= 400 && status < 500 && ![401, 403, 408, 425, 429].includes(status)) {
+        if (draftId) {
+          try {
+            const unlocked = await unlockRejectedDraft(draftId, command);
+            if (unlocked.replacement) {
+              if (!removePending(command, retryKey)) return;
+              applyDraftCapture(draftStore.resume(unlocked.replacement));
+              persistPending({ command: unlocked.replacement.command! as TransferCommand,
+                savedAt: unlocked.replacement.savedAt, draftId });
+              setMessage("Another worker prepared the current request. Its exact saved identity has been recovered; do not repeat the physical handover.");
+              return;
+            }
+            if (unlocked.gone) {
+              if (!removePending(command, retryKey)) return;
+              draftStore.clearLocal(draftId);
+              setSourceId(""); setDestinationId(""); setBatchId(""); setSelectedOrders([]); setInstallerId("");
+              resetCaptures(); draftStore.startNew();
+              setMessage("Another worker deleted this draft. Its cancelled request cannot move stock.");
+              return;
+            }
+            if (unlocked.posted) {
+              const retryCleared = removePending(command, retryKey);
+              setReceiptId(unlocked.receiptId ?? command.operationId);
+              setMessage(`Transfer was already posted${retryCleared ? "." : "; its exact retry identity remains saved."}`);
+              if (retryCleared) {
+                setSourceId("");
+                setDestinationId("");
+                setBatchId("");
+                setSelectedOrders([]);
+                setInstallerId("");
+                setQuantities({});
+                setScans({});
+                setScanChecks({});
+                setReason("");
+                setPhysicallyConfirmed(false);
+                draftStore.startNew();
+              }
+              return;
+            }
+            setStep("details");
+            setPhysicallyConfirmed(false);
+            setScanChecks({});
+            verificationRuns.current.forEach((run, itemId) => verificationRuns.current.set(itemId, run + 1));
+          } catch {
+            setMessage("The request was rejected, but the shared command could not be safely unlocked. Its exact retry identity is retained.");
+            return;
+          }
+        }
         const retryCleared = removePending(command, retryKey);
         if (status === 409) {
           setConflict(true);
@@ -536,17 +743,52 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
         return;
       }
       const freshBatch = mode === "work" ? freshResult.data.batches.find(value => value.id === batchId) : undefined;
-      const command = createCommand(freshResult.data, freshBatch);
-      const entry = { command, savedAt: new Date().toISOString() };
+      const draft = await draftStore.flush(draftCapture);
+      if (!draft) {
+        setMessage("The handover draft could not be saved before command preparation. No transfer was sent.");
+        return;
+      }
+      if (draft.status === "submitting") {
+        await recoverFrozenDraft(draft.id);
+        return;
+      }
+      const candidate = createCommand(freshResult.data, freshBatch);
+      let prepared: { draft: SavedVehicleTransferDraft };
+      try {
+        prepared = await draftStore.prepare(draft, candidate);
+      } catch (error) {
+        const recovered = await recoverFrozenDraft(draft.id).catch(() => false);
+        if (!recovered) {
+          const status = parseErrorStatus(error);
+          setConflict(status === 409);
+          setMessage(status === 409
+            ? "The shared draft changed during review. Your entries are retained; reopen the latest draft before preparing again."
+            : "The prepare response is uncertain. Refresh shared drafts before attempting another handover.");
+        }
+        return;
+      }
+      if (!prepared.draft.command) {
+        setMessage("The server did not return the frozen command. No transfer was sent; refresh shared drafts to reconcile.");
+        void draftStore.refreshDrafts();
+        return;
+      }
+      const command = prepared.draft.command as TransferCommand;
+      const entry = { command, savedAt: new Date().toISOString(), draftId: prepared.draft.id };
       const durableKey = persistPending(entry);
-      await postCommand(command, durableKey);
+      await postCommand(command, durableKey, entry.draftId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save the transfer retry identity.");
     } finally {
       setPosting(false);
     }
   };
-  const retryPending = () => pending && void postCommand(pending.command, pendingStorageKey);
+  const retryPending = () => pending && void postCommand(pending.command, pendingStorageKey, pending.draftId);
+  const closePanel = () => {
+    if (posting) return;
+    // Closing must flush the last capture rather than cancelling the debounce and leaving it device-only.
+    if (!pending) void draftStore.flush(draftCapture);
+    setOpen(false);
+  };
 
   if (!stockPermission) return null;
   return <>
@@ -555,7 +797,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
       onClick={() => { setOpen(true); setMessage(""); }}>
       <ArrowLeftRight className="h-4 w-4" /><span className="hidden sm:inline">Vehicle transfer</span><span className="sm:hidden">Transfer</span>
     </Button>
-    <Dialog open={open} onOpenChange={value => { if (!posting) setOpen(value); }}>
+    <Dialog open={open} onOpenChange={value => { if (value) setOpen(true); else closePanel(); }}>
       <DialogContent data-testid="vehicle-transfer-dialog" className="flex max-h-[94dvh] w-[calc(100vw-1rem)] max-w-3xl flex-col overflow-hidden p-0 sm:w-full">
         <DialogHeader className="shrink-0 border-b px-4 py-4 sm:px-6">
           <div className="flex items-start gap-3">
@@ -569,12 +811,66 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
             <AlertDescription className="space-y-2">
               <p>A previous request may already have posted. Retry uses the same operation ID and exact request; editing is paused until its outcome is known.</p>
               <p className="text-xs">Mode: {pending.command.data.mode === "stock" ? "Stock only" : "Outstanding work and stock"} · {pending.command.data.lines.length} line(s) · {pending.command.data.reason}</p>
-              <Button type="button" size="sm" data-testid="transfer-retry" onClick={retryPending} disabled={posting || !storageReady}>
-                {posting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Retry same transfer
+               <Button type="button" size="sm" data-testid="transfer-retry" aria-label="Retry saved request" onClick={retryPending} disabled={posting || !storageReady}>
+                 {posting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                 <span data-testid="transfer-draft-retry-saved-request">Retry same transfer</span>
               </Button>
             </AlertDescription>
           </Alert>}
           {storageError && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Retry protection unavailable</AlertTitle><AlertDescription>{storageError}</AlertDescription></Alert>}
+          <VehicleTransferDraftList drafts={draftStore.drafts} loading={draftStore.draftsLoading} timezone={projectTimezone}
+            error={draftStore.draftsError}
+            sourceName={id => vehicles.find(vehicle => vehicle.id === id)?.name ?? (id ? "Unavailable source" : "Choose source")}
+            destinationName={id => vehicles.find(vehicle => vehicle.id === id)?.name ?? (id ? "Unavailable destination" : "Choose destination")}
+            onResume={resumeDraft}
+            onRetry={() => void draftStore.refreshDrafts()}
+            onDelete={draft => {
+              if (window.confirm("Delete this shared handover draft? This cannot be undone.")) {
+                void draftStore.deleteDraft(draft);
+                if (draftStore.activeDraftId === draft.id) {
+                  setSourceId("");
+                  setDestinationId("");
+                  setBatchId("");
+                  setSelectedOrders([]);
+                  setInstallerId("");
+                  resetCaptures();
+                  draftStore.startNew();
+                }
+              }
+            }} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <VehicleTransferDraftSaveStatus status={draftStore.syncStatus} error={draftStore.syncError} />
+            {draftStore.syncStatus === "error" && <Button type="button" size="sm" variant="outline"
+              data-testid="transfer-draft-retry-save" onClick={() => void draftStore.retrySync()} disabled={posting || !!pending}>
+              Retry draft sync
+            </Button>}
+          </div>
+          {draftStore.syncError && <p className="text-xs text-destructive" role="alert">{draftStore.syncError}</p>}
+          {(draftStore.localCopies.length > 0 || draftStore.localConflicts.length > 0) && <section className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3" data-testid="transfer-local-draft-copies">
+            <h3 className="text-sm font-semibold">Retained local captures</h3>
+            <p className="text-xs text-muted-foreground">These captures were kept after a sync conflict and have not replaced the shared draft.</p>
+            {[...draftStore.localCopies, ...draftStore.localConflicts].map(copy => <div key={copy.draftId} className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs">{copy.capture.mode === "stock" ? "Stock" : "Work + stock"} · {inventoryDateTime(copy.savedAt, projectTimezone)}</span>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant="outline" data-testid={`transfer-local-copy-resume-${copy.draftId}`}
+                  onClick={() => applyDraftCapture(draftStore.resumeLocalCopy(copy))}>Resume as new draft</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => {
+                  if (window.confirm("Discard this retained local capture?")) {
+                    draftStore.clearLocal(copy.draftId);
+                    if (draftStore.activeDraftId === copy.draftId) {
+                      draftStore.startNew();
+                      setSourceId("");
+                      setDestinationId("");
+                      setBatchId("");
+                      setSelectedOrders([]);
+                      setInstallerId("");
+                      resetCaptures();
+                    }
+                  }
+                }}>Discard local copy</Button>
+              </div>
+            </div>)}
+          </section>}
           {message && <Alert variant={conflict ? "destructive" : "default"}>
             {conflict ? <AlertTriangle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
             <AlertTitle>{conflict ? "Review required" : receiptId ? "Handover recorded" : "Transfer status"}</AlertTitle>
@@ -695,7 +991,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
                         <Input id={`transfer-quantity-${item.id}`} data-testid={`transfer-quantity-${item.id}`} type="number" inputMode="numeric" min="0" max={row?.available ?? 0} step="1"
                           value={quantities[item.id] ?? ""} onChange={event => setQuantities(current => ({ ...current, [item.id]: event.target.value }))} /></div>
                       {item.tracking === "serialized" && (quantity > 0 || !!scans[item.id]?.trim()) && <div className="min-w-0">
-                        <SerialScanField id={`transfer-serials-${item.id}`} data-testid={`transfer-serials-${item.id}`} aria-label={`Serial scans for ${item.name}`}
+                        <SerialScanField preserveUncommittedTail id={`transfer-serials-${item.id}`} data-testid={`transfer-serials-${item.id}`} aria-label={`Serial scans for ${item.name}`}
                           value={scans[item.id] ?? ""} onChange={value => setScans(current => ({ ...current, [item.id]: value }))}
                           expected={quantity} blockedSerials={Object.entries(scans).filter(([otherId]) => otherId !== item.id).flatMap(([, value]) => committedSerialTokens(value))}
                           verifyCommittedScans={serials => verifySourceSerials(item.id, serials)} verificationState={serialVerificationState(item.id)} />
@@ -716,7 +1012,8 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
             <section className="grid gap-4 border-t pt-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="transfer-reason">Reason for handover</Label>
                 <Textarea id="transfer-reason" data-testid="transfer-reason" rows={2} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}
-                  placeholder="For example: vehicle reassignment, route coverage, or stock balancing" /></div>
+                  placeholder="For example: vehicle reassignment, route coverage, or stock balancing" />
+                {!!reason.trim() && !reasonValid && <p className="text-xs text-destructive">Enter at least 10 characters for the custody record.</p>}</div>
             </section>
             {step === "review" && <section className="space-y-3 rounded-lg border-2 border-primary/30 bg-primary/[0.035] p-4" aria-live="polite">
               <div><p className="text-xs font-semibold uppercase tracking-wider text-primary">Final review</p><h3 className="text-base font-semibold">{mode === "stock" ? "Stock-only transfer" : "Work and stock takeover"}</h3></div>
@@ -737,7 +1034,7 @@ export function VehicleTransferPanel({ projectId, permissions }: { projectId: st
           </fieldset>}
         </div>
         <DialogFooter className="shrink-0 flex-row justify-between gap-2 border-t px-4 py-3 sm:px-6">
-          <Button type="button" variant="outline" onClick={() => { setOpen(false); }} disabled={posting}>Close</Button>
+          <Button type="button" variant="outline" onClick={closePanel} disabled={posting}>Close</Button>
           <div className="flex gap-2">
             {step === "review" && <Button type="button" variant="outline" onClick={() => setStep("details")} disabled={posting}>Back to edit</Button>}
             {step === "details" ? <Button type="button" data-testid="transfer-review" onClick={() => { setStep("review"); setMessage(""); }}

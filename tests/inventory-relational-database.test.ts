@@ -10,6 +10,7 @@ import { saveInventory } from "../server/inventoryService";
 import { exportInventory, restoreInventory } from "../server/inventoryBackup";
 import { storedCategoryState } from "../server/inventoryCategories";
 import { withAuditContext } from "../server/auditContext";
+import { savedVehicleTransferDraftSchema, vehicleTransferDraftCaptureSchema } from "../shared/inventory-vehicle-transfer-drafts";
 
 test("relational migration, authoritative posting, constraints, rollback, replay and portable restore", async () => {
   const client = await pool.connect();
@@ -83,6 +84,28 @@ test("relational migration, authoritative posting, constraints, rollback, replay
       await client.query("ROLLBACK TO SAVEPOINT rollback_post");
       state = await readRelationalInventory(client, project.id);
       assert.deepEqual(state, baseline);
+      const beforeDrafts = structuredClone(state);
+      const draftId = randomUUID(), pendingDraftId = randomUUID();
+      const capture = vehicleTransferDraftCaptureSchema.parse({ mode: "stock", sourceId: "w", destinationId: "retired-vehicle",
+        quantities: { meter: "1" }, scans: { meter: "SERIAL-001\nSERIAL-PART" }, reason: "Unfinished scanner capture" });
+      state.vehicleTransferDrafts = [
+        savedVehicleTransferDraftSchema.parse({ id: draftId, revision: 2, status: "editing", createdBy: "fixture",
+          updatedBy: "fixture", savedAt: new Date().toISOString(), saveId: randomUUID(), capture }),
+        savedVehicleTransferDraftSchema.parse({ id: pendingDraftId, revision: 1, status: "submitting", createdBy: "fixture",
+          updatedBy: "fixture", savedAt: new Date().toISOString(), saveId: randomUUID(),
+          capture: { ...capture, scans: { meter: "SERIAL-001" } }, command: {
+            operationId: randomUUID(), action: "vehicleTransfer", data: {
+              mode: "stock", revision: state.revision + 1, sourceId: "w", destinationId: "retired-vehicle",
+              workOrders: [], lines: [{ itemId: "meter", quantity: 1, serials: ["SERIAL-001"] }],
+              reason: capture.reason, physicallyConfirmed: true, draftId: pendingDraftId, draftRevision: 1,
+            },
+          } }),
+      ];
+      state.revision++;
+      await saveInventory(client, project.id, beforeDrafts, state, randomUUID(), "vehicleTransferDraftSave");
+      const expectedDrafts = structuredClone(state.vehicleTransferDrafts);
+      state = await readRelationalInventory(client, project.id);
+      assert.deepEqual(state.vehicleTransferDrafts, expectedDrafts, "database retains partial and exact-pending captures");
       const backup = JSON.parse(JSON.stringify(await exportInventory(client, schema)));
       assert.equal(backup.state.stock[0].serials[0], "SERIAL-001");
       await restoreInventory(client, schema, backup);

@@ -3,6 +3,7 @@ import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSc
 import { workPlanInputSchema } from "../shared/inventory-planning";
 import { fulfillmentBatchSchema } from "../shared/inventory-fulfillment";
 import { savedFulfillmentDraftSchema } from "../shared/inventory-fulfillment-drafts";
+import { savedVehicleTransferDraftSchema } from "../shared/inventory-vehicle-transfer-drafts";
 import { z } from "zod";
 import { validateCustomerHandoffs } from "../shared/inventory-customer-handoffs";
 import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
@@ -72,6 +73,18 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Saved shipment draft references an unrelated receipt.");
   }
   const s = backup.state;
+  const handoverDrafts = z.array(savedVehicleTransferDraftSchema).parse(s.vehicleTransferDrafts ?? []);
+  if (new Set(handoverDrafts.map(draft => draft.id)).size !== handoverDrafts.length)
+    throw new Error("Duplicate saved vehicle handover draft identities.");
+  for (const draft of handoverDrafts) {
+    const pending = ["submitting", "posted"].includes(draft.status);
+    if (pending !== !!draft.command || draft.command && (draft.command.data.draftId !== draft.id ||
+        draft.command.data.draftRevision !== (draft.status === "posted" ? draft.revision - 1 : draft.revision)))
+      throw new Error("Invalid saved vehicle handover request binding.");
+    if (draft.status === "posted" && (!draft.receiptId || draft.receiptId !== draft.command?.operationId ||
+        !s.receipts.some(receipt => receipt.id === draft.receiptId && receipt.action === "vehicleTransfer")))
+      throw new Error("Posted vehicle handover draft has no matching receipt.");
+  }
   const batches = z.array(fulfillmentBatchSchema).parse(s.fulfillmentBatches ?? []);
   for (const receipt of s.receipts ?? []) {
     if (receipt.sourceId && !s.warehouses.some(warehouse => warehouse.id === receipt.sourceId))

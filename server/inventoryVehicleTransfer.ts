@@ -8,6 +8,25 @@ import { fulfillmentTicketNumber } from "../shared/inventory-pickups";
 import { vehicleTransferDemand, vehicleTransferSchema, type VehicleTransfer } from "../shared/inventory-vehicle-transfer";
 import { storage } from "./storage";
 import { visibleAssignedOrders } from "./workOrderVisibility";
+import type { VehicleTransferDraftCapture } from "../shared/inventory-vehicle-transfer-drafts";
+
+export async function canReadVehicleTransferCapture(client: PoolClient, projectId: number, state: InventoryState,
+  capture: VehicleTransferDraftCapture, user: any, admin: boolean) {
+  const access = await vehicleTransferPermissions(user);
+  if (!access.canStockTransfer || capture.mode === "work" && !access.canWorkTransfer) return false;
+  for (const id of [capture.sourceId, capture.destinationId].filter(Boolean)) {
+    const location = state.warehouses.find(value => value.id === id);
+    if ((!location || !warehouseAccessible(state, location, user.id, admin)) && !admin) return false;
+  }
+  const ids = capture.selectedOrders.map(Number);
+  if (!ids.length) return true;
+  if (!access.canWorkTransfer) return false;
+  const rows = await workRows(client, projectId, ids);
+  const visible = await visibleAssignedOrders(user, rows.map(row => ({ id: row.id, status: row.status,
+    assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
+    newSystemType: row.new_system_type, newModuleType: row.new_module_type, assignmentVersion: row.assignment_version })), projectId);
+  return rows.every(row => visible.some(value => value.id === row.id));
+}
 
 export async function vehicleTransferPermissions(user: User) {
   const has = async (keys: string[]) => (await Promise.all(keys.map(key => storage.hasPermission(user, key)))).every(Boolean);
@@ -32,7 +51,7 @@ async function workTable(client: PoolClient, projectId: number) {
     throw new InventoryError("Project work-order storage is unavailable.");
   return `"${project.database_name}".work_orders`;
 }
-async function workRows(client: PoolClient, projectId: number, ids: number[], lock = false) {
+export async function workRows(client: PoolClient, projectId: number, ids: number[], lock = false) {
   if (!ids.length) return [];
   const table = await workTable(client, projectId);
   return (await client.query(`SELECT * FROM ${table} WHERE id=ANY($1::int[]) ORDER BY id ${lock ? "FOR UPDATE" : ""}`, [ids])).rows;
