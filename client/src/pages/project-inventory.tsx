@@ -160,8 +160,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const fulfillmentSessionKey = `meterflo:fulfillment-workspace:${encodeURIComponent(String(user?.id ?? "pending"))}:${projectId}`;
-  const [fulfillmentOpen, setFulfillmentOpenState] = useState(false);
-  const [fulfillmentSessionReady, setFulfillmentSessionReady] = useState(false);
+  type InventoryWorkspaceScreen = "inventory" | "tasks" | "fulfillment";
+  const [inventoryWorkspace, setInventoryWorkspaceState] = useState<InventoryWorkspaceScreen>("inventory");
+  const [fulfillmentSessionReadyKey, setFulfillmentSessionReadyKey] = useState("");
   const restoredFulfillmentKey = useRef("");
   useLayoutEffect(() => {
     if (!user?.id) return;
@@ -169,31 +170,37 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     restoredFulfillmentKey.current = fulfillmentSessionKey;
     try {
       const saved = window.localStorage.getItem(fulfillmentSessionKey);
-      const open = saved ? (JSON.parse(saved) as { open?: unknown }).open === true : false;
-      setFulfillmentOpenState(open);
+      const session = saved ? JSON.parse(saved) as { workspace?: unknown; open?: unknown } : null;
+      const workspace = session?.workspace;
+      setInventoryWorkspaceState(workspace === "inventory" || workspace === "tasks" || workspace === "fulfillment"
+        ? workspace
+        : session?.open === true ? "fulfillment" : "inventory");
     } catch {
-      setFulfillmentOpenState(false);
+      setInventoryWorkspaceState("inventory");
     }
-    setFulfillmentSessionReady(true);
+    setFulfillmentSessionReadyKey(fulfillmentSessionKey);
   }, [fulfillmentSessionKey, user?.id]);
-  const setFulfillmentOpen = (open: boolean) => {
+  const setInventoryWorkspace = (screen: InventoryWorkspaceScreen) => {
     if (user?.id) {
       try {
-        window.localStorage.setItem(fulfillmentSessionKey, JSON.stringify({ open }));
+        window.localStorage.setItem(fulfillmentSessionKey, JSON.stringify({ workspace: screen, open: screen === "fulfillment" }));
       } catch {
-        console.warn("Browser storage is unavailable; the fulfillment workspace cannot be restored after refresh.");
+        console.warn("Browser storage is unavailable; the inventory workspace cannot be restored after refresh.");
       }
     }
-    setFulfillmentOpenState(open);
+    setInventoryWorkspaceState(screen);
   };
   useLayoutEffect(() => {
-    if (!fulfillmentSessionReady || restoredFulfillmentKey.current !== fulfillmentSessionKey || !user?.id) return;
+    if (fulfillmentSessionReadyKey !== fulfillmentSessionKey || !user?.id) return;
     try {
-      window.localStorage.setItem(fulfillmentSessionKey, JSON.stringify({ open: fulfillmentOpen }));
+      window.localStorage.setItem(fulfillmentSessionKey, JSON.stringify({
+        workspace: inventoryWorkspace,
+        open: inventoryWorkspace === "fulfillment",
+      }));
     } catch {
-      console.warn("Browser storage is unavailable; the fulfillment workspace cannot be restored after refresh.");
+      console.warn("Browser storage is unavailable; the inventory workspace cannot be restored after refresh.");
     }
-  }, [fulfillmentOpen, fulfillmentSessionKey, fulfillmentSessionReady, user?.id]);
+  }, [inventoryWorkspace, fulfillmentSessionKey, fulfillmentSessionReadyKey, user?.id]);
   const { toast } = useToast();
   const inventoryEvents = useInventoryEvents(projectId);
   const base = `/api/projects/${projectId}/inventory`;
@@ -1360,9 +1367,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   return <main ref={inventoryMainRef} className={`inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7 ${["locations", "returns"].includes(inventoryTab) ? "[@media(max-height:500px)]:pb-2" : ""}`} data-testid="inventory-workspace">
-    {capabilities.fulfillment && <InventoryWorkflowLauncher projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions}
-      wizardOpen={fulfillmentOpen} onWizardOpenChange={setFulfillmentOpen} />}
-    <div className={fulfillmentOpen && capabilities.fulfillment ? "hidden" : "contents"}>
+    {capabilities.startInventory && <InventoryWorkflowLauncher projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions}
+      screen={inventoryWorkspace === "fulfillment" && !capabilities.fulfillment ? "tasks" : inventoryWorkspace}
+      onScreenChange={setInventoryWorkspace} />}
+    <div className={inventoryWorkspace !== "inventory" && capabilities.startInventory ? "hidden" : "contents"}>
     <div
       ref={editorHostRef}
       className={inlineEditorOpen ? "absolute inset-0 z-30" : "hidden"}
@@ -1479,7 +1487,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     >
     <Tabs value={inventoryTab} onValueChange={value => requestCountTransition(() => requestOrderTransition(() => requestResourceTransition(() => requestMovementTransition(() => requestKitTransition(() => setInventoryTab(value))))))} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
       <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
-        {capabilities.fulfillment && <StartInventoryButton mobile projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
+        {capabilities.startInventory && <StartInventoryButton mobile projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
           <ProjectInventoryMobileMenu value={inventoryTab} onValueChange={setInventoryTab} can={can} />
           <div className="inventory-desktop-heading hidden min-w-0 md:block">
@@ -1488,7 +1496,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Know what’s on hand, where it lives, and which serial leaves with each crew.</p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:flex-wrap sm:gap-2">
-            {capabilities.fulfillment && <StartInventoryButton projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
+            {capabilities.startInventory && <StartInventoryButton projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
             {can("inventory.view") && can("inventory.transfer") && can("inventory.receive") &&
               <VehicleTransferPanel projectId={projectId} permissions={latestPermissionSnapshot?.permissions} />}
             <span

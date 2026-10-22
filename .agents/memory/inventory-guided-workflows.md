@@ -5,11 +5,17 @@ description: Product intent for the Start Inventory entry point and permission-a
 
 Start Inventory is the entry to a main wizard screen where users choose an inventory task they have permission to perform. The chosen task then launches its own step wizard; accepting removed systems/modules is one intended task.
 
-The Start Inventory task selection stays in a modal; Fulfill / Stage Work Orders opens inline in the Inventory page, not in another modal.
+“Choose an inventory task” is its own page and the first page of Start Inventory. Fulfill / Stage Work Orders also opens inline, not in a modal.
 
-**Why:** The user explicitly requested the task chooser modal followed by a same-screen fulfillment workflow.
+**Why:** The user changed the task chooser requirement to a page because additional wizards will be listed there for users to launch.
 
-**How to apply:** Preserve saved workflow state and scan entry while keeping the fulfillment workspace in the page. Confirmation and camera dialogs may still use their existing overlays.
+**How to apply:** Keep task selection extensible and permission-aware, preserve workspace state and scan entry across refresh, and hide the normal Inventory content while Start Inventory is open. Confirmation and camera dialogs may still use their existing overlays.
+
+Start Inventory is not fulfillment-only: users must also be able to launch Vehicle Transfer from its task page.
+
+**Why:** The user explicitly requested Vehicle Transfer there as another wizard.
+
+**How to apply:** Filter tasks by their own permissions; stock-transfer access must not require or grant work-order fulfillment access.
 
 On the fulfillment entry screen, workflow selector cards sit directly below “Choose a fulfillment workflow.” QR scanning is a button above that heading opening a scan modal; pickup-problem review must be prominent.
 

@@ -9,8 +9,18 @@ test("field view and assign grant stock lookup, not warehouse areas or fulfillme
     const result = access(permissions);
     assert.deepEqual(Object.entries(result.tabs).filter(([, enabled]) => enabled).map(([key]) => key), ["stock"]);
     assert.equal(result.fulfillment, false);
+    assert.equal(result.startInventory, false);
+    assert.equal(result.vehicleTransfer, false);
     assert.equal(result.stats, false);
   }
+});
+test("stock transfer workers can start inventory without work-order fulfillment access", () => {
+  const permissions = ["inventory.view", "inventory.transfer", "inventory.receive"];
+  assert.equal(access(permissions).startInventory, true);
+  assert.equal(access(permissions).vehicleTransfer, true);
+  assert.equal(access(permissions).fulfillment, false);
+  for (const removed of permissions)
+    assert.equal(access(permissions.filter(key => key !== removed)).startInventory, false, removed);
 });
 test("fulfillment requires every prerequisite, not work-order viewing alone", () => {
   const permissions = ["inventory.view", "inventory.assign", "inventory.receive", "inventory.transfer", "workOrders.view"];

@@ -58,7 +58,7 @@ const fs = require("node:fs/promises");
     await expect(page.getByTestId("button-start-inventory-desktop")).toBeVisible();
     await page.getByTestId("button-start-inventory-desktop").click();
     await expect(page.getByTestId("inventory-task-fulfillment")).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Back to Inventory", exact: true }).click();
     await page.getByRole("tab", { name: "Orders", exact: true }).click();
     await request(admin, "PUT", `/api/subroles/${role.id}/permissions`, { permissions: field });
     await page.getByRole("button", { name: "Refresh orders", exact: true }).click();

@@ -20,6 +20,13 @@ import { inventoryDateTime } from "@shared/inventory-date-time";
 import type { VehicleTransfer } from "@shared/inventory-vehicle-transfer";
 
 type TransferMode = "stock" | "work";
+const vehicleTransferLauncherEvent = "meterflo:open-vehicle-transfer";
+
+/** Reuse the existing panel and durable outbox from every inventory entry point. */
+export function openVehicleTransfer(projectId: string | number, trigger?: HTMLElement) {
+  window.dispatchEvent(new CustomEvent(vehicleTransferLauncherEvent, { detail: { projectId, trigger } }));
+}
+
 type Vehicle = { id: string; code: string; name: string; members: Array<{ id: string; name: string }> };
 type Item = { id: string; name: string; sku: string; tracking: string; unit: string };
 type BatchOrder = {
@@ -87,6 +94,19 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
   const [step, setStep] = useState<"details" | "review">("details");
   const [resumeRefreshToken, setResumeRefreshToken] = useState(0);
   const [message, setMessage] = useState("");
+  const externalTriggerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!stockPermission) return;
+    const launch = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId: string | number; trigger?: HTMLElement }>).detail;
+      if (!detail || String(detail.projectId) !== String(projectId)) return;
+      externalTriggerRef.current = detail.trigger ?? null;
+      setMessage("");
+      setOpen(true);
+    };
+    window.addEventListener(vehicleTransferLauncherEvent, launch);
+    return () => window.removeEventListener(vehicleTransferLauncherEvent, launch);
+  }, [projectId, stockPermission]);
   const [conflict, setConflict] = useState(false);
   const [pending, setPending] = useState<PendingTransfer | null>(null);
   const [pendingStorageKey, setPendingStorageKey] = useState("");
@@ -794,11 +814,20 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
   return <>
     <Button type="button" size="sm" variant="outline" className="h-9 gap-2 border-primary/40 bg-primary/5"
       data-testid="button-vehicle-transfers"
-      onClick={() => { setOpen(true); setMessage(""); }}>
+      onClick={() => { externalTriggerRef.current = null; setOpen(true); setMessage(""); }}>
       <ArrowLeftRight className="h-4 w-4" /><span className="hidden sm:inline">Vehicle transfer</span><span className="sm:hidden">Transfer</span>
     </Button>
     <Dialog open={open} onOpenChange={value => { if (value) setOpen(true); else closePanel(); }}>
-      <DialogContent data-testid="vehicle-transfer-dialog" className="flex max-h-[94dvh] w-[calc(100vw-1rem)] max-w-3xl flex-col overflow-hidden p-0 sm:w-full">
+      <DialogContent data-testid="vehicle-transfer-dialog"
+        onCloseAutoFocus={event => {
+          const trigger = externalTriggerRef.current;
+          externalTriggerRef.current = null;
+          if (trigger?.isConnected && trigger.getClientRects().length) {
+            event.preventDefault();
+            trigger.focus({ preventScroll: true });
+          }
+        }}
+        className="flex max-h-[94dvh] w-[calc(100vw-1rem)] max-w-3xl flex-col overflow-hidden p-0 sm:w-full">
         <DialogHeader className="shrink-0 border-b px-4 py-4 sm:px-6">
           <div className="flex items-start gap-3">
             <div className="rounded-md bg-primary/10 p-2 text-primary"><Truck className="h-5 w-5" /></div>

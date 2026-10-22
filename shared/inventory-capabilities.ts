@@ -16,6 +16,8 @@ export function inventoryCapabilities(can: (permission: string) => boolean) {
     activity: warehouse,
     "stock-discrepancies": can("inventory.resolveExceptions"),
   };
+  const vehicleTransfer = ["inventory.view", "inventory.transfer", "inventory.receive"].every(can);
+  const fulfillment = ["inventory.view", "workOrders.view", "inventory.assign", "inventory.receive", "inventory.transfer"].every(can);
   return { tabs, warehouse, stats: warehouse,
-    fulfillment: ["inventory.view", "workOrders.view", "inventory.assign", "inventory.receive", "inventory.transfer"].every(can) };
+    fulfillment, vehicleTransfer, startInventory: fulfillment || vehicleTransfer };
 }
