@@ -19,6 +19,16 @@ export function reconcileDispatchRequirements(
   const posted = batches.some(value => value.lines.some(line => line.stagedQuantity > 0 || line.deliveredQuantity > 0) ||
     state.receipts.some(receipt => receipt.reference === value.id &&
       ["fulfillmentMove", "fulfillmentCorrect", "fulfillmentInvestigate"].includes(receipt.action)));
+  if (posted && !next.missing.length) {
+    const covered = new Map<string, number>();
+    for (const value of batches) for (const line of value.lines.filter(line => line.workOrderId === next.workOrderId))
+      covered.set(line.itemId, (covered.get(line.itemId) ?? 0) + line.quantity);
+    const planned = new Map(desired.map(line => [line.itemId, line.quantity]));
+    // Extra demand is not another instruction to pick/transfer the original
+    // batch. It remains uncovered planning; only reductions below covered
+    // quantities or replacement of covered items need physical resolution.
+    if ([...covered].every(([itemId, quantity]) => (planned.get(itemId) ?? 0) >= quantity)) return {};
+  }
   if (batches.length !== 1 || posted || next.missing.length || !desired.length) {
     return { error: `Work order ${next.workOrderId} has changed material requirements in batch "${batch.name}". ` +
       (posted ? "Stock has already moved. In Fulfill / Stage, correct the physical stock and release the unfinished demand before changing these requirements. No stock was automatically returned or transferred."

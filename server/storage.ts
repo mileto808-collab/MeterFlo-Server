@@ -877,11 +877,24 @@ export class DatabaseStorage implements IStorage {
       
       if (existing.length === 0) {
         // Insert new permission
-        await db.insert(permissions).values({
-          key: perm.key,
-          label: perm.label,
-          category: perm.category,
-          description: perm.description,
+        await db.transaction(async tx => {
+          await tx.insert(permissions).values({
+            key: perm.key, label: perm.label, category: perm.category, description: perm.description,
+          });
+          // One-time split of existing assignment authority. Do not regrant a
+          // permission on later startups after an administrator has revoked it.
+          if (["inventory.plan", "inventory.overridePlan", "inventory.reserve"].includes(perm.key)) {
+            await tx.execute(sql`INSERT INTO public.subrole_permissions(subrole_id,permission_key)
+              SELECT DISTINCT old.subrole_id,${perm.key} FROM public.subrole_permissions old
+              WHERE old.permission_key='inventory.assign'
+                AND (${perm.key}='inventory.plan' OR EXISTS (
+                  SELECT 1 FROM public.subrole_permissions elevated
+                  WHERE elevated.subrole_id=old.subrole_id AND
+                    (elevated.permission_key IN ('inventory.maintain','inventory.configure')
+                     OR ${perm.key}='inventory.reserve' AND elevated.permission_key='inventory.transfer')))
+                AND NOT EXISTS(SELECT 1 FROM public.subrole_permissions existing
+                  WHERE existing.subrole_id=old.subrole_id AND existing.permission_key=${perm.key})`);
+          }
         });
         console.log(`Created permission: ${perm.key}`);
       } else {

@@ -80,8 +80,7 @@ const assert = require("node:assert/strict");
     assert.match(shown.inventoryDispatch.receiptNumber, /^PICK-/);
     const currentPlan = (await request("GET", `${root}/work-orders/${first.id}/inventory`)).plan;
     const changed = await admin.request.post(`${inv}/commands`, { data: { action: "plan", operationId: crypto.randomUUID(),
-      data: { workOrderId: first.id, revision: currentPlan.revision, lines: [{ id: crypto.randomUUID(),
-        itemId: "ds-meter", kind: "addition", quantity: 2, reason: "Unsafe material change after staging" }] } } });
+      data: { workOrderId: first.id, revision: currentPlan.revision, lines: [] } } });
     assert.equal(changed.status(), 409, await changed.text());
     assert.match((await changed.json()).message, /Stock has already moved/);
     assert.equal((await getBatch()).lines.find(l => l.workOrderId === first.id).quantity, 1);

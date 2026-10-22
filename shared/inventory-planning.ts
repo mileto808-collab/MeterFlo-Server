@@ -19,6 +19,13 @@ export const workPlanInputSchema = z.object({
 export type PlannedLine = z.infer<typeof plannedLineSchema>;
 export type WorkPlan = z.infer<typeof workPlanInputSchema> & { updatedBy?: string; updatedAt?: string };
 
+export function samePlanOverrides(previous: PlannedLine[], next: PlannedLine[]) {
+  const overrides = (lines: PlannedLine[]) => lines.filter(line => line.kind === "override")
+    .map(({ id, itemId, quantity, kind, reason }) => ({ id, itemId, quantity, kind, reason }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return JSON.stringify(overrides(previous)) === JSON.stringify(overrides(next));
+}
+
 export function effectivePlannedLines(automatic: { itemId: string; quantity: number }[], manual: PlannedLine[]) {
   const totals = new Map(automatic.map(line => [line.itemId, line.quantity]));
   for (const line of manual.filter(line => line.kind === "override"))

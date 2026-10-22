@@ -16,6 +16,7 @@ export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
   receive: "inventory.receive", purchase: "inventory.purchase", transfer: "inventory.transfer",
   count: "inventory.count", assign: "inventory.assign", assemble: "inventory.assemble",
+  plan: "inventory.plan", overridePlan: "inventory.overridePlan", reserve: "inventory.reserve",
   closeOrders: "inventory.closeOrders", resolveExceptions: "inventory.resolveExceptions",
   manageLocationTypes: "inventory.manageLocationTypes",
   manageRemovalRules: "inventory.manageRemovalRules", resolveReturns: "inventory.resolveReturns",
@@ -136,6 +137,8 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
 export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], categories: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });
 export const commandPermission = (action: InventoryCommand["action"]) =>
+  action === "plan" ? inventoryPermissions.plan :
+  action === "assign" ? inventoryPermissions.reserve :
   action === "fieldSettings" ? inventoryPermissions.configure :
   ["removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices"].includes(action) ? inventoryPermissions.manageRemovalRules :
   ["returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision"].includes(action) ? inventoryPermissions.resolveReturns :

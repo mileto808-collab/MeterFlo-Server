@@ -26,16 +26,26 @@ test("changed material quantities update a single never-posted plan without movi
   assert.deepEqual(state.stock, []);
   assert.deepEqual(state.receipts, []);
 });
-test("posted stock and zero-net corrections cannot be silently rebased", () => {
+test("posted stock and zero-net corrections cannot be silently reduced", () => {
   for (const history of [false, true]) {
     const { state, batch, prior } = fixture();
     if (history) state.receipts = [{ reference: batch.id, action: "fulfillmentCorrect" }] as any;
     else batch.lines[0].stagedQuantity = 1;
     const snapshot = JSON.stringify(state);
-    const result = reconcileDispatchRequirements(state, prior, { ...prior, lines: [{ itemId: "meter", quantity: 2 }] });
+    const result = reconcileDispatchRequirements(state, prior, { ...prior, lines: [] });
     assert.match(result.error!, /Stock has already moved/);
     assert.equal(JSON.stringify(state), snapshot);
   }
+});
+test("supplemental demand after posting preserves the original batch and custody", () => {
+  const { state, batch, prior } = fixture();
+  batch.lines[0].stagedQuantity = 1;
+  const snapshot = JSON.stringify(state);
+  assert.deepEqual(reconcileDispatchRequirements(state, prior, { ...prior, lines: [{ itemId: "meter", quantity: 3 }] }), {});
+  assert.equal(JSON.stringify(state), snapshot);
+  assert.deepEqual(reconcileDispatchRequirements(state, { ...prior, lines: [{ itemId: "meter", quantity: 3 }] },
+    { ...prior, lines: [{ itemId: "meter", quantity: 2 }] }), {});
+  assert.equal(JSON.stringify(state), snapshot);
 });
 test("unmapped or empty demand requires explicit batch resolution", () => {
   const { state, prior } = fixture();

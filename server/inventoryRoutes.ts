@@ -39,6 +39,7 @@ import { readRelationalInventory } from "./inventoryRelational";
 import { registerInventoryPickupRoutes } from "./inventoryPickups";
 import { inventoryPickTicket } from "./inventoryPickTicket";
 import { registerFulfillmentDraftRoutes } from "./inventoryFulfillmentDrafts";
+import { workOrderInventoryCapabilities } from "../shared/work-order-inventory-capabilities";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -67,7 +68,9 @@ export function registerInventoryRoutes(app: Express) {
       if (!project || !admin && !await storage.isUserAssignedToProject(user.id, projectId)) return res.status(403).json({ message: "Project access required." });
       if (project.isActive === false && !await storage.hasPermission(user, "projects.viewInactive")) return res.status(403).json({ message: "Inactive project access required." });
       const canViewInventory = await storage.hasPermission(user, inventoryPermissions.view);
-      if (!canViewInventory && !(workOrderRead && await storage.hasPermission(user, "workOrders.view")))
+      const planningCommand = req.method === "POST" && req.path === "/commands" && req.body?.action === "plan" &&
+        await storage.hasPermission(user, inventoryPermissions.plan) && await storage.hasPermission(user, "workOrders.view");
+      if (!canViewInventory && !planningCommand && !(workOrderRead && await storage.hasPermission(user, "workOrders.view")))
         return res.status(403).json({ message: "Inventory view permission required." });
       const permissions = (await storage.getUserEffectivePermissions(user)).filter(p => p.startsWith("inventory.") || p === "workOrders.view");
       res.locals.inventory = { user, admin, project, permissions, canViewInventory };
@@ -361,7 +364,10 @@ export function registerInventoryRoutes(app: Express) {
       if (Array.isArray(images) && images.some(url => typeof url !== "string" || !url.startsWith(`/api/projects/${c.project.id}/inventory/images/`)))
         throw new InventoryError("Use images uploaded to this project.");
     }
-    await postInventory(c.project.id, command, c.user.id, c.admin);
+    const posted = await postInventory(c.project.id, command, c.user.id, c.admin);
+    if (command.action === "plan") {
+      return { operationId: command.operationId, plan: posted.state.workPlans?.find(value => value.workOrderId === command.data.workOrderId) };
+    }
     return { ...await snapshot(res), operationId: command.operationId };
   }));
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
@@ -409,6 +415,8 @@ export function registerInventoryRoutes(app: Express) {
   }));
   app.get("/api/projects/:projectId/work-orders/:workOrderId/inventory", isAuthenticated, auth(true), handler(async (req, res) => {
     const c = res.locals.inventory;
+    if (!c.permissions.includes("workOrders.view"))
+      throw Object.assign(new InventoryError("Work-order view permission required."), { status: 403 });
     const id = z.coerce.number().int().positive().parse(req.params.workOrderId);
     if (!c.project.databaseName || !/^[a-z0-9_]+$/.test(c.project.databaseName)) throw new InventoryError("Work-order storage unavailable.");
     const { rows: [wo] } = await pool.query(`SELECT * FROM "${c.project.databaseName}".work_orders WHERE id=$1`, [id]);
@@ -422,11 +430,21 @@ export function registerInventoryRoutes(app: Express) {
     const s = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
     const allocation = s.allocations.find(a => a.workOrderId === id) || null;
     const { rows: labels } = await pool.query("SELECT code,label FROM public.work_order_statuses WHERE lower(code)=lower($1) OR lower(label)=lower($1)", [wo.status]);
-    const canSelect = c.canViewInventory && ![String(wo.status).toLowerCase(), ...labels.flatMap(l => [String(l.label).toLowerCase(), String(l.code).toLowerCase()])]
+    const workOrderEditable = ![String(wo.status).toLowerCase(), ...labels.flatMap(l => [String(l.label).toLowerCase(), String(l.code).toLowerCase()])]
       .some(status => ["completed", "closed", "cancelled"].includes(status));
+    const canSelect = c.canViewInventory && workOrderEditable;
     const requirements = allocation?.status === "consumed"
       ? s.workRequirements?.find(r => r.workOrderId === id)
       : await workRequirements(pool as any, c.project.id, s, wo);
+    const capabilities = workOrderInventoryCapabilities(c.permissions, {
+      enabled: !!c.project.inventoryEnabled, editable: workOrderEditable,
+      readingOnly: c.project.wizardMode === "reading_only",
+      consumed: allocation?.status === "consumed",
+      stockEditable: !wo.assigned_user_id || wo.assigned_user_id === c.user.id || c.admin ||
+        c.permissions.some((permission: string) => [inventoryPermissions.maintain, inventoryPermissions.configure].includes(permission)),
+    });
+    const canViewPricing = c.admin || c.permissions.some((permission: string) =>
+      [inventoryPermissions.maintain, inventoryPermissions.configure, inventoryPermissions.purchase].includes(permission));
     const componentTrace = workKitComponentTrace(s, id);
     const referencedItems = new Set([
       ...(requirements?.lines ?? []), ...(allocation?.lines ?? []), ...(allocation?.used ?? []),
@@ -443,16 +461,16 @@ export function registerInventoryRoutes(app: Express) {
     [...referencedItems].forEach(id => includeComponents(id));
     const referencedWarehouses = new Set([...(allocation?.lines ?? []), ...(allocation?.used ?? []),
       ...(allocation?.dispositions ?? [])].map(line => line.warehouseId));
-    return { enabled: !!c.project.inventoryEnabled, canSelect, canManageInventory: c.canViewInventory,
+    return { enabled: !!c.project.inventoryEnabled, canSelect, canManageInventory: c.canViewInventory, capabilities,
       allocation, inventoryDispatch: (visible[0] as any).inventoryDispatch,
-      editable: canSelect, workOrderStatus: wo.status, timezone: c.project.timezone ?? "UTC",
+      editable: workOrderEditable, workOrderStatus: wo.status, timezone: c.project.timezone ?? "UTC",
       plan: s.workPlans?.find(plan => plan.workOrderId === id) ?? { workOrderId: id, revision: 0, lines: [] },
       stagingReceipts: s.receipts.filter(receipt => receipt.action === "stageWorkOrder" && receipt.reference === `wo-${id}`),
       reservationNeedsReview: allocation?.status === "reserved" && allocation.assignmentVersion !== undefined &&
         allocation.assignmentVersion !== wo.assignment_version,
       requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
-      items: c.canViewInventory ? s.items : s.items.filter(item => referencedItems.has(item.id))
-        .map(({ cost, billingRate, vendorId, ...item }) => item),
+      items: s.items.filter(item => c.canViewInventory || capabilities.canPlan && item.active || referencedItems.has(item.id))
+        .map(item => { if (canViewPricing) return item; const { cost, billingRate, vendorId, ...visible } = item; return visible; }),
       warehouses: c.canViewInventory ? s.warehouses : s.warehouses.filter(w => referencedWarehouses.has(w.id))
         .map(({ id, code, name, type, locationTypeId, active }) => ({ id, code, name, type, locationTypeId, active })),
       locationTypes: s.locationTypes, fieldSettings: c.canViewInventory ? s.fieldSettings : undefined, revision: s.revision,

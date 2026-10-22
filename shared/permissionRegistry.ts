@@ -41,17 +41,23 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false } },
   ...Object.entries(inventoryPermissions).map(([name, key]): PermissionDefinition => ({
     key, label: name === "manageRemovalRules" ? "Manage Equipment Removal Rules" :
+      name === "plan" ? "Plan Work-Order Items" :
+      name === "overridePlan" ? "Override Automatic Work-Order Requirements" :
+      name === "reserve" ? "Reserve and Release Work-Order Stock" :
       name === "resolveReturns" ? "Decide Returned Equipment Disposition" :
       name === "manageLocationTypes" ? "Manage Inventory Location Types and Access" :
       name === "closeOrders" ? "Close Short Inventory Orders" :
       name === "resolveExceptions" ? "Resolve Inventory Shipment Exceptions" : `${name[0].toUpperCase()}${name.slice(1)} Inventory`,
-    category: "Inventory", description: name === "manageRemovalRules" ? "Manage project removal dispositions and mandatory warehouse-return rules. Does not grant warehouse decision or stock-operation permissions." :
+    category: "Inventory", description: name === "plan" ? "Add, edit and remove manual planned items on authorized work orders without reserving, moving or consuming stock. Requires work-order viewing; does not require warehouse-wide inventory viewing." :
+      name === "overridePlan" ? "Change or remove deliberate overrides of equipment-derived work-order requirements. Also requires Plan Work-Order Items; does not grant reservation or stock operations." :
+      name === "reserve" ? "Reserve, adjust and release stock for authorized work orders. Requires inventory and work-order viewing; does not grant physical transfers, installation use or requirement overrides." :
+      name === "manageRemovalRules" ? "Manage project removal dispositions and mandatory warehouse-return rules. Does not grant warehouse decision or stock-operation permissions." :
       name === "resolveReturns" ? "Make approved final release/scrap decisions after warehouse receipt and inspection. Requires project and warehouse access; does not grant policy management." :
       name === "manageLocationTypes" ? "Create, rename and delete unused location types; manage shared/assigned access policies, location type selections and user assignments within assigned projects. Does not grant stock-operation permissions." :
       name === "closeOrders" ? "Close purchase/transfer orders with unfulfilled quantities and a required reason; cannot erase in-transit stock." :
       name === "resolveExceptions" ? "Inspect/release quarantined shipment stock, record returns/scrap, or approve confirmed in-transit losses. Project and warehouse access are required." :
         `Permission to ${name} project inventory; project and warehouse access are also required.`,
-    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+    defaultAccess: { administrator: true, projectManager: name === "plan", fieldTechnician: name === "plan", viewer: false, customer: false },
   })),
   { key:"audit.view",label:"View Audit Logs",category:"Maintenance",description:"Read audit events for assigned projects in Settings > Security; does not grant other settings or cleanup access.",
     defaultAccess:{administrator:true,projectManager:false,fieldTechnician:false,viewer:false,customer:false} },

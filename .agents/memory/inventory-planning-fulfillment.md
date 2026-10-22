@@ -5,6 +5,12 @@ Technicians and authorized users occasionally need to add planned inventory line
 **Why:** The user described Work Order Details → Inventory as confusing and explicitly asked for a simpler technician interface.
 
 **How to apply:** Separate simple item/quantity planning from reservation, source, serial, staging and corrective controls. Hide unauthorized areas instead of merely disabling their actions; enforce the same boundaries on the server.
+
+Planning additions, overriding equipment-derived requirements, and reserving stock are separate authorities. Supplemental planned items after staging or handoff must not rewrite the original picked batch or its physical custody.
+
+**Why:** The user approved the simplified technician view and permission separation, including supplemental demand that preserves stock already dispatched.
+
+**How to apply:** Keep field actual-use authority separate from work-order planning and warehouse management. Preserve existing overrides when an ordinary planner edits additions. Treat additions above already covered demand as uncovered planning; reductions below covered demand still need explicit inventory resolution.
 name: Inventory planning and fulfillment intent
 description: User requirements for manual planned work-order items, future warehouse fulfillment, and onsite serial selection.
 ---

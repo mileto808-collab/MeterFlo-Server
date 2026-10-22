@@ -20,7 +20,7 @@ const assert = require("node:assert/strict");
     const role = await request("POST", "/api/subroles", {
       key: `prep_${crypto.randomUUID().slice(0, 8)}`, label: "Owned inventory preparation", baseRole: "user",
       permissions: ["workOrders.view", "workOrders.meterChangeout", "inventory.view", "inventory.maintain",
-        "inventory.assign", "inventory.transfer", "inventory.receive", "inventory.purchase"],
+        "inventory.assign", "inventory.plan", "inventory.overridePlan", "inventory.reserve", "inventory.transfer", "inventory.receive", "inventory.purchase"],
     }, admin);
     const credentials = { username: `prep-${crypto.randomUUID().slice(0, 8)}`, password: `Aa1!${crypto.randomUUID()}` };
     const user = await request("POST", "/api/users", { ...credentials, firstName: "Owned", lastName: "Preparation",

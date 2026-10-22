@@ -13,7 +13,8 @@ import { kitSerialContents } from "../shared/inventory-kits";
 import { readRelationalInventory, writeRelationalInventory } from "./inventoryRelational";
 import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
 import { actualEquipmentLines } from "../shared/inventory-requirements";
-import { workPlanInputSchema } from "../shared/inventory-planning";
+import { workPlanInputSchema, samePlanOverrides } from "../shared/inventory-planning";
+import { visibleAssignedOrders } from "./workOrderVisibility";
 import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inventory-field-stock";
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
 import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
@@ -125,6 +126,22 @@ export async function postInventory(projectId: number, command: InventoryCommand
     if (!p?.inventory_enabled) throw new InventoryError("Inventory is disabled for this project.");
     if (p.is_active === false) throw new InventoryError("Reactivate this project before posting inventory.");
     const before = await lockInventory(client, projectId);
+    if (command.action === "plan" || command.action === "assign") {
+      const user = await storage.getUser(actor);
+      const required = command.action === "plan" ? inventoryPermissions.plan : inventoryPermissions.reserve;
+      if (!user || user.isLocked || !await storage.hasPermission(user, required) ||
+          !await storage.hasPermission(user, "workOrders.view") ||
+          !admin && !await storage.isUserAssignedToProject(actor, projectId))
+        throw Object.assign(new InventoryError("Work-order planning or reservation permission and project access are required."), { status: 403 });
+      if (command.action === "assign" && !await storage.hasPermission(user, inventoryPermissions.view))
+        throw Object.assign(new InventoryError("Inventory view permission is required to reserve stock."), { status: 403 });
+      if (command.action === "plan") {
+        const input = workPlanInputSchema.parse(command.data);
+        const previous = before.workPlans?.find(value => value.workOrderId === input.workOrderId)?.lines ?? [];
+        if (!samePlanOverrides(previous, input.lines) && !await storage.hasPermission(user, inventoryPermissions.overridePlan))
+          throw Object.assign(new InventoryError("Override Automatic Work-Order Requirements permission is required to add, change or remove automatic requirement overrides."), { status: 403 });
+      }
+    }
     let fulfillmentBatch: import("../shared/inventory-fulfillment").FulfillmentBatch | undefined;
     if (command.action.startsWith("fulfillment")) {
       const user = await storage.getUser(actor);
@@ -194,7 +211,12 @@ export async function postInventory(projectId: number, command: InventoryCommand
       const id = z.number().int().positive().parse(command.data.workOrderId);
       const { rows: [wo] } = await client.query(`SELECT * FROM "${project.database_name}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
       if (!wo) throw new InventoryError("Work order not found in this project.");
-      if (!admin && wo.assigned_user_id && wo.assigned_user_id !== actor &&
+      if (command.action === "plan" && user && !(await visibleAssignedOrders(user, [{
+        id: wo.id, status: wo.status, assignedUserId: wo.assigned_user_id, assignedGroupId: wo.assigned_group_id,
+        newSystemType: wo.new_system_type, newModuleType: wo.new_module_type, assignmentVersion: wo.assignment_version,
+      }], projectId)).length)
+        throw Object.assign(new InventoryError("This work order is not available to your authorized work or vehicle crew."), { status: 403 });
+      if (command.action !== "plan" && !admin && wo.assigned_user_id && wo.assigned_user_id !== actor &&
         (!user || !await storage.hasPermission(user, inventoryPermissions.maintain) && !await storage.hasPermission(user, inventoryPermissions.configure)))
         throw new InventoryError("Work order assigned to another user. Inventory maintenance or configuration authority is required to prepare another installer's stock.");
       const { rows: labels } = await client.query("SELECT code,label FROM public.work_order_statuses WHERE lower(code)=lower($1) OR lower(label)=lower($1)", [wo.status]);
