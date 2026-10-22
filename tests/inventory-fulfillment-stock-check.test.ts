@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { emptyInventory, type InventoryState } from "../shared/inventory";
 import type { FulfillmentBatch } from "../shared/inventory-fulfillment";
 import { checkFulfillmentSerials } from "../shared/inventory-fulfillment-scans";
+import { acceptAvailableFulfillmentScans } from "../client/src/lib/fulfillment-scans";
 
 function fixture() {
   const state = emptyInventory();
@@ -68,4 +69,31 @@ test("a crew handoff releases its own pool hold, never another batch's hold", ()
   assert.deepEqual(checkFulfillmentSerials(state, batch, "vehicle", [{ itemId: "meter", serials: ["0004"] }]), []);
   state.fulfillmentBatches!.push({ ...batch, id: "other" });
   assert.match(checkFulfillmentSerials(state, batch, "vehicle", [{ itemId: "meter", serials: ["0004"] }])[0].reason, /another batch/);
+});
+
+test("ineligible scans never enter the list or consume capacity; duplicates retain the original", () => {
+  const { state, batch } = fixture();
+  const result = acceptAvailableFulfillmentScans(state, batch, "stage", "meter",
+    "0004\n0001\n0001\nUNKNOWN\n0002", [], true, 2);
+  assert.equal(result.text, "0001\n0002\n");
+  assert.deepEqual(result.rejected, ["0001"]);
+  assert.deepEqual(result.problems.map(problem => problem.serial), ["0004", "UNKNOWN"]);
+  assert.equal(result.excess, 0);
+});
+
+test("unfinished shared prefixes remain editable but are rejected if committed as ineligible", () => {
+  const { state, batch } = fixture();
+  assert.equal(acceptAvailableFulfillmentScans(state, batch, "stage", "meter", "0001\n000",
+    [], false, 2).text, "0001\n000");
+  assert.equal(acceptAvailableFulfillmentScans(state, batch, "stage", "meter", "0001\n000",
+    [], true, 2).text, "0001\n");
+});
+
+test("handoff rejects serials outside this batch and never replaces valid captured serials", () => {
+  const { state, batch } = fixture();
+  const result = acceptAvailableFulfillmentScans(state, batch, "vehicle", "meter",
+    "0005\n0004\n0004", [], true, 1);
+  assert.equal(result.text, "0004\n");
+  assert.deepEqual(result.rejected, ["0004"]);
+  assert.deepEqual(result.problems.map(problem => problem.serial), ["0005"]);
 });

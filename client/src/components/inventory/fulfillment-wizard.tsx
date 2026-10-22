@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { SerialScanProgress } from "./serial-scan-field";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { acceptFulfillmentScans } from "@/lib/fulfillment-scans";
+import { acceptAvailableFulfillmentScans } from "@/lib/fulfillment-scans";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScannerInput } from "@/components/scanner-input";
 import { Badge } from "@/components/ui/badge";
@@ -632,6 +632,39 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const serialCheckBlocked = (!!editingSerialKey && editingSerialKey.startsWith(`${draft.step}:`) &&
     !!draft.serialText[editingSerialKey]?.trim()) || (serialCheckLines.length > 0 &&
     (serialCheck.isFetching || !serialCheck.isSuccess || serialCheck.data.problems.length > 0));
+  useEffect(() => {
+    // A fresh server check can discover stock changes newer than our local snapshot.
+    // Reject those scans too, but never alter an uncertain, already-submitted command.
+    if (!open || showStart || draft.pending || draft.createAttempt || serialCheck.isFetching || !serialCheck.isSuccess ||
+      !serialCheck.data.problems.length) return;
+    const problems = serialCheck.data.problems;
+    setDraft(current => {
+      const currentLines = batchDemand.filter(row => row.item?.tracking === "serialized").map(row => {
+        const key = `${current.step}:${row.itemId}`, text = current.serialText[key] ?? "";
+        return { itemId: row.itemId, serials: splitSerials(editingSerialKey === key ? text.replace(/[^\r\n,;\t]*$/, "") : text) };
+      }).filter(line => line.serials.length > 0);
+      if (current.pending || JSON.stringify({ phase: current.step, lines: currentLines }) !== serialCheckInput) return current;
+      const serialText = { ...current.serialText };
+      for (const line of currentLines) {
+        const key = `${current.step}:${line.itemId}`;
+        const rejected = new Set(problems.filter(problem => problem.itemId === line.itemId).map(problem => problem.serial));
+        if (!rejected.size) continue;
+        const text = serialText[key] ?? "";
+        const trailing = editingSerialKey === key ? text.match(/[^\r\n,;\t]*$/)?.[0] ?? "" : "";
+        const accepted = line.serials.filter(serial => !rejected.has(serial));
+        serialText[key] = accepted.map(serial => `${serial}\n`).join("") + trailing;
+      }
+      return { ...current, serialText };
+    });
+    setScanNotices(current => {
+      const next = { ...current };
+      for (const itemId of new Set(problems.map(problem => problem.itemId))) {
+        next[`${draft.step}:${itemId}`] = problems.filter(problem => problem.itemId === itemId).slice(0, 3)
+          .map(problem => `Rejected ${problem.serial}: ${problem.reason}`).join(" ");
+      }
+      return next;
+    });
+  }, [serialCheck.data, serialCheck.isFetching, serialCheck.isSuccess, serialCheckInput, open, showStart, draft.pending, draft.createAttempt]);
   const sourceAvailability = useMemo(() => batchDemand.map(row => {
     const batchWorkOrderIds = new Set(activeBatch?.mode === "scheduled"
       ? activeBatch.workOrders.map(workOrder => workOrder.workOrderId) : []);
@@ -931,7 +964,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     setLineValue(key, value, "quantities");
   };
   const scanSerials = (key: string, text: string, commitLast = false) => {
-    if (pendingLock || createLock || !canPost) return;
+    if (pendingLock || createLock || !canPost || !state || !activeBatch ||
+      (draft.step !== "stage" && draft.step !== "vehicle")) return;
     const quantity = Number(draft.quantities[key] ?? 0);
     const target = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 0;
     const previousText = draft.serialText[key] ?? "";
@@ -945,12 +979,17 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     const otherLines = Object.entries(draft.serialText)
       .filter(([other]) => other !== key && other.startsWith(`${draft.step}:`))
       .flatMap(([, value]) => splitSerials(value));
-    const result = acceptFulfillmentScans(text, [...recorded, ...otherLines], commitLast, target);
+    const itemId = batchDemand.find(row => quantityKey(draft.step, row.itemId) === key)?.itemId;
+    if (!itemId) return;
+    const result = acceptAvailableFulfillmentScans(state, activeBatch, draft.step, itemId, text,
+      [...recorded, ...otherLines], commitLast, target);
     setLineValue(key, result.text, "serialText");
     setEditingSerialKey(!commitLast && result.text.split(/[\r\n,;\t]/).at(-1)?.trim() ? key : null);
     setScanNotices(current => ({
       ...current,
-      [key]: result.rejected.length
+      [key]: result.problems.length
+        ? result.problems.slice(0, 3).map(problem => `Rejected ${problem.serial}: ${problem.reason}`).join(" ")
+        : result.rejected.length
         ? `Already scanned or recorded in this batch: ${result.rejected.slice(0, 3).join(", ")}${result.rejected.length > 3 ? ` (+${result.rejected.length - 3} more)` : ""}. Duplicate entries were not added.`
         : result.excess
           ? target ? "Required scan count reached. Extra serials were not added." : "Set a positive whole move quantity before scanning."

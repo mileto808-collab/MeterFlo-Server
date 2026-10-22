@@ -114,16 +114,16 @@ const assert = require("node:assert/strict");
     await expect(identity).toBeInViewport();
     await expect(coldPage.getByTestId("fulfillment-move-quantity-stage-scan-meter")).toBeVisible();
     await expect(coldPage.getByRole("dialog")).toHaveCount(1);
-    // The count must not turn green for a serial already pulled into another batch.
+    // Ineligible and duplicate scans must never remain in the accepted list or count.
     const coldQuantity = coldPage.getByTestId("fulfillment-move-quantity-stage-scan-meter");
     const coldSerials = coldPage.getByTestId("fulfillment-custody-serials-stage-scan-meter");
     const coldProgress = coldPage.getByTestId("fulfillment-scan-progress-stage-scan-meter");
     await coldQuantity.fill("1");
     await coldSerials.fill("QR-001");
     await coldSerials.press("Enter");
-    await expect(coldProgress).toContainText("need correction");
-    await expect(coldProgress.locator('[data-testid="serial-scan-progress"]')).toHaveClass(/text-destructive/);
-    await expect(coldPage.getByText(/QR-001: Not available for this item/)).toBeVisible();
+    await expect(coldSerials).toHaveValue("");
+    await expect(coldProgress).toContainText("Scanned 0");
+    await expect(coldPage.getByText(/Rejected QR-001: Not available for this item/)).toBeVisible();
     await expect(coldPage.getByRole("button", { name: "Record physical pull", exact: true })).toBeDisabled();
     await coldSerials.scrollIntoViewIfNeeded();
     await coldPage.screenshot({ path: "generated-artifacts/inventory-pick-ticket/invalid-scan-phone.png" });
@@ -151,6 +151,35 @@ const assert = require("node:assert/strict");
     await coldPage.unroute(checkPattern);
     await coldPage.getByRole("button", { name: "Retry stock verification", exact: true }).click();
     await expect(coldProgress).toContainText("serials verified against current stock");
+    await coldQuantity.fill("2");
+    await coldSerials.fill("");
+    await coldSerials.evaluate(element => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", "QR-001\nQR-003\nQR-003\nUNKNOWN\nQR-004");
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+    });
+    await expect(coldSerials).toHaveValue("QR-003\nQR-004\n");
+    await expect(coldProgress).toContainText("Scanned 2");
+    await expect(coldProgress).toContainText("serials verified against current stock");
+    // Authoritative checks remove newly unavailable scans even if the local snapshot was older.
+    await coldSerials.fill("QR-003");
+    await coldSerials.press("Enter");
+    await expect(coldProgress).toContainText("Scanned 1");
+    await coldPage.route(checkPattern, async route => {
+      const body = route.request().postDataJSON();
+      if (body.lines.some(line => line.serials.includes("QR-004"))) {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+          problems: [{ itemId: "scan-meter", serial: "QR-004", reason: "Reserved for other work or held by another batch." }],
+          revision: before.revision,
+        }) });
+      } else await route.continue();
+    });
+    await coldSerials.fill("QR-003\nQR-004");
+    await coldSerials.press("Enter");
+    await expect(coldSerials).toHaveValue("QR-003\n");
+    await expect(coldPage.getByText(/Rejected QR-004: Reserved for other work/)).toBeVisible();
+    await expect(coldProgress).toContainText("Scanned 1");
+    await coldPage.unroute(checkPattern);
     // Avoid leaving new fixture captures for the following ticket-switch scenarios.
     await coldSerials.fill("");
     await coldQuantity.fill("");
@@ -164,6 +193,19 @@ const assert = require("node:assert/strict");
     await serials.fill("QR-001");
     await serials.press("Enter");
     await expect(serials).toHaveValue(/QR-001/);
+    await page.getByTestId("fulfillment-move-quantity-vehicle-scan-meter").fill("2");
+    await serials.fill("");
+    await serials.evaluate(element => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", "QR-001\nQR-003\nQR-001\nQR-002");
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+    });
+    await expect(serials).toHaveValue("QR-001\nQR-002\n");
+    await expect(page.getByText(/Rejected QR-003: Not in this batch/)).toBeVisible();
+    await page.getByTestId("fulfillment-move-quantity-vehicle-scan-meter").fill("1");
+    await serials.fill("QR-001");
+    await serials.press("Enter");
+    await expect(page.getByTestId("fulfillment-scan-progress-vehicle-scan-meter")).toContainText("serials verified against current stock");
     await scan(page, ticketUrl(batchB));
     await expect(page.getByRole("alertdialog")).toBeVisible();
     await page.getByRole("alertdialog").getByRole("button", { name: /Cancel|Keep/ }).first().click();

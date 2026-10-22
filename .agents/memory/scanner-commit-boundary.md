@@ -13,7 +13,7 @@ Fulfillment scan completion must mean verified stock eligibility, not just a mat
 
 **Why:** The user interpreted a green scan box as confirmation that the serials were legitimate, but discovered unavailable or reserved stock only when posting the physical pull.
 
-**How to apply:** Check committed scans against current item/location stock and reservations, and check batch custody for handoff. Show pending and failed verification without green success, retain invalid captures for correction, and keep the atomic posting check because stock can change after verification.
+**How to apply:** Check committed scans against current item/location stock and reservations, and check batch custody for handoff. Reject ineligible and duplicate scans from the accepted list and target count, with a clear reason beside the scanner; the user explicitly does not want invalid scans left in the box for manual cleanup. Preserve valid scans and unfinished typing. Show pending and failed verification without green success, and keep the atomic posting check because stock can change after verification. Never rewrite an unresolved submitted command when rejecting new input.
 
 Input-processing guards must agree with whether the scan field is visibly enabled.
 
