@@ -29,6 +29,12 @@ Fulfillment uses two phases with focused steps: Pick & stage (choose orders, set
 
 **How to apply:** Order selection excludes setup. Printing is optional and never moves stock. Capture screens contain quantities and serials, while reasons/acknowledgments belong in confirmation and exception actions stay secondary. Final reviews show moving-now quantities, remaining stock, shortages and serials; Back preserves captures. Only final Record actions post stock. Fully staged pulls make the batch ready for assigned-vehicle pickup; QR arrivals open verification, not another picking sequence. Preserve partial pulls/handoffs. Setup changes before posting must revalidate source availability and serials; after posting use explicit custody corrections or reassignment, never relabel recorded movement.
 
+Saved order selections permit navigation to Batch Setup even if their current eligibility has changed.
+
+**Why:** The user expects completed draft steps to remain accessible when resuming; creation eligibility must not prevent inspecting saved setup.
+
+**How to apply:** Require a nonempty selection and normal permissions/pending-command safety for navigation, but keep strict eligibility and group/installer validation before review and creation. Explain invalid selections without silently deleting them.
+
 **Why:** The user described a common task-selection screen, not a button tied directly to a single receiving workflow.
 
 **How to apply:** When implementing guided inventory workflows, preserve that shared entry and enforce the permissions appropriate to each selected task. Do not assume Start Inventory should jump straight into removed-equipment acceptance.

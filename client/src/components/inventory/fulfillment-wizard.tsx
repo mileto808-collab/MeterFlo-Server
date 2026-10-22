@@ -1275,9 +1275,11 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     selectedOrders.every(order => order.eligible && !order.missing.length && order.lines.length > 0) &&
     !selectionConstraintError && !!draft.sourceId && !!draft.stagingId && !!draft.vehicleId &&
     new Set([draft.sourceId, draft.stagingId, draft.vehicleId]).size === 3 && !pendingLock;
-  const canContinueOrders = canPost && selectedOrders.length > 0 && selectedOrders.length === draft.selectedIds.length &&
-    selectedOrders.every(order => order.eligible && !order.missing.length && order.lines.length > 0) &&
-    !selectionConstraintError && !pendingLock && !createLock;
+  // Navigating to saved setup does not create a batch or reserve stock.
+  // Keep stale selections available to inspect without relaxing creation checks.
+  const canContinueOrders = canPost && draft.selectedIds.length > 0 && !pendingLock && !createLock;
+  const unavailableSelectedCount = draft.selectedIds.length -
+    selectedOrders.filter(order => order.eligible && !order.missing.length && order.lines.length > 0).length;
 
   const createBatch = async () => {
     const savedAttempt = draft.createAttempt;
@@ -2130,8 +2132,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             </>}
           </div>}
           {draft.step === "orders" && draft.uiSubstep === "setup" && <div className="space-y-5" data-wizard-setup>
-            <div><Badge variant="outline">{selectedOrders.length} orders selected</Badge><h3 className="mt-2 text-xl font-semibold">Batch setup</h3>
+            <div><Badge variant="outline">{draft.selectedIds.length} orders selected</Badge><h3 className="mt-2 text-xl font-semibold">Batch setup</h3>
               <p className="text-sm text-muted-foreground">Choose the batch name and three distinct locations for this physical custody path.</p></div>
+            {(unavailableSelectedCount > 0 || !!selectionConstraintError) && <Alert className="border-amber-500/40 bg-amber-500/5">
+              <AlertTriangle className="h-4 w-4" /><AlertTitle>Review selected orders before creating the batch</AlertTitle>
+              <AlertDescription>
+                {unavailableSelectedCount > 0 && <p>{unavailableSelectedCount} selected work order(s) are currently unavailable or have no uncovered inventory demand. Your saved setup is still available to view and edit.</p>}
+                {!!selectionConstraintError && <p>{selectionConstraintError}</p>}
+                <p>Use Back to orders to adjust the selection. Review and creation stay disabled until the selected orders are valid.</p>
+              </AlertDescription>
+            </Alert>}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1"><Label htmlFor="batch-name">Batch name</Label><Input id="batch-name" maxLength={120} value={draft.name} onChange={event => update({ name: event.target.value })} placeholder="Crew / date / route" /></div>
               <div className="space-y-1"><Label htmlFor="batch-source">Warehouse source</Label><Select value={draft.sourceId} onValueChange={value => update({ sourceId: value })}><SelectTrigger id="batch-source"><SelectValue placeholder="Choose accessible warehouse" /></SelectTrigger><SelectContent>{sourceLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
