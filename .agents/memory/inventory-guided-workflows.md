@@ -31,13 +31,13 @@ Opening Fulfill / Stage Work Orders must always show its main workflow choices, 
 
 **Why:** The user wants a predictable entry screen rather than being taken automatically to the last fulfillment screen. This requirement applies to the Fulfill / Stage task button, not a change to Start Inventory.
 
-**How to apply:** Keep saved inputs and exact pending-operation identities intact behind the start screen. Confirm before replacing unrecorded inputs, and prevent a new workflow from bypassing an unresolved operation.
+**How to apply:** Manual entry uses the chooser, but refreshing within fulfillment retains the fulfillment workspace and current page. Selecting a batch process goes directly to its page without a replacement prompt; preserve meaningful work as a resumable draft and retain exact pending-operation identities.
 
-Saving a new crew or scheduled-work setup is explicit: show Save Draft only after meaningful work, and Clear draft only for an explicitly saved draft. Saved drafts are shared with any authorized project user.
+Show Save Draft only after meaningful work, and Clear draft only for a saved draft. Meaningful work must also survive crashes, refreshes and interruptions as a draft under Resume saved batch, shared with any authorized project user. Merely visiting a workflow must not create an empty draft.
 
 **Why:** The user wants another authorized warehouse worker to pick up saved work, not browser-only drafts or drafts created by merely visiting the wizard.
 
-**How to apply:** Store explicit setup drafts in the relational database and list them in Resume saved batch. Browser recovery captures are unsaved inputs, not shared drafts; retain unknown-operation identities without exposing a second posting path.
+**How to apply:** Store meaningful setup drafts in the relational database and list them in Resume saved batch, including automatically recovered work. Do not expose a separate browser-local warning or Recover local inputs workflow. Retain unknown-operation identities without exposing a second posting path. Back to workflow choices belongs in the bottom sticky footer.
 
 An explicit pick-ticket scan is an exception to the normal chooser-first entry: open that verified batch at the appropriate current step.
 
