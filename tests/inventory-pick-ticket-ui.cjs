@@ -72,6 +72,43 @@ const assert = require("node:assert/strict");
     assert.equal((await request(admin, "GET", `${inventory}/fulfillment/${batchB}/ticket`)).resume.nextStep, "stage");
     assert.equal((await tech.request.get(`${inventory}/fulfillment/${batchA}/ticket`)).status(), 403);
     assert.equal((await admin.request.get(`${inventory}/fulfillment/${crypto.randomUUID()}/ticket`)).status(), 404);
+    // Real entry: the wizard is still closed and a previously saved batch must load first.
+    const coldPage = await adminPage();
+    const actor = await request(admin, "GET", "/api/auth/user");
+    const draftKey = `meterflo:fulfillment:${encodeURIComponent(actor.id)}:${fixture.projectId}`;
+    await coldPage.evaluate(({ key, batchId }) => localStorage.setItem(key,
+      JSON.stringify({ mode: "resume", step: "stage", batchId, name: "Still needs pulling" })),
+    { key: draftKey, batchId: batchB });
+    await coldPage.setViewportSize({ width: 390, height: 844 });
+    await coldPage.keyboard.type(ticketUrl(batchB), { delay: 1 });
+    await coldPage.keyboard.press("Enter");
+    await expect(coldPage.getByTestId("fulfillment-move-quantity-stage-scan-meter")).toBeVisible();
+    const identity = coldPage.getByTestId("fulfillment-batch-identity");
+    const numberB = `PICK-${before.fulfillmentBatches[1].createdAt.slice(0, 4)}-000002`;
+    await expect(identity).toHaveText(`Still needs pulling - ${numberB}`);
+    await expect(identity).toBeFocused();
+    await expect(identity).toBeInViewport();
+    const printedTicket = await admin.request.get(`${inventory}/fulfillment/${batchB}/pick-ticket`);
+    assert.equal(printedTicket.status(), 200);
+    assert.ok((await printedTicket.text()).includes(numberB), "Heading matches the printed pick-ticket number.");
+    // A repeated scan must realign even when batch/step have not changed.
+    await coldPage.getByTestId("fulfillment-step-body").evaluate(body => { body.scrollTop = body.scrollHeight; });
+    await coldPage.keyboard.type(ticketUrl(batchB), { delay: 1 });
+    await coldPage.keyboard.press("Enter");
+    await expect(identity).toBeInViewport();
+    await expect.poll(() => coldPage.getByTestId("fulfillment-step-body").evaluate(body => body.scrollTop)).toBe(0);
+    await coldPage.screenshot({ path: "generated-artifacts/inventory-pick-ticket/scan-arrival-phone.png" });
+    // Scan from Start Inventory's task chooser without clicking Fulfill / Stage.
+    await coldPage.getByRole("button", { name: "Save & leave", exact: true }).click();
+    await coldPage.getByRole("button", { name: "Start Inventory", exact: true }).filter({ visible: true }).click();
+    await expect(coldPage.getByRole("heading", { name: "Choose an inventory task", exact: true })).toBeVisible();
+    await coldPage.keyboard.type(ticketUrl(batchB), { delay: 1 });
+    await coldPage.keyboard.press("Tab");
+    await expect(identity).toBeFocused();
+    await expect(identity).toBeInViewport();
+    await expect(coldPage.getByTestId("fulfillment-move-quantity-stage-scan-meter")).toBeVisible();
+    await expect(coldPage.getByRole("dialog")).toHaveCount(1);
+    await coldPage.close();
     const page = await adminPage();
     await scan(page, ticketUrl(batchA));
     await expect(page.getByTestId("fulfillment-move-quantity-vehicle-scan-meter")).toBeVisible();

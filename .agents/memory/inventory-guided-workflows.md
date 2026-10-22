@@ -27,8 +27,20 @@ Ticket switching must preserve captured work and unresolved command identities, 
 
 **How to apply:** Confirm before replacing different unrecorded work, recheck the target after confirmation, block unresolved commands unless their exact receipt proves completion, and reject stale lookup results after inputs change. Do not let the Inventory HID listener steal editable-field focus or consume unrelated serial scans.
 
+External scans must wait for stored captures and the opening refresh before checking whether inputs changed.
+
+**Why:** A cold scan previously raced saved-draft hydration; initialization looked like a new edit and stopped the scan, whereas scanning inside an already-open wizard worked.
+
+**How to apply:** Keep the scan pending through initialization, including entry through the task chooser. Preserve genuine edit/unknown-outcome protection after initialization instead of weakening that protection to allow scans.
+
 Each fulfillment wizard step must bring the next required control into view, focus it, and clearly highlight it; completion must bring its confirmation into view.
 
 **Why:** Retaining the previous step's scroll position left phone users looking at the release-remainder section instead of the vehicle-handoff inputs.
 
 **How to apply:** Apply this on forward/back navigation, resumed steps and movement outcomes, not on ordinary typing or background refreshes. Keep focus within the active dialog and account for the device keyboard without replacing saved captures. If the next field is already visible near the top, retain the section heading rather than scrolling it away; only scroll enough to reveal a distant field.
+
+Explicit pick-ticket arrivals first focus and show the batch name plus its matching printed ticket number, rather than a quantity or scan input.
+
+**Why:** The user needs to match the physical ticket immediately after scanning, including when returning to the staging step.
+
+**How to apply:** Show the readable printed identifier beside the batch name. Realign to that heading even for a repeated scan of the same batch/step; ordinary step navigation still focuses the next required control.

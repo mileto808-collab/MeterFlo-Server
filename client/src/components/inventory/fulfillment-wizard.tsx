@@ -6,6 +6,7 @@ import { FulfillmentSavedInputs } from "./fulfillment-saved-inputs";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { parsePickTicketQr } from "@shared/inventory-pick-ticket";
+import { fulfillmentTicketNumber } from "@shared/inventory-pickups";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InventoryItem, InventoryState, Warehouse } from "@shared/inventory";
@@ -137,6 +138,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const [reassignmentBatchId, setReassignmentBatchId] = useState("");
   const [ticketInput, setTicketInput] = useState("");
   const [cameraRequest, setCameraRequest] = useState(0);
+  const [ticketArrival, setTicketArrival] = useState(0);
+  const ticketIdentityFocus = useRef<string | null>(null);
   const [ticketBusy, setTicketBusy] = useState(false);
   const [ticketConfirmBusy, setTicketConfirmBusy] = useState(false);
   const [requestedTicket, setRequestedTicket] = useState<PickTicketLookup | null>(null);
@@ -195,6 +198,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const warehouses = state?.warehouses ?? [];
   const receipts: Receipt[] = (state?.receipts ?? []) as Receipt[];
   const activeBatch = fulfillment.data?.batches.find(batch => batch.id === draft.batchId) as (FulfillmentBatch & { pickupReady?: boolean }) | undefined;
+  const activeBatchPosition = state?.fulfillmentBatches?.findIndex(batch => batch.id === activeBatch?.id) ?? -1;
+  const activeTicketNumber = activeBatch && activeBatchPosition >= 0
+    ? fulfillmentTicketNumber(activeBatch.createdAt, activeBatchPosition) : null;
   const activeResume = activeBatch ? fulfillment.data?.resumeStatus?.[activeBatch.id] : undefined;
   const movementBlocked = !!activeBatch && !!activeResume &&
     (!activeResume.resumable || draft.step === "stage" && activeResume.nextStep === "vehicle");
@@ -253,7 +259,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const vehicles = allowedLocations.filter(location => location.active && location.type === "vehicle");
 
   useEffect(() => {
-    if (!storageKey || !open) return;
+    if (!open) {
+      setStorageReady(false);
+      setCheckedOnEntry(false);
+      return;
+    }
+    if (!storageKey) return;
     setConfirmHandoff(false);
     setShowStart(true);
     setShowHistory(false);
@@ -438,6 +449,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
         return;
       }
       if (hasMeaningfulFulfillmentWork(draft) && draft.batchId === parsed.batchId) {
+        ticketIdentityFocus.current = ticket.batch.id;
+        setTicketArrival(value => value + 1);
         setDraft(current => ({ ...current, mode: "resume", step: ticket.resume.nextStep }));
         setShowStart(false);
         setShowHistory(false);
@@ -458,6 +471,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   };
   const applyPickTicket = (ticket: PickTicketLookup) => {
     if (draft.pending || draft.createAttempt) return;
+    ticketIdentityFocus.current = ticket.batch.id;
+    setTicketArrival(value => value + 1);
     setDraft({ ...emptyDraft(), mode: "resume", step: ticket.resume.nextStep, batchId: ticket.batch.id, name: ticket.batch.name });
     setReassignmentBatchId("");
     setShowCorrections(false);
@@ -543,12 +558,15 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   };
   useEffect(() => {
     if (!pickTicketQr) { handledQr.current = ""; return; }
+    // A scan can arrive while the dialog is closed. Hydrate saved captures and
+    // finish the entry refresh before taking the lookup's edit-safety snapshot.
+    if (!open || !storageReady || !checkedOnEntry) return;
     if (pickTicketQr === handledQr.current) return;
     handledQr.current = pickTicketQr;
     setTicketInput(pickTicketQr);
     void lookupPickTicket(pickTicketQr);
     onPickTicketQrConsumed?.();
-  }, [pickTicketQr]);
+  }, [pickTicketQr, open, storageReady, checkedOnEntry]);
   const hasSavedProgress = hasMeaningfulFulfillmentWork(draft);
   const startMode = (mode: Draft["mode"]) => {
     if (draft.pending || draft.createAttempt || busy) return;
@@ -983,7 +1001,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   useWizardStepFocus({
     open,
     ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff && requestedMode === null,
-    stepKey: `${showCorrections}:${showHistory}:${showBlocked}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
+    stepKey: `${ticketArrival}:${showCorrections}:${showHistory}:${showBlocked}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
     rootRef: wizardRef,
     bodyRef: stepBodyRef,
     chooseTarget: root => {
@@ -1001,6 +1019,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       if (showStart) return find('[data-wizard-continue]', '[data-wizard-entry]', '[data-testid="fulfillment-start-screen"] button');
       if (reassignmentBatchId) return find('[data-wizard-reassignment]');
       if (draft.pending || draft.createAttempt) return find('[data-wizard-pending]', '[data-wizard-title]');
+      if (activeBatch && ticketIdentityFocus.current === activeBatch.id) {
+        const identity = find('[data-wizard-ticket-identity]');
+        if (identity) {
+          ticketIdentityFocus.current = null;
+          return identity;
+        }
+      }
       if (draft.step === "review") return find('[data-wizard-review]');
       if (draft.step === "orders") return draft.mode === "resume"
         ? find('[data-wizard-saved-batches]')
@@ -1356,7 +1381,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 <Button type="button" variant="ghost" onClick={() => { setShowStart(true); setShowHistory(activeBatch.status === "completed"); }}>{activeBatch.status === "completed" ? "View completed batches" : "Back to workflow choices"}</Button>
               </div> : <>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><Badge variant="outline">{draft.step === "stage" ? "Physical pull to staging" : "Physical vehicle handoff"}</Badge><h3 className="mt-2 text-xl font-semibold">{activeBatch.name}</h3>
+                <div className="min-w-0"><Badge variant="outline">{draft.step === "stage" ? "Physical pull to staging" : "Physical vehicle handoff"}</Badge><h3
+                  data-testid="fulfillment-batch-identity" data-wizard-ticket-identity tabIndex={-1}
+                  className="mt-2 break-words text-xl font-semibold">{activeBatch.name}{activeTicketNumber && ` - ${activeTicketNumber}`}</h3>
                   <p className="text-sm text-muted-foreground">{draft.step === "stage"
                     ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
                     : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p></div>
