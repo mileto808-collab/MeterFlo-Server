@@ -19,4 +19,4 @@ Each fulfillment wizard step must bring the next required control into view, foc
 
 **Why:** Retaining the previous step's scroll position left phone users looking at the release-remainder section instead of the vehicle-handoff inputs.
 
-**How to apply:** Apply this on forward/back navigation, resumed steps and movement outcomes, not on ordinary typing or background refreshes. Keep focus within the active dialog and account for the device keyboard without replacing saved captures.
+**How to apply:** Apply this on forward/back navigation, resumed steps and movement outcomes, not on ordinary typing or background refreshes. Keep focus within the active dialog and account for the device keyboard without replacing saved captures. If the next field is already visible near the top, retain the section heading rather than scrolling it away; only scroll enough to reveal a distant field.

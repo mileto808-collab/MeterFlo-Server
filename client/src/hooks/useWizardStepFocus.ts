@@ -32,9 +32,22 @@ export function useWizardStepFocus({
     const align = () => {
       if (!target?.isConnected) return;
       if (body.contains(target)) {
-        const top = target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
-        const context = Math.max(8, Math.min(96, (body.clientHeight - target.offsetHeight) / 2));
-        body.scrollTo({ top: Math.max(0, top - context), behavior: "instant" });
+        const bodyRect = body.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const margin = Math.max(8, Math.min(24, body.clientHeight / 10));
+        const targetTop = body.scrollTop + targetRect.top - bodyRect.top;
+        // Keep the step heading in view when the first field fits near the top.
+        // A previous step may have left this same scroll container partway down.
+        if (targetTop >= 0 && targetTop + targetRect.height + margin <= body.clientHeight) {
+          if (body.scrollTop) body.scrollTo({ top: 0, behavior: "instant" });
+        } else if (targetRect.top < bodyRect.top + margin) {
+          body.scrollTo({ top: Math.max(0, targetTop - margin), behavior: "instant" });
+        } else if (targetRect.bottom > bodyRect.bottom - margin) {
+          body.scrollTo({
+            top: body.scrollTop + targetRect.bottom - bodyRect.bottom + margin,
+            behavior: "instant",
+          });
+        }
       } else body.scrollTo({ top: 0, behavior: "instant" });
     };
     const clearHighlight = (event: FocusEvent) => {

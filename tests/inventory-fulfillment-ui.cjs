@@ -137,6 +137,35 @@ const assert = require("node:assert/strict");
     await choices.getByRole("button", { name: /New crew batch/ }).click();
     await expect(page.getByRole("alertdialog", { name: "Replace saved workflow inputs?" })).toHaveCount(0);
     await expect(dialog.getByLabel("Search orders", { exact: true })).toBeVisible();
+    const expectSectionAtTop = async title => {
+      const heading = dialog.getByRole("heading", { name: title, exact: true });
+      await expect(heading).toBeVisible();
+      await expect.poll(async () => heading.evaluate(element => {
+        const body = element.closest('[data-testid="fulfillment-step-body"]');
+        return !!body && body.scrollTop <= 1 &&
+          element.getBoundingClientRect().top >= body.getBoundingClientRect().top - 1;
+      }), { message: `${title} should not be clipped by focus scrolling` }).toBe(true);
+    };
+    await expectSectionAtTop("Choose eligible orders");
+    await dialog.getByRole("button", { name: /^Scheduled installer work/ }).click();
+    await expectSectionAtTop("Choose eligible orders");
+    await dialog.getByRole("button", { name: /^Resume saved batch/ }).click();
+    await expectSectionAtTop("Saved fulfillment batches");
+    await dialog.getByRole("button", { name: /^New crew batch/ }).click();
+    await expectSectionAtTop("Choose eligible orders");
+    await page.setViewportSize({ width: 1024, height: 544 });
+    await dialog.getByRole("button", { name: /^Scheduled installer work/ }).click();
+    await expectSectionAtTop("Choose eligible orders");
+    await page.screenshot({ path: "generated-artifacts/inventory-fulfillment/focus-short-desktop.png" });
+    await dialog.getByRole("button", { name: /^New crew batch/ }).click();
+    await expectSectionAtTop("Choose eligible orders");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await dialog.getByRole("button", { name: /^Resume saved batch/ }).click();
+    await expectSectionAtTop("Saved fulfillment batches");
+    await dialog.getByRole("button", { name: /^New crew batch/ }).click();
+    await expectSectionAtTop("Choose eligible orders");
+    await page.screenshot({ path: "generated-artifacts/inventory-fulfillment/focus-phone.png" });
+    await page.setViewportSize({ width: 1280, height: 900 });
     const physicalConfirmation = dialog.getByRole("checkbox", { name: /I confirm the listed stock has physically moved/ });
     let selectionPosts = 0;
     const countSelectionPosts = req => {
