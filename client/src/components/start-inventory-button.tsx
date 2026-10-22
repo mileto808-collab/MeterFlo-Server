@@ -30,10 +30,11 @@ export function StartInventoryButton({ mobile = false, projectId, permissions }:
 }
 
 /** One launcher owns the wizard even though responsive desktop/mobile buttons are both mounted. */
-export function InventoryWorkflowLauncher({ projectId, permissions }: { projectId: number; permissions?: string[] }) {
+export function InventoryWorkflowLauncher({ projectId, permissions, wizardOpen, onWizardOpenChange: setWizardOpen }: {
+  projectId: number; permissions?: string[]; wizardOpen: boolean; onWizardOpenChange: (open: boolean) => void;
+}) {
   const { hasPermission, isLoading } = usePermissions();
   const [chooserOpen, setChooserOpen] = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
   const [ticketQr, setTicketQr] = useState("");
   const sequenceRef = useRef("");
   const sequenceTimeRef = useRef(0);
@@ -81,7 +82,7 @@ export function InventoryWorkflowLauncher({ projectId, permissions }: { projectI
       window.removeEventListener(launcherEvent, onOpen);
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [allowed, isLoading, permissions === undefined, projectId]);
+  }, [allowed, isLoading, permissions === undefined, projectId, setWizardOpen]);
 
   if (!allowed && !isLoading) return null;
   return <>

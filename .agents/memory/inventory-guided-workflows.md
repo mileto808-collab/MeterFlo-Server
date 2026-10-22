@@ -5,6 +5,12 @@ description: Product intent for the Start Inventory entry point and permission-a
 
 Start Inventory is the entry to a main wizard screen where users choose an inventory task they have permission to perform. The chosen task then launches its own step wizard; accepting removed systems/modules is one intended task.
 
+The Start Inventory task selection stays in a modal; Fulfill / Stage Work Orders opens inline in the Inventory page, not in another modal.
+
+**Why:** The user explicitly requested the task chooser modal followed by a same-screen fulfillment workflow.
+
+**How to apply:** Preserve saved workflow state and scan entry while keeping the fulfillment workspace in the page. Confirmation and camera dialogs may still use their existing overlays.
+
 **Why:** The user described a common task-selection screen, not a button tied directly to a single receiving workflow.
 
 **How to apply:** When implementing guided inventory workflows, preserve that shared entry and enforce the permissions appropriate to each selected task. Do not assume Start Inventory should jump straight into removed-equipment acceptance.

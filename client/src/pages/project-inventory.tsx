@@ -155,6 +155,7 @@ export default function ProjectInventory() {
 }
 
 function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
+  const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
   const { setHeaderContent } = usePageHeader();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
@@ -1324,7 +1325,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   return <main ref={inventoryMainRef} className={`inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7 ${["locations", "returns"].includes(inventoryTab) ? "[@media(max-height:500px)]:pb-2" : ""}`} data-testid="inventory-workspace">
-    {capabilities.fulfillment && <InventoryWorkflowLauncher projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions} />}
+    {capabilities.fulfillment && <InventoryWorkflowLauncher projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions}
+      wizardOpen={fulfillmentOpen} onWizardOpenChange={setFulfillmentOpen} />}
+    <div className={fulfillmentOpen && capabilities.fulfillment ? "hidden" : "contents"}>
     <div
       ref={editorHostRef}
       className={inlineEditorOpen ? "absolute inset-0 z-30" : "hidden"}
@@ -2222,6 +2225,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       onDirtyChange={setMovementDirty}
       onClose={() => setTransitOrder(null)} />}
     {command.isPending && <div className="fixed bottom-4 right-4 flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm shadow-lg"><Loader2 className="h-4 w-4 animate-spin" />Posting inventory update</div>}
+    </div>
   </main>;
 }
 

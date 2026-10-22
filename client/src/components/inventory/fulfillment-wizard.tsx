@@ -27,7 +27,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScannerInput } from "@/components/scanner-input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Truck } from "lucide-react";
@@ -1107,14 +1106,14 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     },
   });
 
-  return <><Dialog open={open && roleCapabilities.fulfillment && canFulfill} onOpenChange={close}>
-    <DialogContent ref={wizardRef} data-inventory-fulfillment-dialog="true" className="!fixed !left-1/2 !top-2 !translate-x-[-50%] !translate-y-0 !flex !h-auto !max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-4xl !min-w-0 flex-col gap-0 overflow-hidden p-0 sm:rounded-xl" onInteractOutside={event => { if (busy) event.preventDefault(); }}>
+  return <>{open && roleCapabilities.fulfillment && canFulfill &&
+    <div ref={wizardRef} data-inventory-fulfillment-dialog="true" data-testid="inventory-fulfillment-page" role="region" aria-label="Fulfill / Stage Work Orders" className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background">
       <div className="min-w-0 shrink-0 border-b bg-muted/35 px-4 py-3 pr-12 sm:px-6 sm:py-4">
-        <DialogHeader className="min-w-0 text-left">
+        <header className="min-w-0 space-y-1.5 text-left">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><ClipboardList className="h-4 w-4" /> Inventory workflow</div>
-          <DialogTitle data-wizard-title tabIndex={-1} className="mt-1 text-xl sm:text-2xl">Fulfill / Stage Work Orders</DialogTitle>
-          <DialogDescription>Build one saved crew batch, move only what is physically in custody, then hand it to one vehicle.</DialogDescription>
-        </DialogHeader>
+          <h1 data-wizard-title tabIndex={-1} className="mt-1 text-xl font-semibold sm:text-2xl">Fulfill / Stage Work Orders</h1>
+          <p className="text-sm text-muted-foreground">Build one saved crew batch, move only what is physically in custody, then hand it to one vehicle.</p>
+        </header>
         {!showStart && !reassignmentBatchId && !showCorrections && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
           {stepNames.map((name, index) => <div key={name} className="min-w-0">
             <div className={`h-1 rounded-full ${index <= currentStepIndex ? "bg-primary" : "bg-border"}`} />
@@ -1607,7 +1606,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           </>}
         </>)}
       </div>
-      <DialogFooter className="min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
+      <div className="flex min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
         {showHistory && <Button type="button" variant="outline" onClick={() => setShowHistory(false)}><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>}
         {showBlocked && <Button type="button" variant="outline" onClick={() => setShowBlocked(false)}><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>}
         {reassignmentBatchId && <Button type="button" variant="outline" className="min-w-0 whitespace-normal" onClick={() => {
@@ -1633,9 +1632,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           </>}
           <Button type="button" variant="outline" disabled={busy} onClick={() => close(false)}>{showStart && !showCorrections ? "Close" : "Save & leave"}</Button>
         </div>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+      </div>
+    </div>}
     <AlertDialog open={open && requestedMode !== null} onOpenChange={next => { if (!next) setRequestedMode(null); }}>
       <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
         <AlertDialogHeader>
