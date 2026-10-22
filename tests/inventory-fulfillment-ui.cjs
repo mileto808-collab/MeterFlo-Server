@@ -320,7 +320,7 @@ const assert = require("node:assert/strict");
       await expect(input).toHaveValue("F-A\nF-B\n");
       await expect(progress).toContainText("Scanned 2 / 2");
       await expect(progress).toContainText("0 left to scan");
-      await expect(progress.getByRole("status")).toContainText("Scanning complete — all required serials captured.");
+      await expect(progress.getByRole("status")).toContainText("Scanning complete — serials verified against current stock.");
       await input.pressSequentially("F-B");
       await input.press("Tab");
       await expect(input).toHaveValue("F-A\nF-B\n");
@@ -376,6 +376,8 @@ const assert = require("node:assert/strict");
     // Partial pulls keep their own form. Navigation must not post or silently discard another pull.
     await dialog.getByTestId("fulfillment-move-quantity-stage-fulfill-meter").fill("1");
     await dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter").fill("F-A");
+    await dialog.getByTestId("fulfillment-custody-serials-stage-fulfill-meter").press("Enter");
+    await expect(dialog.getByRole("button", { name: "Record physical pull", exact: true })).toBeEnabled();
     await dialog.getByRole("button", { name: "Record physical pull", exact: true }).click();
     await expect.poll(async () => (await batch()).lines.reduce((sum, line) => sum + line.stagedQuantity, 0)).toBe(1);
     const partialHandoff = dialog.getByRole("button", { name: "Hand off already-staged stock", exact: true });

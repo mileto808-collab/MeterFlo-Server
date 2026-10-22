@@ -32,6 +32,7 @@ import { warehouseAccessible } from "../shared/inventory-location-types";
 import { removalConfig } from "../shared/inventory-removal-policy";
 import { fulfillmentOrders } from "./inventoryFulfillment";
 import { fulfillmentResumeStatus } from "../shared/inventory-fulfillment";
+import { checkFulfillmentSerials } from "../shared/inventory-fulfillment-scans";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 import { readRelationalInventory } from "./inventoryRelational";
 import { registerInventoryPickupRoutes } from "./inventoryPickups";
@@ -100,6 +101,36 @@ export function registerInventoryRoutes(app: Express) {
     if (!inventoryCapabilities(permission => context.admin || context.permissions.includes(permission)).fulfillment)
       throw Object.assign(new InventoryError("Fulfillment requires inventory view, work-order view, assign, receive and transfer permissions."), { status: 403 });
   };
+  app.post(`${base}/fulfillment/:id/check-serials`, handler(async (req, res) => {
+    const c = res.locals.inventory;
+    requireFulfillment(c);
+    if (!c.project.inventoryEnabled) throw new InventoryError("Project inventory is disabled.");
+    const id = z.string().uuid().parse(req.params.id);
+    const input = z.object({
+      phase: z.enum(["stage", "vehicle"]),
+      lines: z.array(z.object({
+        itemId: z.string().trim().min(1).max(100),
+        serials: z.array(z.string().trim().min(1).max(100)).max(10000),
+      }).strict()).max(500),
+    }).strict().parse(req.body);
+    const connection = await pool.connect();
+    try {
+      await connection.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const state = normalizeInventoryLocations(await readRelationalInventory(connection, c.project.id, { readOnly: true }));
+      const batch = state.fulfillmentBatches?.find(value => value.id === id);
+      if (!batch) throw Object.assign(new InventoryError("Batch not found in this project."), { status: 404 });
+      const ids = [...new Set(batch.workOrders.map(work => work.workOrderId))];
+      const orders = await fulfillmentOrders(connection, c.project.id, state, c.user, ids);
+      if (orders.length !== ids.length)
+        throw Object.assign(new InventoryError("Work-order access changed. Ask an authorized warehouse manager to review this batch."), { status: 403 });
+      const resume = fulfillmentResumeStatus(state, batch, orders, c.user.id, c.admin);
+      if (!resume.resumable) throw new InventoryError(resume.reason ?? "This batch must be reviewed before scanning.");
+      const problems = checkFulfillmentSerials(state, batch, input.phase, input.lines);
+      await connection.query("COMMIT");
+      return { problems, revision: state.revision };
+    } catch (error) { await connection.query("ROLLBACK"); throw error; }
+    finally { connection.release(); }
+  }));
   app.get(`${base}/fulfillment/:id/ticket`, handler(async (req, res) => {
     const c = res.locals.inventory;
     requireFulfillment(c);

@@ -9,6 +9,12 @@ Commit serial scans on Enter, Tab, or paste, not by rewriting the scan field whe
 
 **How to apply:** Reject repeated committed serials immediately, keep the scan field ready for the next scan, and show the warning next to that field. Preserve final submission and server validation, and verify scanning alongside checkbox selection and visual acceptance rather than testing the scan box alone.
 
+Fulfillment scan completion must mean verified stock eligibility, not just a matching count.
+
+**Why:** The user interpreted a green scan box as confirmation that the serials were legitimate, but discovered unavailable or reserved stock only when posting the physical pull.
+
+**How to apply:** Check committed scans against current item/location stock and reservations, and check batch custody for handoff. Show pending and failed verification without green success, retain invalid captures for correction, and keep the atomic posting check because stock can change after verification.
+
 Input-processing guards must agree with whether the scan field is visibly enabled.
 
 **Why:** A completed stock post can unlock its field before background query refresh finishes. A separate busy guard silently dropped scans during that interval despite the field accepting focus.

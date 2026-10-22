@@ -9,11 +9,15 @@ function targetCount(value: string | number | null | undefined) {
   return Number.isSafeInteger(count) && count >= 0 ? count : null;
 }
 
-export function SerialScanProgress({ scanned, expected }: { scanned: number; expected: string | number | null | undefined }) {
+export function SerialScanProgress({ scanned, expected, verification }: {
+  scanned: number; expected: string | number | null | undefined;
+  verification?: { status: "checking" | "invalid" | "verified" | "error"; message: string };
+}) {
   const target = targetCount(expected);
-  const complete = target !== null && target > 0 && scanned === target;
+  const complete = target !== null && target > 0 && scanned === target && (!verification || verification.status === "verified");
   const extra = target !== null && scanned > target;
-  return <div className={`rounded-md border p-2 text-xs ${extra ? "border-destructive text-destructive" : complete ? "border-green-600/50 bg-green-500/10" : "bg-muted/30"}`}
+  const invalid = verification?.status === "invalid" || verification?.status === "error";
+  return <div className={`rounded-md border p-2 text-xs ${extra || invalid ? "border-destructive text-destructive" : complete ? "border-green-600/50 bg-green-500/10" : "bg-muted/30"}`}
     data-testid="serial-scan-progress" role="status" aria-live="polite" aria-atomic="true">
     <div className="flex flex-wrap justify-between gap-2 font-medium tabular-nums">
       <span>Scanned {scanned} / {target ?? "—"}</span>
@@ -22,8 +26,9 @@ export function SerialScanProgress({ scanned, expected }: { scanned: number; exp
     {target !== null && target > 0 && <div role="progressbar" aria-label="Serial scans" aria-valuemin={0} aria-valuemax={target} aria-valuenow={Math.min(target, scanned)} className="mt-2 h-1.5 overflow-hidden rounded bg-muted">
       <div className={`h-full ${complete ? "bg-green-600" : "bg-primary"}`} style={{ width: `${Math.min(100, scanned / target * 100)}%` }} />
     </div>}
-    <p className="mt-1">{extra ? "Quantity was reduced. Keep these captures until you explicitly remove the extra serials or correct the quantity."
-      : complete ? "Scanning complete — all required serials captured."
+    <p className="mt-1">{verification && verification.status !== "verified" ? verification.message
+      : extra ? "Quantity was reduced. Keep these captures until you explicitly remove the extra serials or correct the quantity."
+      : complete ? verification ? "Scanning complete — serials verified against current stock." : "Scanning complete — all required serials captured."
         : target === null ? "Enter a whole quantity to set the expected scan count."
           : target === 0 ? "No serials required for this quantity." : "Scan one unique serial per unit."}</p>
   </div>;

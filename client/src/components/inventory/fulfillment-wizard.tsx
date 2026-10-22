@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { parsePickTicketQr } from "@shared/inventory-pick-ticket";
 import { fulfillmentTicketNumber } from "@shared/inventory-pickups";
+import type { FulfillmentScanProblem } from "@shared/inventory-fulfillment-scans";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InventoryItem, InventoryState, Warehouse } from "@shared/inventory";
@@ -607,6 +608,30 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       .filter(row => !!row.item && row.item.kind !== "labor")
       .sort((a, b) => (a.item?.name ?? a.itemId).localeCompare(b.item?.name ?? b.itemId));
   }, [activeBatch, itemMap]);
+  // Only committed tokens trigger a read. Keystrokes in an unfinished scan do not.
+  const serialCheckLines = batchDemand.filter(row => row.item?.tracking === "serialized").map(row => {
+    const key = `${draft.step}:${row.itemId}`;
+    const text = draft.serialText[key] ?? "";
+    return { itemId: row.itemId, serials: splitSerials(editingSerialKey === key ? text.replace(/[^\r\n,;\t]*$/, "") : text) };
+  }).filter(line => line.serials.length > 0);
+  const serialCheckInput = JSON.stringify({ phase: draft.step, lines: serialCheckLines });
+  const serialCheck = useQuery<{ problems: FulfillmentScanProblem[]; revision: number }>({
+    queryKey: ["/api/projects", projectId, "inventory", "fulfillment-serial-check", activeBatch?.id, serialCheckInput, state?.revision],
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/projects/${projectId}/inventory/fulfillment/${activeBatch!.id}/check-serials`, {
+        method: "POST", credentials: "include", signal,
+        headers: { "Content-Type": "application/json" }, body: serialCheckInput,
+      });
+      if (!response.ok) throw new Error("Could not verify current stock. Check your connection and batch access, then retry.");
+      return response.json();
+    },
+    enabled: open && !showStart && !!activeBatch && activeBatch.status === "active" &&
+      (draft.step === "stage" || draft.step === "vehicle") && serialCheckLines.length > 0 && canPost,
+    staleTime: 0, refetchInterval: 15000, retry: false,
+  });
+  const serialCheckBlocked = (!!editingSerialKey && editingSerialKey.startsWith(`${draft.step}:`) &&
+    !!draft.serialText[editingSerialKey]?.trim()) || (serialCheckLines.length > 0 &&
+    (serialCheck.isFetching || !serialCheck.isSuccess || serialCheck.data.problems.length > 0));
   const sourceAvailability = useMemo(() => batchDemand.map(row => {
     const batchWorkOrderIds = new Set(activeBatch?.mode === "scheduled"
       ? activeBatch.workOrders.map(workOrder => workOrder.workOrderId) : []);
@@ -819,6 +844,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     void sendPending(pending);
   };
   const submitMove = async (phase: "stage" | "vehicle") => {
+    if (serialCheckBlocked) {
+      setError("Verify the scanned serials and correct any unavailable stock before recording this move. Your inputs have been kept.");
+      return;
+    }
     if (movementBlocked) { setError(activeResume?.reason ?? "This batch needs review before another stock movement."); return; }
     if (!activeBatch || !canPost || busy || pendingLock) return;
     if (!draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed) return;
@@ -1433,7 +1462,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                   const scanTarget = Number.isSafeInteger(enteredQuantity) && enteredQuantity > 0 ? enteredQuantity : 0;
                   const scanText = draft.serialText[key] ?? "";
                   const scannedCount = new Set(splitSerials(editingSerialKey === key ? scanText.replace(/[^\r\n,;\t]*$/, "") : scanText)).size;
-                  const scanComplete = scanTarget > 0 && scannedCount === scanTarget && capturedSerials.size === scanTarget;
+                  const serialProblems = serialCheck.data?.problems.filter(problem => problem.itemId === row.itemId) ?? [];
+                  const verification = scannedCount > 0 ? serialCheck.isFetching || serialCheck.isPending
+                    ? { status: "checking" as const, message: "Checking serials against current stock…" }
+                    : serialCheck.isError
+                      ? { status: "error" as const, message: "Stock verification failed. Your scans are kept; retry before recording." }
+                      : serialProblems.length
+                        ? { status: "invalid" as const, message: `${serialProblems.length} serial(s) need correction. These scans are not verified.` }
+                        : { status: "verified" as const, message: "Serials verified against current stock." }
+                    : undefined;
+                  const scanComplete = scanTarget > 0 && scannedCount === scanTarget && capturedSerials.size === scanTarget && verification?.status === "verified";
                   const tooManyScans = capturedSerials.size > scanTarget;
                   const matchingSerials = availableSerials.filter(serial => serial.toLowerCase().includes((serialSearch[row.itemId] ?? "").trim().toLowerCase()));
                   const serialSelectionLocked = busy || pendingLock || createLock || !canPost || !batchCanReleaseRemainder;
@@ -1445,8 +1483,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                       {row.item?.tracking === "serialized" && <div className="space-y-1">
                         <Label htmlFor={`serial-${key}`}>Custody serials</Label>
                         <div data-testid={`fulfillment-scan-progress-${draft.step}-${row.itemId}`}>
-                          <SerialScanProgress scanned={tooManyScans ? capturedSerials.size : scannedCount} expected={scanTarget || null} />
+                          <SerialScanProgress scanned={tooManyScans ? capturedSerials.size : scannedCount} expected={scanTarget || null} verification={verification} />
                         </div>
+                        {serialProblems.length > 0 && !serialCheck.isFetching && <div role="alert" className="space-y-1 text-xs text-destructive">
+                          {serialProblems.slice(0, 3).map(problem => <p key={problem.serial}>{problem.serial}: {problem.reason}</p>)}
+                          {serialProblems.length > 3 && <p>And {serialProblems.length - 3} more. Correct or remove the unavailable serials.</p>}
+                        </div>}
+                        {scannedCount > 0 && serialCheck.isError && <Button type="button" size="sm" variant="outline" onClick={() => void serialCheck.refetch()}>Retry stock verification</Button>}
                         <p id={`scan-notice-${key}`} role="status" aria-live="polite" className="text-sm text-destructive">{scanNotices[key] ?? ""}</p>
                         <Textarea id={`serial-${key}`} data-wizard-needs-input={scanTarget > 0 && !scanComplete ? "true" : undefined} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}
                           onChange={event => scanSerials(key, event.target.value)}
@@ -1544,7 +1587,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           {draft.step === "stage" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>
             <Truck className="mr-2 h-4 w-4" />Continue to vehicle handoff
           </Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && !(draft.step === "stage" && stagingComplete) && <Button data-wizard-record type="button" disabled={movementBlocked || !canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
+          {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && !(draft.step === "stage" && stagingComplete) && <Button data-wizard-record type="button" disabled={serialCheckBlocked || movementBlocked || !canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : draft.step === "stage" ? <ArrowRight className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}
           </Button>}
