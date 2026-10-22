@@ -32,7 +32,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Loader2, MapPin, Printer, RotateCcw, ScanLine, Trash2, Truck } from "lucide-react";
 import { inventoryCapabilities } from "@shared/inventory-capabilities";
-import { emptyFulfillmentDraftCapture, fulfillmentDraftCaptureSchema, meaningfulFulfillmentDraft, type SavedFulfillmentDraft } from "@shared/inventory-fulfillment-drafts";
+import { fulfillmentDraftCaptureSchema, meaningfulFulfillmentDraft, type SavedFulfillmentDraft } from "@shared/inventory-fulfillment-drafts";
 
 type FulfillmentOrder = {
   workOrderId: number; label: string; status: string; group: string; installerId: string | null; installer: string;
@@ -89,6 +89,7 @@ type LocalSetupQueueEntry = { id: string; revision: number; capture: import("@sh
 type Draft = {
   mode: "crew" | "scheduled" | "resume";
   step: "orders" | "review" | "stage" | "vehicle";
+  uiSubstep: "orders" | "setup" | "review" | "pick" | "verify" | "capture" | "confirm" | "movementReview";
   name: string;
   selectedIds: number[];
   search: string;
@@ -115,7 +116,7 @@ type Draft = {
   sharedDraftRevision?: number;
 };
 const emptyDraft = (): Draft => ({
-  mode: "crew", step: "orders", name: "", selectedIds: [], search: "", route: "", group: "", zone: "", installer: "", date: "",
+  mode: "crew", step: "orders", uiSubstep: "orders", name: "", selectedIds: [], search: "", route: "", group: "", zone: "", installer: "", date: "",
   sourceId: "", stagingId: "", vehicleId: "", batchId: "", quantities: {}, serialText: {}, reason: "",
   physicallyConfirmed: false, closeReason: "", createAttempt: null, pending: null,
   reassignmentBatchId: "", reassignmentVehicleId: "", reassignmentReason: "",
@@ -132,6 +133,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [storageReady, setStorageReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [savingBatchSetup, setSavingBatchSetup] = useState(false);
+  const [batchSetupBaseline, setBatchSetupBaseline] = useState<{
+    batchId: string; revision: number; name: string; sourceId: string; stagingId: string; vehicleId: string;
+  } | null>(null);
   const [error, setError] = useState("");
   const [selectionNotice, setSelectionNotice] = useState("");
   const [confirmHandoff, setConfirmHandoff] = useState(false);
@@ -308,6 +313,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       setStorageReady(false);
       setCheckedOnEntry(false);
       setShowTicketScan(false);
+      setBatchSetupBaseline(null);
       return;
     }
     if (!storageKey) return;
@@ -333,6 +339,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       const saved = window.localStorage.getItem(storageKey);
       const parsed = saved ? JSON.parse(saved) as Partial<Draft> : null;
       let hydrated: Draft = { ...emptyDraft(), ...parsed, pending: parsed?.pending ?? null };
+      if (!parsed?.uiSubstep) hydrated.uiSubstep = hydrated.step === "stage" ? "pick" : hydrated.step === "vehicle" ? "verify" : hydrated.step === "review" ? "review" : "orders";
+      if (hydrated.step === "review") hydrated.step = "orders";
       const queueRaw = window.localStorage.getItem(`${storageKey}:shared-outbox`);
       const queue = queueRaw ? JSON.parse(queueRaw) as LocalSetupQueueEntry[] : [];
       const safeQueue = Array.isArray(queue) ? queue : [];
@@ -402,7 +410,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   useEffect(() => {
     if (draft.pending && receipts.some(receipt => receipt.id === draft.pending?.operationId)) {
       const completedPending = draft.pending;
-      setDraft(current => ({ ...current, pending: null, quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "" }));
+      setDraft(current => ({ ...current, pending: null, quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "",
+        uiSubstep: completedPending.action === "fulfillmentMove" ? current.step === "stage" ? "pick" : "verify" : current.uiSubstep }));
       void queryClient.invalidateQueries({ queryKey: dataKey });
       void queryClient.invalidateQueries({ queryKey: inventoryKey });
     if (completedPending.action === "fulfillmentReassign") finishReassignment(completedPending.data);
@@ -443,6 +452,41 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     }
     setDraft(next);
   };
+  const updateDraftRef = useRef(update);
+  updateDraftRef.current = update;
+  useEffect(() => {
+    if (!open || !activeBatch || currentDraftRef.current.batchId !== activeBatch.id) return;
+    const fresh = {
+      batchId: activeBatch.id,
+      revision: activeBatch.revision,
+      name: activeBatch.name,
+      sourceId: activeBatch.sourceId,
+      stagingId: activeBatch.stagingId,
+      vehicleId: activeBatch.vehicleId,
+    };
+    const current = currentDraftRef.current;
+    const missingSetup: Partial<Draft> = {};
+    const previous = batchSetupBaseline?.batchId === activeBatch.id ? batchSetupBaseline : null;
+    if (!previous) {
+      if (!current.name) missingSetup.name = fresh.name;
+      if (!current.sourceId) missingSetup.sourceId = fresh.sourceId;
+      if (!current.stagingId) missingSetup.stagingId = fresh.stagingId;
+      if (!current.vehicleId) missingSetup.vehicleId = fresh.vehicleId;
+      setBatchSetupBaseline(fresh);
+      if (Object.keys(missingSetup).length) updateDraftRef.current(missingSetup);
+      return;
+    }
+    if (fresh.revision < previous.revision) return;
+    const serverChanged = previous.name !== fresh.name || previous.sourceId !== fresh.sourceId ||
+      previous.stagingId !== fresh.stagingId || previous.vehicleId !== fresh.vehicleId || previous.revision !== fresh.revision;
+    if (!serverChanged) return;
+    if (current.name === previous.name) missingSetup.name = fresh.name;
+    if (current.sourceId === previous.sourceId) missingSetup.sourceId = fresh.sourceId;
+    if (current.stagingId === previous.stagingId) missingSetup.stagingId = fresh.stagingId;
+    if (current.vehicleId === previous.vehicleId) missingSetup.vehicleId = fresh.vehicleId;
+    setBatchSetupBaseline(fresh);
+    if (Object.keys(missingSetup).length) updateDraftRef.current(missingSetup);
+  }, [open, activeBatch?.id, activeBatch?.revision, activeBatch?.name, activeBatch?.sourceId, activeBatch?.stagingId, activeBatch?.vehicleId, draft.batchId, batchSetupBaseline]);
   const changeTicketInput = (value: string) => {
     ticketSequence.current += 1;
     setTicketBusy(false);
@@ -557,7 +601,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       if (hasMeaningfulFulfillmentWork(draft) && draft.batchId === parsed.batchId) {
         ticketIdentityFocus.current = ticket.batch.id;
         setTicketArrival(value => value + 1);
-        setDraft(current => ({ ...current, mode: "resume", step: ticket.resume.nextStep }));
+        setDraft(current => ({ ...current, mode: "resume", step: ticket.resume.nextStep, uiSubstep: ticket.resume.nextStep === "stage" ? "pick" : "verify" }));
         setShowStart(false);
         setShowHistory(false);
         setError("");
@@ -581,7 +625,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     setShowTicketScan(false);
     ticketIdentityFocus.current = ticket.batch.id;
     setTicketArrival(value => value + 1);
-    setDraft({ ...emptyDraft(), mode: "resume", step: ticket.resume.nextStep, batchId: ticket.batch.id, name: ticket.batch.name });
+    setDraft({ ...emptyDraft(), mode: "resume", step: ticket.resume.nextStep, uiSubstep: ticket.resume.nextStep === "stage" ? "pick" : "verify", batchId: ticket.batch.id, name: ticket.batch.name,
+      sourceId: ticket.batch.sourceId, stagingId: ticket.batch.stagingId, vehicleId: ticket.batch.vehicleId });
     setReassignmentBatchId("");
     setShowCorrections(false);
     setShowBlocked(false);
@@ -682,7 +727,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     (draft.selectedIds.length > 0 || !!draft.name.trim() || !!draft.sourceId || !!draft.stagingId || !!draft.vehicleId);
   const setupCapture = (source: Draft = draft) => fulfillmentDraftCaptureSchema.safeParse({
     mode: source.mode === "scheduled" ? "scheduled" : "crew",
-    step: source.step === "review" ? "review" : "orders",
+    step: source.uiSubstep === "setup" ? "setup" : source.uiSubstep === "review" ? "review" : "orders",
     name: source.name,
     selectedIds: source.selectedIds,
     search: source.search,
@@ -710,7 +755,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     const currentCapture = setupCapture(current);
     if (!current.batchId && currentCapture.success && meaningfulFulfillmentDraft(currentCapture.data) &&
       !(await persistSetupDraft(false))) return;
-    const next = { ...emptyDraft(), mode };
+    const next = { ...emptyDraft(), mode, uiSubstep: "orders" as const };
     currentDraftRef.current = next;
     setDraft(next);
     setShowResumeList(false);
@@ -909,9 +954,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       const result = await response.json() as { draft: SavedFulfillmentDraft };
       const current = currentDraftRef.current;
       if (current.sharedDraftId === saved.id) {
-        const cleared = {
+        const cleared: Draft = {
           ...emptyDraft(),
-          ...emptyFulfillmentDraftCapture(result.draft.mode),
+          mode: result.draft.mode,
           sharedDraftId: result.draft.id,
           sharedDraftRevision: result.draft.revision,
         };
@@ -968,7 +1013,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     const resumed = {
       ...emptyDraft(),
       mode: capture.mode,
-      step: capture.step,
+      step: "orders" as const,
+      uiSubstep: capture.step,
       name: capture.name,
       selectedIds: capture.selectedIds,
       search: capture.search,
@@ -996,7 +1042,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     if (draft.pending || draft.createAttempt || busy || savingDraft) return;
     const capture = entry.capture;
     const resumed: Draft = {
-      ...emptyDraft(), mode: capture.mode, step: capture.step, name: capture.name,
+      ...emptyDraft(), mode: capture.mode, step: "orders", uiSubstep: capture.step, name: capture.name,
       selectedIds: capture.selectedIds, search: capture.search, route: capture.route, group: capture.group,
       zone: capture.zone, installer: capture.installer, date: capture.date, sourceId: capture.sourceId,
       stagingId: capture.stagingId, vehicleId: capture.vehicleId, sharedDraftId: entry.id, sharedDraftRevision: entry.revision,
@@ -1132,7 +1178,28 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const hasStagedStock = batchCanReleaseRemainder && batchDemand.some(row => vehicleRemaining(row) > 0);
   const hasUnrecordedMove = Object.values(draft.quantities).some(value => value.trim() !== "" && value.trim() !== "0") ||
     Object.values(draft.serialText).some(value => value.trim() !== "") || !!draft.reason.trim() || draft.physicallyConfirmed || !!draft.closeReason.trim();
-  const showMoveForm = draft.step !== "stage" || !stagingComplete || hasUnrecordedMove;
+  const batchSetupInitialized = !!activeBatch && batchSetupBaseline?.batchId === activeBatch.id;
+  const batchSetupDirty = batchSetupInitialized && !!activeBatch && !!batchSetupBaseline && (
+    draft.name !== batchSetupBaseline.name || draft.sourceId !== batchSetupBaseline.sourceId ||
+    draft.stagingId !== batchSetupBaseline.stagingId || draft.vehicleId !== batchSetupBaseline.vehicleId
+  );
+  const batchSetupServerChanged = batchSetupInitialized && !!activeBatch && !!batchSetupBaseline && (
+    activeBatch.revision < batchSetupBaseline.revision || activeBatch.name !== batchSetupBaseline.name || activeBatch.sourceId !== batchSetupBaseline.sourceId ||
+    activeBatch.stagingId !== batchSetupBaseline.stagingId || activeBatch.vehicleId !== batchSetupBaseline.vehicleId
+  );
+  const batchSetupBlocked = !!activeBatch && (!batchSetupInitialized || batchSetupServerChanged || batchSetupDirty);
+  const showMoveForm = draft.uiSubstep === "capture" && (draft.step !== "stage" || !stagingComplete || hasUnrecordedMove);
+  const hasProposedMovement = batchDemand.some(row => Number(draft.quantities[quantityKey(draft.step, row.itemId)] ?? 0) > 0);
+  const canReviewMovement = hasProposedMovement && !batchSetupBlocked && !serialCheckBlocked && batchDemand.every(row => {
+    const quantity = Number(draft.quantities[quantityKey(draft.step, row.itemId)] ?? 0);
+    if (!quantity) return true;
+    const remaining = draft.step === "stage" ? stageRemaining(row) : vehicleRemaining(row);
+    const source = sourceAvailability.find(balance => balance.itemId === row.itemId);
+    const limit = draft.step === "stage" ? Math.min(remaining, source?.available ?? 0) : remaining;
+    const serials = splitSerials(draft.serialText[quantityKey(draft.step, row.itemId)] ?? "");
+    return Number.isInteger(quantity) && quantity >= 1 && quantity <= limit &&
+      (row.item?.tracking !== "serialized" || serials.length === quantity && unique(serials));
+  });
   const selectionConstraintError = draft.mode === "crew"
     ? (selectedOrders.some(order => !order.group) || new Set(selectedOrders.map(order => order.group)).size > 1
       ? "A crew batch can contain work from one non-empty group only." : "")
@@ -1197,7 +1264,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     fulfillment.data?.batchDeletionStatus?.[batch.id]?.allowed === true;
   const batchDeleteDisabled = (batch: FulfillmentBatch) =>
     !canPost || fulfillment.isFetching || busy || savingDraft || !!deletingBatchId ||
-    pendingLock || createLock || hasUnrecordedMove || !batchDeletionAllowed(batch);
+    pendingLock || createLock || hasUnrecordedMove || (draft.batchId === batch.id && batchSetupBlocked) || !batchDeletionAllowed(batch);
   const batchDeletionBlockReason = (batch: FulfillmentBatch) => {
     const status = fulfillment.data?.batchDeletionStatus?.[batch.id];
     return status && !status.allowed
@@ -1208,6 +1275,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     selectedOrders.every(order => order.eligible && !order.missing.length && order.lines.length > 0) &&
     !selectionConstraintError && !!draft.sourceId && !!draft.stagingId && !!draft.vehicleId &&
     new Set([draft.sourceId, draft.stagingId, draft.vehicleId]).size === 3 && !pendingLock;
+  const canContinueOrders = canPost && selectedOrders.length > 0 && selectedOrders.length === draft.selectedIds.length &&
+    selectedOrders.every(order => order.eligible && !order.missing.length && order.lines.length > 0) &&
+    !selectionConstraintError && !pendingLock && !createLock;
 
   const createBatch = async () => {
     const savedAttempt = draft.createAttempt;
@@ -1243,7 +1313,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             await queryClient.invalidateQueries({ queryKey: dataKey });
             await queryClient.invalidateQueries({ queryKey: inventoryKey });
             await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/inventory/fulfillment-drafts`] });
-            update({ batchId: attempt.id, step: "stage", createAttempt: null, sharedDraftId: undefined, sharedDraftRevision: undefined });
+            update({ batchId: attempt.id, step: "stage", uiSubstep: "pick", createAttempt: null, sharedDraftId: undefined, sharedDraftRevision: undefined });
             return;
           }
         } catch {
@@ -1256,7 +1326,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       });
       await Promise.all([queryClient.invalidateQueries({ queryKey: dataKey }), queryClient.invalidateQueries({ queryKey: inventoryKey })]);
       await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/inventory/fulfillment-drafts`] });
-      update({ batchId: attempt.id, step: "stage", createAttempt: null, sharedDraftId: undefined, sharedDraftRevision: undefined });
+      update({ batchId: attempt.id, step: "stage", uiSubstep: "pick", createAttempt: null, sharedDraftId: undefined, sharedDraftRevision: undefined });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Could not create the saved batch. Your selections are retained.";
       const status = Number(message.match(/^\s*(\d{3}):/)?.[1] ?? 0);
@@ -1285,7 +1355,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     setError("");
     try {
       if (await receiptFound(pending.operationId)) {
-        update({ pending: null, quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "" });
+        const isMovement = pending.action === "fulfillmentMove";
+        update({ pending: null, ...(isMovement ? { quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "",
+          uiSubstep: currentDraftRef.current.step === "stage" ? "pick" as const : "verify" as const } : {}) });
         await Promise.all([queryClient.invalidateQueries({ queryKey: dataKey }), queryClient.invalidateQueries({ queryKey: inventoryKey })]);
         if (pending.action === "fulfillmentReassign") finishReassignment(pending.data);
         return;
@@ -1293,7 +1365,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       await apiRequest("POST", `/api/projects/${projectId}/inventory/commands`, {
         operationId: pending.operationId, action: pending.action, data: pending.data,
       });
-      update({ pending: null, quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "" });
+      const isMovement = pending.action === "fulfillmentMove";
+      update({ pending: null, ...(isMovement ? { quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "",
+        uiSubstep: currentDraftRef.current.step === "stage" ? "pick" as const : "verify" as const } : {}) });
       await Promise.all([queryClient.invalidateQueries({ queryKey: dataKey }), queryClient.invalidateQueries({ queryKey: inventoryKey })]);
       if (pending.action === "fulfillmentReassign") finishReassignment(pending.data);
     } catch (cause) {
@@ -1316,7 +1390,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     setReassignmentBatchId("");
     setShowStart(false);
     setShowBlocked(false);
-    update({ batchId: id, mode: "resume", step: nextStep, reassignmentBatchId: "", reassignmentVehicleId: "", reassignmentReason: "" });
+    update({ batchId: id, mode: "resume", step: nextStep, uiSubstep: nextStep === "stage" ? "pick" : "verify", reassignmentBatchId: "", reassignmentVehicleId: "", reassignmentReason: "" });
   };
   const submitReassignment = (review: ReassignmentReview, vehicleId: string, reason: string) => {
     if (!canPost || busy || pendingLock || hasUnrecordedMove || !storageKey || !review.canApply) return;
@@ -1336,12 +1410,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     void sendPending(pending);
   };
   const submitMove = async (phase: "stage" | "vehicle") => {
+    if (batchSetupBlocked) {
+      setError("Batch setup is not synchronized with the saved batch. Save the setup change or cancel edits before recording a physical movement.");
+      return;
+    }
     if (serialCheckBlocked) {
       setError("Verify the scanned serials and correct any unavailable stock before recording this move. Your inputs have been kept.");
       return;
     }
     if (movementBlocked) { setError(activeResume?.reason ?? "This batch needs review before another stock movement."); return; }
-    if (!activeBatch || !canPost || busy || pendingLock) return;
+    if (!activeBatch || !canPost || busy || pendingLock || draft.uiSubstep !== "movementReview") return;
     if (!draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed) return;
     const rows = batchDemand.map(row => {
       const remaining = phase === "stage" ? stageRemaining(row) : vehicleRemaining(row);
@@ -1388,7 +1466,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     await sendPending(pending);
   };
   const cancelRemainder = async () => {
-    if (!activeBatch || !canPost || !batchCanReleaseRemainder || draft.closeReason.trim().length < 10 || busy || pendingLock) return;
+    if (!activeBatch || !canPost || batchSetupBlocked || !batchCanReleaseRemainder || draft.closeReason.trim().length < 10 || busy || pendingLock) return;
     if (!window.confirm("Release this batch’s unfinished remainder? Staged-but-undelivered units will remain physically at Staging and their holds will be released. This is not a physical return. Delivered units stay with the vehicle.")) return;
     const pending: PendingMove = { operationId: crypto.randomUUID(), action: "fulfillmentClose",
       data: { id: activeBatch.id, revision: activeBatch.revision, reason: draft.closeReason.trim() } };
@@ -1423,7 +1501,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     setLineValue(key, value, "quantities");
   };
   const scanSerials = (key: string, text: string, commitLast = false) => {
-    if (pendingLock || createLock || !canPost || !state || !activeBatch ||
+    if (pendingLock || createLock || batchSetupBlocked || !canPost || !state || !activeBatch ||
       (draft.step !== "stage" && draft.step !== "vehicle")) return;
     const quantity = Number(draft.quantities[key] ?? 0);
     const target = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 0;
@@ -1458,7 +1536,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const availableStagedSerials = (row: typeof batchDemand[number]) =>
     [...new Set(row.serials.filter(serial => !row.deliveredSerials.includes(serial)))];
   const acceptStagedSerials = (itemId: string, selection?: { serial: string; checked: boolean }) => {
-    if (draft.step !== "vehicle" || !batchCanReleaseRemainder || !canPost || busy || pendingLock || createLock) return;
+    if (draft.step !== "vehicle" || !batchCanReleaseRemainder || !canPost || batchSetupBlocked || busy || pendingLock || createLock) return;
     const row = batchDemand.find(row => row.itemId === itemId && row.item?.tracking === "serialized");
     if (!row) return;
     const available = availableStagedSerials(row);
@@ -1486,11 +1564,17 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     });
   };
   const startResume = (batch: FulfillmentBatch) => {
+    if (batchSetupDirty) {
+      setError("Resolve the unsaved setup change by saving it or cancelling edits before switching batches.");
+      return;
+    }
     const step = fulfillment.data?.resumeStatus?.[batch.id]?.nextStep ??
       (batch.lines.some(line => line.quantity > line.stagedQuantity) ? "stage" : "vehicle");
-    if (currentDraftRef.current.batchId === batch.id) update({ batchId: batch.id, mode: "resume", step });
+    if (currentDraftRef.current.batchId === batch.id) update({ batchId: batch.id, mode: "resume", step, uiSubstep: step === "stage" ? "pick" : "verify",
+      sourceId: batch.sourceId, stagingId: batch.stagingId, vehicleId: batch.vehicleId, name: batch.name });
     else {
-      const next: Draft = { ...emptyDraft(), batchId: batch.id, mode: "resume", step, name: batch.name };
+      const next: Draft = { ...emptyDraft(), batchId: batch.id, mode: "resume", step, uiSubstep: step === "stage" ? "pick" : "verify", name: batch.name,
+        sourceId: batch.sourceId, stagingId: batch.stagingId, vehicleId: batch.vehicleId };
       currentDraftRef.current = next;
       setDraft(next);
     }
@@ -1535,8 +1619,64 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   };
   const printBatchReceipt = (id: string) => window.open(`/api/projects/${projectId}/inventory/print/fulfillment/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
   const printPickTicket = (id: string) => window.open(`/api/projects/${projectId}/inventory/fulfillment/${encodeURIComponent(id)}/pick-ticket`, "_blank", "noopener,noreferrer");
+  const batchHasPostedMovement = batchDemand.some(row => row.staged > 0 || row.delivered > 0) ||
+    (!!activeBatch && receipts.some(receipt => receipt.reference === activeBatch.id &&
+      ["fulfillmentMove", "fulfillmentCorrect", "fulfillmentInvestigate"].includes(receipt.action)));
+  const cancelBatchSetupEdits = () => {
+    if (!activeBatch) return;
+    update({
+      name: activeBatch.name,
+      sourceId: activeBatch.sourceId,
+      stagingId: activeBatch.stagingId,
+      vehicleId: activeBatch.vehicleId,
+    });
+  };
+  const saveBatchSetup = async () => {
+    if (!activeBatch || !batchSetupInitialized || !batchSetupDirty || !canPost || busy || savingBatchSetup || pendingLock || batchHasPostedMovement ||
+      !draft.name.trim() || !draft.sourceId || !draft.stagingId || !draft.vehicleId ||
+      new Set([draft.sourceId, draft.stagingId, draft.vehicleId]).size !== 3) return;
+    setSavingBatchSetup(true);
+    setError("");
+    try {
+      const response = await apiRequest("PATCH", `/api/projects/${projectId}/inventory/fulfillment/${encodeURIComponent(activeBatch.id)}/setup`, {
+        revision: activeBatch.revision,
+        sourceId: draft.sourceId,
+        stagingId: draft.stagingId,
+        vehicleId: draft.vehicleId,
+        name: draft.name.trim(),
+      });
+      const result = await response.json() as { batch: FulfillmentBatch };
+      setBatchSetupBaseline({
+        batchId: result.batch.id,
+        revision: result.batch.revision,
+        name: result.batch.name,
+        sourceId: result.batch.sourceId,
+        stagingId: result.batch.stagingId,
+        vehicleId: result.batch.vehicleId,
+      });
+      update({
+        name: result.batch.name,
+        sourceId: result.batch.sourceId,
+        stagingId: result.batch.stagingId,
+        vehicleId: result.batch.vehicleId,
+      });
+      await Promise.all([queryClient.invalidateQueries({ queryKey: dataKey }), queryClient.invalidateQueries({ queryKey: inventoryKey })]);
+      await Promise.all([inventory.refetch(), fulfillment.refetch()]);
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "inventory", "fulfillment-serial-check", activeBatch.id] });
+      if (serialCheckLines.length) void serialCheck.refetch();
+      setScanNotices({});
+      setError("");
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Batch setup could not be updated.";
+      setError(`${message} Checking the latest batch revision; captured quantities and serials remain intact. Posted movement or correction history locks location changes.`);
+      await Promise.all([inventory.refetch(), fulfillment.refetch()]);
+      if (serialCheckLines.length) void serialCheck.refetch();
+    } finally {
+      setSavingBatchSetup(false);
+    }
+  };
   const makePartialReady = async () => {
-    if (!activeBatch || !canPost || busy || pendingLock || !hasStagedStock || stagingComplete) return;
+    if (!activeBatch || !canPost || busy || pendingLock || batchSetupBlocked || !hasStagedStock || stagingComplete) return;
     const pending: PendingMove = { operationId: crypto.randomUUID(), action: "fulfillmentReady",
       data: { id: activeBatch.id, revision: activeBatch.revision, ready: true } };
     if (!storageKey) { setError("A signed-in user is required to safely save this exact readiness command."); return; }
@@ -1553,27 +1693,45 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     } catch { setError("Open Inventory → Locations to create and manage a Staging location."); }
   };
 
-  const stepNames = draft.mode === "resume" ? ["Stage stock", "Vehicle handoff"] : ["Choose work", "Review batch", "Stage stock", "Vehicle handoff"];
-  const currentStepIndex = draft.mode === "resume" ? (draft.step === "vehicle" ? 1 : 0) : ({ orders: 0, review: 1, stage: 2, vehicle: 3 } as const)[draft.step];
+  const stepNames = ["Pick & stage", "Vehicle pickup"];
+  const currentStepIndex = draft.step === "vehicle" ? 1 : 0;
+  const currentStepNumber = draft.step === "orders"
+    ? ({ orders: 1, setup: 2, review: 3 } as const)[draft.uiSubstep as "orders" | "setup" | "review"] ?? 1
+    : draft.step === "stage"
+      ? ({ pick: 4, capture: 5, confirm: 6, movementReview: 7 } as const)[draft.uiSubstep as "pick" | "capture" | "confirm" | "movementReview"] ?? 4
+      : ({ verify: 1, capture: 2, confirm: 3, movementReview: 4 } as const)[draft.uiSubstep as "verify" | "capture" | "confirm" | "movementReview"] ?? 1;
+  const currentStepCount = draft.step === "vehicle" ? 4 : 7;
+  const currentStepLabel = draft.step === "orders"
+    ? ({ orders: "Choose orders", setup: "Batch setup", review: "Review / create batch" } as const)[draft.uiSubstep as "orders" | "setup" | "review"] ?? "Choose orders"
+    : draft.step === "stage"
+      ? ({ pick: "Print & pick", capture: "Capture stock", confirm: "Confirm pull", movementReview: "Review & stage" } as const)[draft.uiSubstep as "pick" | "capture" | "confirm" | "movementReview"] ?? "Print & pick"
+      : ({ verify: "Verify staged order", capture: "Capture handoff", confirm: "Confirm handoff", movementReview: "Review & handoff" } as const)[draft.uiSubstep as "verify" | "capture" | "confirm" | "movementReview"] ?? "Verify staged order";
   const goBack = () => {
     if (draft.pending) return;
-    if (draft.step === "review") update({ step: "orders" });
-    else if (draft.step === "stage" && draft.mode !== "resume") update({ step: "review" });
-    else if (draft.step === "vehicle") update({ step: "stage" });
-    else update({ mode: "crew", step: "orders", batchId: "" });
+    if (draft.step === "orders" && draft.uiSubstep === "review") update({ uiSubstep: "setup" });
+    else if (draft.step === "orders" && draft.uiSubstep === "setup") update({ uiSubstep: "orders" });
+    else if ((draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "movementReview") update({ uiSubstep: "confirm" });
+    else if ((draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "confirm") update({ uiSubstep: "capture" });
+    else if (draft.step === "stage" && draft.uiSubstep === "capture") update({ uiSubstep: "pick" });
+    else if (draft.step === "vehicle" && draft.uiSubstep === "capture") update({ uiSubstep: "verify" });
+    else {
+      setShowStart(true);
+      setShowHistory(false);
+      setShowBlocked(false);
+    }
   };
   const moveToVehicle = (discard = false) => {
-    if (busy || pendingLock || createLock || !hasStagedStock) return;
+    if (busy || pendingLock || createLock || batchSetupBlocked || !hasStagedStock) return;
     if (hasUnrecordedMove && !discard) { setConfirmHandoff(true); return; }
     setConfirmHandoff(false);
     setError("");
-    update({ step: "vehicle", quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false });
+    update({ step: "vehicle", uiSubstep: "verify", quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false });
   };
 
   useWizardStepFocus({
     open,
     ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff,
-      stepKey: `${ticketArrival}:${showCorrections}:${showHistory}:${showBlocked}:${showResumeList}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
+    stepKey: `${ticketArrival}:${showCorrections}:${showHistory}:${showBlocked}:${showResumeList}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.uiSubstep}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
     rootRef: wizardRef,
     bodyRef: stepBodyRef,
     chooseTarget: root => {
@@ -1599,16 +1757,17 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           return identity;
         }
       }
-      if (draft.step === "review") return find('[data-wizard-review]');
+      if (draft.step === "orders" && draft.uiSubstep === "review") return find('[data-wizard-review]');
+      if (draft.step === "orders" && draft.uiSubstep === "setup") return find(!draft.name.trim() ? "#batch-name" : !draft.sourceId ? "#batch-source" : !draft.stagingId ? "#batch-staging" : !draft.vehicleId ? "#batch-vehicle" : '[data-wizard-setup]');
       if (draft.step === "orders") return draft.mode === "resume"
         ? find('[data-wizard-saved-batches]')
-        : find(!draft.selectedIds.length ? "#fulfillment-search" : !draft.name.trim() ? "#batch-name" : !draft.sourceId ? "#batch-source" : !draft.stagingId ? "#batch-staging" : !draft.vehicleId ? "#batch-vehicle" : "#fulfillment-search");
+        : find("#fulfillment-search");
       if (activeBatch && activeBatch.status !== "active") return find('[data-wizard-complete]');
-      if (draft.step === "stage" && stagingComplete && !hasUnrecordedMove) return find('[data-wizard-handoff]', "#fulfillment-staging-complete");
+      if (draft.uiSubstep === "pick" || draft.uiSubstep === "verify") return find('[data-wizard-ticket-identity]', "#fulfillment-staging-complete");
+      if (draft.uiSubstep === "confirm") return find("#fulfillment-reason");
+      if (draft.uiSubstep === "movementReview") return find('[data-wizard-movement-review]');
       return find('[data-wizard-needs-input="true"]',
-        ...(draft.reason.trim().length < 10 ? ["#fulfillment-reason"] : []),
-        ...(!draft.physicallyConfirmed ? ["#fulfillment-physical-confirmation"] : []),
-        '[data-wizard-record]', '[data-wizard-title]');
+        '[data-wizard-title]');
     },
   });
 
@@ -1620,12 +1779,15 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           <h1 data-wizard-title tabIndex={-1} className="mt-1 text-xl font-semibold sm:text-2xl">Fulfill / Stage Work Orders</h1>
           <p className="text-sm text-muted-foreground">Build one saved crew batch, move only what is physically in custody, then hand it to one vehicle.</p>
         </header>
-        {!showStart && !showResumeList && !reassignmentBatchId && !showCorrections && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
-          {stepNames.map((name, index) => <div key={name} className="min-w-0">
+        {!showStart && !showResumeList && !reassignmentBatchId && !showCorrections && <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
+          {stepNames.map((name, index) => <div key={name} className="min-w-[4.5rem] flex-1">
             <div className={`h-1 rounded-full ${index <= currentStepIndex ? "bg-primary" : "bg-border"}`} />
             <p className={`mt-1 truncate text-[10px] sm:text-xs ${index === currentStepIndex ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{name}</p>
           </div>)}
+          <p className="sr-only" aria-live="polite">{currentStepLabel}</p>
         </div>}
+        {!showStart && !showResumeList && !reassignmentBatchId && !showCorrections &&
+          <p className="mt-2 text-xs font-medium text-foreground/80" aria-live="polite">{stepNames[currentStepIndex]} · Step {currentStepNumber} of {currentStepCount}: {currentStepLabel}</p>}
       </div>
       <div ref={stepBodyRef} data-testid="fulfillment-step-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
         {error && !showTicketScan && <Alert variant="destructive" className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Workflow needs attention</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
@@ -1645,7 +1807,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           <AlertDescription>Your saved selections and captures remain in this browser. An administrator must restore workOrders.view before work orders or saved batches can be loaded.</AlertDescription>
         </Alert>}
         {!canPost && <Alert className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Read-only workflow</AlertTitle><AlertDescription>Posting requires workOrders.view plus inventory.assign, inventory.receive, and inventory.transfer. Your saved draft is retained while access is unavailable.</AlertDescription></Alert>}
-        {!showStart && !reassignmentBatchId && activeBatch?.status === "active" && activeResume?.reason && <Alert className="mb-4">
+        {!showStart && !reassignmentBatchId && draft.uiSubstep !== "capture" && draft.uiSubstep !== "pick" && activeBatch?.status === "active" && activeResume?.reason && <Alert className="mb-4">
           <AlertTriangle className="h-4 w-4" /><AlertTitle>Batch review required</AlertTitle>
           <AlertDescription className="space-y-2">{activeResume.reason} Your saved inputs are retained. Use Review / release remainder below when appropriate.
             {activeBatch.mode === "scheduled" && <Button type="button" size="sm" className="block" data-testid={`fulfillment-review-reassignment-${activeBatch.id}`}
@@ -1653,7 +1815,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
               onClick={() => setReassignmentBatchId(activeBatch.id)}>Review reassignment</Button>}
           </AlertDescription>
         </Alert>}
-        {(!fulfillment.isLoading && !fulfillment.isError && !inventory.isLoading && !inventory.isError && !stagingLocations.length) && <Alert className="mb-4">
+        {(!draft.batchId && !fulfillment.isLoading && !fulfillment.isError && !inventory.isLoading && !inventory.isError && !stagingLocations.length) && <Alert className="mb-4">
           <MapPin className="h-4 w-4" /><AlertTitle>Set up a Staging location</AlertTitle><AlertDescription className="space-y-2">
             <span>No accessible physical location is typed “Staging”. Create the actual location or review its access in Inventory → Locations; no location is created by this wizard.</span>
             <Button type="button" size="sm" variant="outline" onClick={setupLocations}>Open Locations</Button>
@@ -1891,19 +2053,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             </div>)}
           </div>}
           {!showStart && !showResumeList && <>
-          {draft.step === "orders" && <div className="space-y-5">
-            {!draft.batchId && <div className="grid gap-3 sm:grid-cols-3">
-              {([
-                ["crew", "New crew batch", "Choose unclaimed work and prepare one crew's pull."],
-                ["scheduled", "Scheduled installer work", "Filter eligible scheduled work for an installer and date."],
-                ["resume", "Resume saved batch", "Continue a batch without claiming or reassigning work orders."],
-              ] as const).map(([mode, label, description]) => <button key={mode} type="button"
-                disabled={savingDraft || (mode !== "resume" && (busy || pendingLock || createLock))}
-                onClick={() => void startMode(mode)}
-                className={`min-h-20 rounded-lg border p-3 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50 ${draft.mode === mode ? "border-primary bg-primary/5" : "bg-card"}`}>
-                <span className="block font-semibold">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span>
-              </button>)}
-            </div>}
+          {draft.step === "orders" && draft.uiSubstep === "orders" && <div className="space-y-5">
             {(draft.mode === "crew" || draft.mode === "scheduled") && <>
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div><h3 className="text-lg font-semibold">Choose eligible orders</h3><p className="text-sm text-muted-foreground">Selection saves assignment versions only. It does not reserve, assign, or change an installer.</p></div>
@@ -1977,18 +2127,23 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 </div>
               </details>
               {!filteredOrders.length && <div className="rounded-lg border border-dashed p-8 text-center"><ClipboardList className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-2 font-medium">No matching work orders</p><p className="text-sm text-muted-foreground">No records match this mode and the current search, route, date, or assignment filters.</p></div>}
-              <div className="space-y-3 rounded-lg border p-4">
-                <div><h3 className="font-semibold">Batch setup</h3><p className="text-xs text-muted-foreground">One source, physical Staging destination, and one vehicle for the entire batch.</p></div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1"><Label htmlFor="batch-name">Batch name</Label><Input id="batch-name" maxLength={120} value={draft.name} onChange={event => update({ name: event.target.value })} placeholder="Crew / date / route" /></div>
-                  <div className="space-y-1"><Label htmlFor="batch-source">Warehouse source</Label><Select value={draft.sourceId} onValueChange={value => update({ sourceId: value })}><SelectTrigger id="batch-source"><SelectValue placeholder="Choose accessible warehouse" /></SelectTrigger><SelectContent>{sourceLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
-                  <div className="space-y-1"><Label htmlFor="batch-staging">Staging destination</Label><Select value={draft.stagingId} onValueChange={value => update({ stagingId: value })}><SelectTrigger id="batch-staging"><SelectValue placeholder="Choose Staging location" /></SelectTrigger><SelectContent>{stagingLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
-                  <div className="space-y-1"><Label htmlFor="batch-vehicle">Vehicle</Label><Select value={draft.vehicleId} onValueChange={value => update({ vehicleId: value })}><SelectTrigger id="batch-vehicle"><SelectValue placeholder="Choose one vehicle" /></SelectTrigger><SelectContent>{vehicles.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
-                </div>
-              </div>
             </>}
           </div>}
-          {draft.step === "review" && <div className="space-y-5">
+          {draft.step === "orders" && draft.uiSubstep === "setup" && <div className="space-y-5" data-wizard-setup>
+            <div><Badge variant="outline">{selectedOrders.length} orders selected</Badge><h3 className="mt-2 text-xl font-semibold">Batch setup</h3>
+              <p className="text-sm text-muted-foreground">Choose the batch name and three distinct locations for this physical custody path.</p></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1"><Label htmlFor="batch-name">Batch name</Label><Input id="batch-name" maxLength={120} value={draft.name} onChange={event => update({ name: event.target.value })} placeholder="Crew / date / route" /></div>
+              <div className="space-y-1"><Label htmlFor="batch-source">Warehouse source</Label><Select value={draft.sourceId} onValueChange={value => update({ sourceId: value })}><SelectTrigger id="batch-source"><SelectValue placeholder="Choose accessible warehouse" /></SelectTrigger><SelectContent>{sourceLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-1"><Label htmlFor="batch-staging">Staging destination</Label><Select value={draft.stagingId} onValueChange={value => update({ stagingId: value })}><SelectTrigger id="batch-staging"><SelectValue placeholder="Choose Staging location" /></SelectTrigger><SelectContent>{stagingLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-1"><Label htmlFor="batch-vehicle">Vehicle</Label><Select value={draft.vehicleId} onValueChange={value => update({ vehicleId: value })}><SelectTrigger id="batch-vehicle"><SelectValue placeholder="Choose one vehicle" /></SelectTrigger><SelectContent>{vehicles.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 p-4"><h4 className="font-semibold">Demand check</h4>
+              <ul className="mt-2 divide-y">{demand.map(row => <li key={row.itemId} className="flex justify-between gap-3 py-2 text-sm"><span>{row.item?.name ?? row.itemId}</span><span className="font-mono">{row.quantity} {row.item?.unit ?? "units"}</span></li>)}</ul>
+              {!demand.length && <p className="pt-2 text-sm text-muted-foreground">No physical demand found. Return to orders and choose work with inventory requirements.</p>}
+            </div>
+          </div>}
+          {draft.step === "orders" && draft.uiSubstep === "review" && <div className="space-y-5">
             <div><Badge variant="outline">Review before creating</Badge><h3 data-wizard-review tabIndex={-1} className="mt-2 text-xl font-semibold">{draft.name || "Unnamed batch"}</h3><p className="text-sm text-muted-foreground">{selectedOrders.length} selected work orders · {draft.mode === "scheduled" ? "scheduled installer work" : "crew batch"}</p></div>
             <div className="grid gap-3 sm:grid-cols-3">
               {[["Source", draft.sourceId], ["Staging", draft.stagingId], ["Vehicle", draft.vehicleId]].map(([label, id]) => <div key={label} className="rounded-lg border p-3"><p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 font-medium">{warehouses.find(location => location.id === id)?.name ?? "Not selected"}</p></div>)}
@@ -2021,44 +2176,72 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                   <p className="text-sm text-muted-foreground">{draft.step === "stage"
                     ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
                     : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p></div>
-                <Button type="button" variant="outline" size="sm" data-testid="fulfillment-open-corrections" onClick={() => setShowCorrections(true)}>Review pickup problems</Button>
-                 {batchDeletionBlockReason(activeBatch) && <p className="basis-full text-xs text-muted-foreground">Deletion unavailable: {batchDeletionBlockReason(activeBatch)}</p>}
-                 {batchDeletionAllowed(activeBatch) && <Button type="button" variant="destructive" size="sm"
+                {draft.uiSubstep !== "capture" && draft.uiSubstep !== "pick" && <Button type="button" variant="outline" size="sm" disabled={batchSetupDirty || savingBatchSetup} data-testid="fulfillment-open-corrections" onClick={() => setShowCorrections(true)}>Review pickup problems</Button>}
+                 {draft.uiSubstep !== "capture" && draft.uiSubstep !== "pick" && batchDeletionBlockReason(activeBatch) && <p className="basis-full text-xs text-muted-foreground">Deletion unavailable: {batchDeletionBlockReason(activeBatch)}</p>}
+                 {draft.uiSubstep !== "capture" && draft.uiSubstep !== "pick" && batchDeletionAllowed(activeBatch) && <Button type="button" variant="destructive" size="sm"
                    disabled={batchDeleteDisabled(activeBatch)}
                    onClick={() => setBatchToDelete(activeBatch)}><Trash2 className="mr-2 h-4 w-4" />Delete batch</Button>}
-                 <div className="flex flex-wrap gap-2"><Badge variant={activeBatch.pickupReady || stagingComplete ? "secondary" : "outline"}>{stagingComplete || activeBatch.pickupReady ? stagingComplete ? "Ready · full batch" : "Ready · partial" : "Not yet ready"}</Badge><Badge variant="secondary">Revision {activeBatch.revision}</Badge></div>
+                  {draft.uiSubstep !== "capture" && draft.uiSubstep !== "pick" && <div className="flex flex-wrap gap-2"><Badge variant={activeBatch.pickupReady || stagingComplete ? "secondary" : "outline"}>{stagingComplete || activeBatch.pickupReady ? stagingComplete ? "Ready · full batch" : "Ready · partial" : "Not yet ready"}</Badge><Badge variant="secondary">Revision {activeBatch.revision}</Badge></div>}
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
+              {batchSetupDirty && <Alert className="border-amber-500/50 bg-amber-500/5">
+                <AlertTriangle className="h-4 w-4" /><AlertTitle>Unsaved batch setup change</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                  <span>Batch setup differs from the saved record. No movement can be recorded until you save or cancel these edits.</span>
+                  <span className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" disabled={busy || savingBatchSetup || batchHasPostedMovement} onClick={() => void saveBatchSetup()}>Save setup</Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={busy || savingBatchSetup} onClick={cancelBatchSetupEdits}>Cancel edits</Button>
+                  </span>
+                </AlertDescription>
+              </Alert>}
+              {draft.step === "vehicle" && draft.uiSubstep === "verify" && <section className="rounded-lg border bg-primary/5 p-4" data-wizard-verify-staged>
+                <div className="flex flex-wrap items-baseline justify-between gap-2"><h4 className="font-semibold">Verify staged order</h4>
+                  <p className="font-mono text-xs text-muted-foreground">{activeTicketNumber ? `Pick ticket ${activeTicketNumber}` : "Pick ticket identifier unavailable"}</p></div>
+                <p className="mt-1 text-sm text-muted-foreground">Match this batch and ticket to the crew’s arrival before capturing any handoff.</p>
+                <ul className="mt-3 divide-y">{batchDemand.map(row => <li key={row.itemId} className="flex flex-wrap justify-between gap-2 py-2 text-sm">
+                  <span>{row.item?.name}</span><span className="font-mono text-xs">Staged {row.staged} · Handed off {row.delivered} · Still here {vehicleRemaining(row)}</span>
+                </li>)}</ul>
+              </section>}
+              {!batchHasPostedMovement && (draft.uiSubstep === "verify" || draft.uiSubstep === "movementReview") && !savingBatchSetup && <details className="rounded-lg border bg-muted/20 p-3">
+                <summary className="cursor-pointer text-sm font-semibold">Edit batch setup</summary>
+                <p className="mt-2 text-xs text-muted-foreground">Before any posted movement, update the batch name or custody locations. The server rechecks demand, assignments, access, history, and revision under lock.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1"><Label htmlFor="active-batch-name">Batch name</Label><Input id="active-batch-name" maxLength={120} value={draft.name} onChange={event => update({ name: event.target.value })} /></div>
+                  <div className="space-y-1"><Label htmlFor="active-batch-source">Warehouse source</Label><Select value={draft.sourceId} onValueChange={value => update({ sourceId: value })}><SelectTrigger id="active-batch-source"><SelectValue placeholder="Choose source" /></SelectTrigger><SelectContent>{sourceLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-1"><Label htmlFor="active-batch-staging">Staging location</Label><Select value={draft.stagingId} onValueChange={value => update({ stagingId: value })}><SelectTrigger id="active-batch-staging"><SelectValue placeholder="Choose staging" /></SelectTrigger><SelectContent>{stagingLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-1"><Label htmlFor="active-batch-vehicle">Vehicle</Label><Select value={draft.vehicleId} onValueChange={value => update({ vehicleId: value })}><SelectTrigger id="active-batch-vehicle"><SelectValue placeholder="Choose vehicle" /></SelectTrigger><SelectContent>{vehicles.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
+                </div>
+                <Button type="button" className="mt-3" size="sm" disabled={!batchSetupDirty || !canPost || !draft.name.trim() ||
+                  !draft.sourceId || !draft.stagingId || !draft.vehicleId ||
+                  new Set([draft.sourceId, draft.stagingId, draft.vehicleId]).size !== 3 || busy || savingBatchSetup || pendingLock}
+                  onClick={() => void saveBatchSetup()}>{savingBatchSetup ? "Updating setup…" : "Save setup changes"}</Button>
+              </details>}
+              {draft.step === "stage" && draft.uiSubstep === "pick" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
                 <div><p className="text-sm font-medium">Pick ticket · {warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}</p><p className="text-xs text-muted-foreground">A printable staging list; printing does not move stock.</p></div>
                 <Button type="button" size="sm" variant="outline" onClick={() => printPickTicket(activeBatch.id)}><Printer className="mr-2 h-4 w-4" />Print pick ticket</Button>
-              </div>
-              {(() => {
+              </div>}
+              {draft.step === "stage" && draft.uiSubstep === "pick" && <div className="rounded-lg border bg-muted/20 p-3">
+                <h4 className="text-sm font-semibold">Source availability · {warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Warehouse"}</h4>
+                <p className="mt-1 text-xs text-muted-foreground">Available equals on-hand less existing allocation and active crew-batch holds. Printing is optional; nothing moves on this step.</p>
+                <ul className="mt-2 divide-y">{sourceAvailability.map(row => <li key={row.itemId} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-1 py-2 text-xs sm:grid-cols-5">
+                  <span className="col-span-2 min-w-0 break-words font-medium sm:col-span-1">{row.item?.name}</span>
+                  <span>On hand <strong className="font-mono">{row.onHand}</strong></span><span>Held <strong className="font-mono">{row.held}</strong></span>
+                  <span>Available <strong className="font-mono">{row.available}</strong></span>
+                  <span className={row.shortage > 0 ? "font-semibold text-destructive" : "text-muted-foreground"}>{row.shortage > 0 ? `Short ${row.shortage}` : `${row.remaining} remaining`}</span>
+                </li>)}</ul>
+              </div>}
+              {draft.uiSubstep !== "pick" && <>
+              {draft.uiSubstep === "verify" && (() => {
                 const assignedVehicle = warehouses.find(location => location.id === activeBatch.vehicleId);
                 return assignedVehicle && !assignedVehicle.assignedUserId && !(assignedVehicle.userIds?.length) ?
                   <Alert className="border-amber-500/40 bg-amber-500/5"><AlertTriangle className="h-4 w-4" /><AlertTitle>Vehicle has no assigned users</AlertTitle><AlertDescription>This vehicle has neither an assigned user nor assigned-user list. Technicians will not receive pickup notices until it is assigned.</AlertDescription></Alert> : null;
               })()}
-              <Alert className="border-amber-500/40 bg-amber-500/5"><AlertTriangle className="h-4 w-4" /><AlertTitle>Stock stays at Staging</AlertTitle><AlertDescription>Ready status and pickup notices do not move inventory. Warehouse must record the physical vehicle handoff to transfer custody.</AlertDescription></Alert>
-              {draft.step === "stage" && stagingComplete && <Alert data-testid="fulfillment-staging-complete">
-                <Check className="h-4 w-4" /><AlertTitle>Stock staged</AlertTitle>
-                <AlertDescription>The full batch has already been pulled into Staging. Continue to vehicle handoff when ready; do not record the same pull again.
-                  {hasUnrecordedMove && <span className="mt-1 block">Unrecorded entries remain below. Continuing will ask before discarding them.</span>}
-                </AlertDescription>
-              </Alert>}
+              {draft.uiSubstep === "verify" && <Alert className="border-amber-500/40 bg-amber-500/5"><AlertTriangle className="h-4 w-4" /><AlertTitle>Stock stays at Staging</AlertTitle><AlertDescription>Ready status and pickup notices do not move inventory. Warehouse must record the physical vehicle handoff to transfer custody.</AlertDescription></Alert>}
+              {draft.step === "vehicle" && draft.uiSubstep === "verify" && !activeBatch.pickupReady && hasStagedStock && !stagingComplete &&
+                <Button type="button" variant="outline" disabled={!canPost || batchSetupBlocked || busy || pendingLock || movementBlocked} onClick={() => void makePartialReady()}>Make staged stock ready for partial pickup</Button>}
               {showMoveForm && <><Alert><ScanLine className="h-4 w-4" /><AlertTitle>{draft.step === "stage" ? "Scan stock as it is pulled" : "Scan stock as custody changes"}</AlertTitle>
                 <AlertDescription>{draft.step === "stage"
                   ? "Enter only the quantity physically moved from the warehouse. Partial pulls are allowed; the remaining demand stays visible."
                   : "Enter only units physically handed to this batch’s single vehicle. Serialized units must already be staged and cannot be delivered twice."}</AlertDescription></Alert>
-              {draft.step === "stage" && <div className="rounded-lg border bg-muted/20 p-3">
-                <h4 className="text-sm font-semibold">Source availability · {warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Warehouse"}</h4>
-                <p className="mt-1 text-xs text-muted-foreground">Available equals on-hand less existing allocation and active crew-batch holds. Shortages are shown; the source is never changed automatically.</p>
-                <ul className="mt-2 divide-y">{sourceAvailability.map(row => <li key={row.itemId} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-1 py-2 text-xs sm:grid-cols-5">
-                  <span className="col-span-2 min-w-0 break-words font-medium sm:col-span-1">{row.item?.name}</span>
-                  <span className="min-w-0">On hand <strong className="font-mono">{row.onHand}</strong></span>
-                  <span className="min-w-0">Held <strong className="font-mono">{row.held}</strong></span>
-                  <span className="min-w-0">Available <strong className="font-mono">{row.available}</strong></span>
-                  <span className={`min-w-0 break-words ${row.shortage > 0 ? "font-semibold text-destructive" : "text-muted-foreground"}`}>{row.shortage > 0 ? `Short ${row.shortage}` : `${row.remaining} still to stage`}</span>
-                </li>)}</ul>
-              </div>}
               <div className="space-y-3">
                 {batchDemand.map(row => {
                   const remaining = draft.step === "stage" ? stageRemaining(row) : vehicleRemaining(row);
@@ -2083,12 +2266,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                   const scanComplete = scanTarget > 0 && scannedCount === scanTarget && capturedSerials.size === scanTarget && verification?.status === "verified";
                   const tooManyScans = capturedSerials.size > scanTarget;
                   const matchingSerials = availableSerials.filter(serial => serial.toLowerCase().includes((serialSearch[row.itemId] ?? "").trim().toLowerCase()));
-                  const serialSelectionLocked = busy || pendingLock || createLock || !canPost || !batchCanReleaseRemainder;
+                  const serialSelectionLocked = busy || pendingLock || createLock || batchSetupBlocked || !canPost || !batchCanReleaseRemainder;
                   return <div key={row.itemId} className="rounded-lg border p-3 sm:p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{row.item?.name}</p><p className="text-xs text-muted-foreground">{row.item?.sku} · {row.item?.unit ?? "units"}</p></div>
                       <div className="text-right text-xs"><span className="block text-muted-foreground">Remaining to {draft.step === "stage" ? "stage" : "handoff"}</span><strong className="font-mono text-base">{remaining}</strong><span className="ml-1">{row.item?.unit ?? "units"}</span></div></div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
-                      <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-wizard-needs-input={!scanTarget || enteredQuantity > moveLimit ? "true" : undefined} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} aria-describedby={`qty-limit-${key}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setMoveQuantity(key, event.target.value, moveLimit)} placeholder="0" /><p id={`qty-limit-${key}`} className="text-xs text-muted-foreground">Maximum {moveLimit} {row.item?.unit ?? "units"}</p></div>
+                      <div className="space-y-1"><Label htmlFor={`qty-${key}`}>Move quantity</Label><Input id={`qty-${key}`} data-wizard-needs-input={!scanTarget || enteredQuantity > moveLimit ? "true" : undefined} data-testid={`fulfillment-move-quantity-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} quantity for ${row.item?.name ?? row.itemId}`} aria-describedby={`qty-limit-${key}`} type="number" min="0" max={moveLimit} step="1" inputMode="numeric" disabled={pendingLock || batchSetupBlocked || moveLimit < 1 || !canPost} value={draft.quantities[key] ?? ""} onChange={event => setMoveQuantity(key, event.target.value, moveLimit)} placeholder="0" /><p id={`qty-limit-${key}`} className="text-xs text-muted-foreground">Maximum {moveLimit} {row.item?.unit ?? "units"}</p></div>
                       {row.item?.tracking === "serialized" && <div className="space-y-1">
                         <Label htmlFor={`serial-${key}`}>Custody serials</Label>
                         <div data-testid={`fulfillment-scan-progress-${draft.step}-${row.itemId}`}>
@@ -2100,7 +2283,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                         </div>}
                         {scannedCount > 0 && serialCheck.isError && <Button type="button" size="sm" variant="outline" onClick={() => void serialCheck.refetch()}>Retry stock verification</Button>}
                         <p id={`scan-notice-${key}`} role="status" aria-live="polite" className="text-sm text-destructive">{scanNotices[key] ?? ""}</p>
-                        <Textarea id={`serial-${key}`} data-wizard-needs-input={scanTarget > 0 && !scanComplete ? "true" : undefined} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}
+                        <Textarea id={`serial-${key}`} data-wizard-needs-input={scanTarget > 0 && !scanComplete ? "true" : undefined} data-testid={`fulfillment-custody-serials-${draft.step}-${row.itemId}`} aria-label={`${draft.step === "stage" ? "Stage" : "Vehicle handoff"} custody serials for ${row.item?.name ?? row.itemId}`} aria-describedby={`scan-help-${key} scan-notice-${key}`} rows={2} disabled={pendingLock || batchSetupBlocked || moveLimit < 1 || !canPost} value={draft.serialText[key] ?? ""}
                           onChange={event => scanSerials(key, event.target.value)}
                           onBlur={() => setEditingSerialKey(current => current === key ? null : current)}
                           onKeyDown={event => {
@@ -2153,25 +2336,49 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 })}
                 {!batchDemand.length && <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No physical lines are currently available in this batch.</div>}
               </div>
-              <div className="space-y-1"><Label htmlFor="fulfillment-reason">Physical move reason</Label><Input id="fulfillment-reason" maxLength={500} disabled={pendingLock || !canPost} value={draft.reason} onChange={event => update({ reason: event.target.value })} placeholder="Describe the physical pull or handoff" /><p className="text-xs text-muted-foreground">At least 10 characters. Do not record a planned or future movement.</p></div>
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-muted/20 p-3">
-                <Checkbox id="fulfillment-physical-confirmation" checked={draft.physicallyConfirmed} disabled={pendingLock || !canPost} onCheckedChange={checked => update({ physicallyConfirmed: checked === true })} />
-                <span><span className="text-sm font-medium">I confirm the listed stock has physically moved</span><span className="mt-1 block text-xs text-muted-foreground">Only actual quantities in physical custody can be recorded. This does not assign installed serials.</span></span>
-              </label>
               </>}
-              {draft.step === "stage" && batchDemand.some(row => stageRemaining(row) > 0) && <div className="rounded-lg border border-dashed p-3 text-sm"><p className="font-medium">Outstanding work remains</p><ul className="mt-1 space-y-1 text-muted-foreground">{batchDemand.filter(row => stageRemaining(row) > 0).map(row => <li key={row.itemId}>{row.item?.name}: {stageRemaining(row)} {row.item?.unit ?? "units"} still to stage</li>)}</ul></div>}
-              {draft.step === "vehicle" && batchDemand.some(row => vehicleRemaining(row) > 0) && <div className="rounded-lg border border-dashed p-3 text-sm"><p className="font-medium">Staged stock still to hand off</p><ul className="mt-1 space-y-1 text-muted-foreground">{batchDemand.filter(row => vehicleRemaining(row) > 0).map(row => <li key={row.itemId}>{row.item?.name}: {vehicleRemaining(row)} {row.item?.unit ?? "units"} still at staging</li>)}</ul></div>}
-              {draft.step === "stage" && !stagingComplete && hasStagedStock && <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">You may hand off only the stock already staged; return here later for the remaining pull. Unrecorded entries are not part of that handoff.</p>
-                {!activeBatch.pickupReady && <Button type="button" variant="outline" disabled={!canPost || busy || pendingLock || movementBlocked} onClick={() => void makePartialReady()}>Make staged stock ready for partial pickup</Button>}
-                <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} className="w-full sm:w-auto" onClick={() => moveToVehicle()}><Truck className="mr-2 h-4 w-4" />Hand off already-staged stock</Button>
-              </div>}
-              {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
-                <p className="font-medium">Release unfinished remainder</p>
+              {draft.uiSubstep === "confirm" && <section className="space-y-4 rounded-lg border p-4" data-wizard-confirm>
+                <div><h4 className="font-semibold">{draft.step === "stage" ? "Confirm physical pull" : "Confirm vehicle handoff"}</h4>
+                  <p className="text-sm text-muted-foreground">Review the quantities captured in the previous step. Nothing is posted until the final review.</p></div>
+                <div className="space-y-1"><Label htmlFor="fulfillment-reason">Physical move reason</Label><Input id="fulfillment-reason" maxLength={500} disabled={pendingLock || !canPost} value={draft.reason} onChange={event => update({ reason: event.target.value })} placeholder="Describe the physical pull or handoff" /><p className="text-xs text-muted-foreground">At least 10 characters. Do not record a planned or future movement.</p></div>
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-muted/20 p-3">
+                  <Checkbox id="fulfillment-physical-confirmation" checked={draft.physicallyConfirmed} disabled={pendingLock || !canPost} onCheckedChange={checked => update({ physicallyConfirmed: checked === true })} />
+                  <span><span className="text-sm font-medium">I confirm the listed stock has physically moved</span><span className="mt-1 block text-xs text-muted-foreground">Only actual quantities in physical custody can be recorded. This does not assign installed serials.</span></span>
+                </label>
+              </section>}
+              {draft.uiSubstep === "movementReview" && <section className="space-y-3" data-wizard-movement-review>
+                <div><Badge variant="outline">Final physical record</Badge><h4 className="mt-2 text-xl font-semibold">{draft.step === "stage" ? "Review & stage" : "Review & handoff"}</h4>
+                  <p className="text-sm text-muted-foreground">Movement path · {draft.step === "stage"
+                    ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
+                    : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p>
+                  <p className="text-sm text-muted-foreground">Only the quantities shown below will be recorded. Back returns to confirmation without clearing scans or reason.</p></div>
+                <div className="overflow-hidden rounded-lg border">
+                  {batchDemand.map(row => {
+                    const key = quantityKey(draft.step, row.itemId);
+                    const moving = Number(draft.quantities[key] ?? 0) || 0;
+                    const remaining = draft.step === "stage" ? stageRemaining(row) : vehicleRemaining(row);
+                    const unitsAfter = Math.max(0, remaining - moving);
+                    const serials = splitSerials(draft.serialText[key] ?? "");
+                    return <div key={row.itemId} className="grid gap-1 border-b p-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(5rem,auto))] sm:items-center">
+                      <div className="min-w-0"><p className="font-medium">{row.item?.name}</p><p className="text-xs text-muted-foreground">{row.item?.sku} · {row.item?.unit ?? "units"}{serials.length ? ` · ${serials.join(", ")}` : ""}</p></div>
+                      <p className="text-xs"><span className="text-muted-foreground">Moving now </span><strong className="font-mono">{moving}</strong></p>
+                      <p className="text-xs"><span className="text-muted-foreground">Remaining after </span><strong className="font-mono">{unitsAfter}</strong></p>
+                      <p className={`text-xs ${draft.step === "stage" && (sourceAvailability.find(balance => balance.itemId === row.itemId)?.shortage ?? 0) > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                        {draft.step === "stage" ? `Source shortage ${sourceAvailability.find(balance => balance.itemId === row.itemId)?.shortage ?? 0}` : `Still at staging ${unitsAfter}`}
+                      </p>
+                    </div>;
+                  })}
+                </div>
+                <div className="rounded-lg border bg-muted/20 p-3 text-sm"><p><strong>Reason:</strong> {draft.reason}</p><p className="mt-1"><strong>Physical confirmation:</strong> {draft.physicallyConfirmed ? "Confirmed" : "Not confirmed"}</p></div>
+              </section>}
+              {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder &&
+                (draft.uiSubstep === "confirm" || draft.uiSubstep === "movementReview") && <details className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                <summary className="cursor-pointer font-medium">Exceptions · release unfinished remainder</summary>
                 <p className="text-xs text-muted-foreground">This releases remaining demand and holds. Any staged-but-undelivered stock stays physically at Staging; it is not returned. Delivered stock stays in the vehicle. Work-order assignment is unchanged. Use this to recover a stale or reassigned scheduled batch, then create a fresh batch or continue through the manual workflow.</p>
                 <Label htmlFor="fulfillment-close-reason">Release reason (10 characters minimum)</Label><Textarea id="fulfillment-close-reason" rows={2} disabled={pendingLock || !canPost} value={draft.closeReason} onChange={event => update({ closeReason: event.target.value })} placeholder="Why the unfinished demand is being released" />
-                <Button type="button" size="sm" variant="outline" disabled={!canPost || pendingLock || draft.closeReason.trim().length < 10 || busy} onClick={() => void cancelRemainder()}>Confirm release remainder</Button>
-              </div>}
+                <Button type="button" size="sm" variant="outline" disabled={!canPost || batchSetupBlocked || pendingLock || draft.closeReason.trim().length < 10 || busy} onClick={() => void cancelRemainder()}>Confirm release remainder</Button>
+              </details>}
+              </>}
             </>}
           </div>}
           </>}
@@ -2189,10 +2396,15 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           else { setShowStart(true); setShowBlocked(true); }
         }}><ArrowLeft className="mr-2 h-4 w-4 shrink-0" />Back</Button>}
         {!showStart && !showResumeList && !reassignmentBatchId && !showCorrections && <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" disabled={busy || savingDraft}
+          <Button type="button" variant="outline" disabled={busy || savingDraft || savingBatchSetup || batchSetupDirty}
             onClick={() => { setShowStart(true); setShowHistory(false); setShowBlocked(false); }}
             data-testid="fulfillment-back-to-workflows"><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>
-          {draft.step !== "orders" && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} onClick={goBack}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
+          {!(draft.step === "orders" && draft.uiSubstep === "orders") &&
+            !(draft.step === "stage" && draft.uiSubstep === "pick") &&
+            !(draft.step === "vehicle" && draft.uiSubstep === "verify") &&
+            <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} onClick={goBack}>
+              <ArrowLeft className="mr-2 h-4 w-4" />{draft.uiSubstep === "review" ? "Edit batch setup" : draft.uiSubstep === "setup" ? "Back to orders" : draft.uiSubstep === "movementReview" ? "Back to confirm" : draft.uiSubstep === "confirm" ? "Back to capture" : "Back"}
+            </Button>}
         </div>}
         <div className="flex flex-wrap justify-end gap-2">
           {!showStart && !showResumeList && !reassignmentBatchId && !showCorrections && <>
@@ -2200,18 +2412,26 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             onClick={() => void saveSetupDraft()}>
             {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save Draft
           </Button>}
-          {draft.step === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") && <Button type="button" disabled={!canCreate || busy || savingDraft || !storageReady || !stagingLocations.length} onClick={() => update({ step: "review" })}>Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-          {draft.step === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy || savingDraft} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create saved batch"}</Button>}
-          {draft.step === "stage" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>
-            <Truck className="mr-2 h-4 w-4" />Continue to vehicle handoff
+          {draft.step === "orders" && draft.uiSubstep === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") &&
+            <Button type="button" disabled={!canContinueOrders || busy || savingDraft || !storageReady} onClick={() => update({ uiSubstep: "setup" })}>Next: Batch setup<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {draft.step === "orders" && draft.uiSubstep === "setup" &&
+            <Button type="button" disabled={!canCreate || busy || savingDraft || !storageReady || !stagingLocations.length} onClick={() => update({ uiSubstep: "review" })}>Next: Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {draft.step === "orders" && draft.uiSubstep === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy || savingDraft} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create batch"}</Button>}
+          {draft.step === "stage" && draft.uiSubstep === "pick" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => moveToVehicle()}>
+            <Truck className="mr-2 h-4 w-4" />Continue to vehicle pickup
           </Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && batchCanReleaseRemainder && !(draft.step === "stage" && stagingComplete) && <Button data-wizard-record type="button" disabled={serialCheckBlocked || movementBlocked || !canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
+          {draft.step === "stage" && draft.uiSubstep === "pick" && !stagingComplete && hasStagedStock && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => moveToVehicle()}>Partial pickup from Staging<Truck className="ml-2 h-4 w-4" /></Button>}
+          {draft.step === "stage" && draft.uiSubstep === "pick" && !stagingComplete && <Button type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => update({ uiSubstep: "capture" })}>Picking complete — enter quantities<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {draft.step === "vehicle" && draft.uiSubstep === "verify" && <Button type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => update({ uiSubstep: "capture" })}>Next: Capture handoff<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "capture" && <Button type="button" disabled={!canReviewMovement || busy || pendingLock || movementBlocked || batchSetupBlocked} onClick={() => update({ uiSubstep: "confirm" })}>Next: Confirm<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "confirm" && <Button type="button" disabled={!canReviewMovement || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed || busy || pendingLock || movementBlocked || batchSetupBlocked} onClick={() => update({ uiSubstep: "movementReview" })}>Next: Review movement<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "movementReview" && batchCanReleaseRemainder && <Button data-wizard-record type="button" disabled={!canReviewMovement || serialCheckBlocked || movementBlocked || !canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : draft.step === "stage" ? <ArrowRight className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}
           </Button>}
           </>}
           <Button type="button" variant="outline" disabled={busy || savingDraft} onClick={() => void close(false)}>
-            {showStart || showResumeList || (!draft.batchId && (draft.mode === "crew" || draft.mode === "scheduled") && (draft.step === "orders" || draft.step === "review")) ? "Close" : "Save & leave"}
+            {showStart || showResumeList || (!draft.batchId && (draft.mode === "crew" || draft.mode === "scheduled")) ? "Close" : "Save & leave"}
           </Button>
         </div>
       </div>

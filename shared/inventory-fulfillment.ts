@@ -173,6 +173,10 @@ export function applyFulfillmentMove(state: InventoryState, action: "fulfillment
     ensure(remaining === 0, "Could not match the physical move to this batch.");
   }
   batch.revision++;
+  // Readiness is part of the recorded pull, not a second command that could
+  // be lost between posting stock and notifying the vehicle's assigned crew.
+  if (move.phase === "stage" && batch.lines.every(line => line.stagedQuantity === line.quantity))
+    batch.pickupReady = true;
   if (batch.lines.every(l => l.quantity === l.deliveredQuantity)) batch.status = "completed";
   tools.receipt(batch.id, to, move.lines,
     `${move.phase === "stage" ? "Warehouse → Staging" : "Staging → Vehicle"} · ${batch.name} · ${move.reason}`);

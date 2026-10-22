@@ -4,7 +4,7 @@ const text = z.string().max(200).default("");
 /** Editable setup only: saving a draft never reserves stock or submits a movement. */
 export const fulfillmentDraftCaptureSchema = z.object({
   mode: z.enum(["crew", "scheduled"]),
-  step: z.enum(["orders", "review"]),
+  step: z.enum(["orders", "setup", "review"]),
   name: text,
   selectedIds: z.array(z.number().int().positive()).max(500).default([]),
   search: text, route: text, group: text, zone: text, installer: text, date: text,

@@ -23,6 +23,12 @@ New crew and scheduled-work selection show only eligible work orders, with their
 
 **How to apply:** Expanding or collapsing must not change selections; returning to workflow choices must preserve inputs and pending-command safety.
 
+Fulfillment uses two phases with focused steps: Pick & stage (choose orders, setup, review/create, print/pick, capture stock, confirm, review/record pull) and Vehicle pickup (verify staged order, capture handoff, confirm, review/record handoff).
+
+**Why:** The user wants the wizard to follow the physical warehouse process, avoiding one overloaded staging screen and reviewing mistakes before committing custody.
+
+**How to apply:** Order selection excludes setup. Printing is optional and never moves stock. Capture screens contain quantities and serials, while reasons/acknowledgments belong in confirmation and exception actions stay secondary. Final reviews show moving-now quantities, remaining stock, shortages and serials; Back preserves captures. Only final Record actions post stock. Fully staged pulls make the batch ready for assigned-vehicle pickup; QR arrivals open verification, not another picking sequence. Preserve partial pulls/handoffs. Setup changes before posting must revalidate source availability and serials; after posting use explicit custody corrections or reassignment, never relabel recorded movement.
+
 **Why:** The user described a common task-selection screen, not a button tied directly to a single receiving workflow.
 
 **How to apply:** When implementing guided inventory workflows, preserve that shared entry and enforce the permissions appropriate to each selected task. Do not assume Start Inventory should jump straight into removed-equipment acceptance.

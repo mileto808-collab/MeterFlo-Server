@@ -4,7 +4,7 @@ import { z } from "zod";
 import { pool } from "./db";
 import { lockInventory, saveInventory } from "./inventoryService";
 import { readRelationalInventory } from "./inventoryRelational";
-import { fulfillmentOrders } from "./inventoryFulfillment";
+import { fulfillmentOrders, prepareFulfillment } from "./inventoryFulfillment";
 import { canonicalInventoryJson, InventoryError, warehouseAccess } from "../shared/inventory-engine";
 import {
   emptyFulfillmentDraftCapture, fulfillmentDraftCaptureSchema, meaningfulFulfillmentDraft, savedFulfillmentDraftSchema,
@@ -119,6 +119,75 @@ export function registerFulfillmentDraftRoutes(
   app.post(`${base}/fulfillment-drafts/:id`, mutate(false));
   app.post(`${base}/fulfillment-drafts/:id/clear`, mutate(false, true));
   app.delete(`${base}/fulfillment-drafts/:id`, mutate(true));
+  app.patch(`${base}/fulfillment/:id/setup`, handler(async (req, res) => {
+    const c = res.locals.inventory;
+    requireFulfillment(c);
+    const id = z.string().uuid().parse(req.params.id);
+    const input = z.object({
+      revision: z.number().int().positive(),
+      name: z.string().trim().min(1).max(200),
+      sourceId: z.string().min(1).max(100),
+      stagingId: z.string().min(1).max(100),
+      vehicleId: z.string().min(1).max(100),
+    }).strict().parse(req.body);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { rows: [project] } = await client.query(
+        "SELECT inventory_enabled,is_active,wizard_mode FROM public.projects WHERE id=$1 FOR SHARE", [c.project.id]);
+      if (!project?.inventory_enabled || project.is_active === false || project.wizard_mode === "reading_only")
+        throw new InventoryError("An active inventory-enabled changeout project is required.");
+      const before = await lockInventory(client, c.project.id);
+      const batch = before.fulfillmentBatches?.find(value => value.id === id);
+      if (!batch || batch.status !== "active") throw conflict("This batch is no longer active. Reopen its current progress.");
+      for (const location of [batch.sourceId, batch.stagingId, batch.vehicleId])
+        warehouseAccess(before, location, c.user.id, c.admin);
+      const orders = await fulfillmentOrders(client, c.project.id, before, c.user,
+        batch.workOrders.map(work => work.workOrderId), true);
+      if (orders.length !== batch.workOrders.length)
+        throw Object.assign(new InventoryError("Work-order access is required to edit this batch."), { status: 403 });
+      const hasPosting = batch.lines.some(line => line.stagedQuantity || line.deliveredQuantity ||
+        line.stagedSerials.length || line.deliveredSerials.length) ||
+        before.receipts.some(receipt => receipt.reference === id &&
+          ["fulfillmentMove", "fulfillmentCorrect", "fulfillmentInvestigate"].includes(receipt.action));
+      if (hasPosting)
+        throw conflict("Stock has already been recorded for this batch. Use staged-stock corrections or Review reassignment; recorded custody cannot be relabeled.");
+      const sameSetup = batch.name === input.name && batch.sourceId === input.sourceId &&
+        batch.stagingId === input.stagingId && batch.vehicleId === input.vehicleId;
+      // Retrying a lost setup response must not increment its revision a second time.
+      if (batch.revision === input.revision + 1 && sameSetup) {
+        await client.query("COMMIT");
+        return { batch };
+      }
+      if (batch.revision !== input.revision)
+        throw conflict("This batch changed. Refresh its current setup before editing; your captures have been kept.");
+      const validation = structuredClone(before);
+      validation.fulfillmentBatches = validation.fulfillmentBatches!.filter(value => value.id !== id);
+      const prepared = await prepareFulfillment(client, c.project.id, validation, "fulfillmentCreate", {
+        id, name: input.name, mode: batch.mode,
+        sourceId: input.sourceId, stagingId: input.stagingId, vehicleId: input.vehicleId,
+        workOrders: batch.workOrders.map(work => ({
+          workOrderId: work.workOrderId, assignmentVersion: work.assignmentVersion,
+        })),
+      }, c.user, c.admin);
+      const demand = (lines: typeof batch.lines) => canonicalInventoryJson(lines.map(line => ({
+        workOrderId: line.workOrderId, itemId: line.itemId, quantity: line.quantity,
+      })).sort((a, b) => a.workOrderId - b.workOrderId || a.itemId.localeCompare(b.itemId)));
+      if (!prepared || demand(prepared.lines) !== demand(batch.lines))
+        throw conflict("The selected orders' inventory requirements changed. Review or replace this unposted batch before pulling stock.");
+      const after = structuredClone(before);
+      const updated = after.fulfillmentBatches!.find(value => value.id === id)!;
+      Object.assign(updated, {
+        name: input.name, sourceId: input.sourceId, stagingId: input.stagingId,
+        vehicleId: input.vehicleId, revision: batch.revision + 1,
+      });
+      after.revision++;
+      await saveInventory(client, c.project.id, before, after, randomUUID(), "fulfillmentSetup");
+      await client.query("COMMIT");
+      return { batch: updated };
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }));
   app.delete(`${base}/fulfillment/:id`, handler(async (req, res) => {
     const c = res.locals.inventory;
     requireFulfillment(c);
