@@ -17,6 +17,12 @@ export function FulfillmentSavedInputs({ draft, items }: { draft: SavedFulfillme
     })}
     {draft.reason && <p className="break-words">Move reason: {draft.reason}</p>}
     {draft.closeReason && <p className="break-words">Release reason: {draft.closeReason}</p>}
+    {(draft.reassignmentVehicleId || draft.reassignmentReason) && <div className="space-y-1 border-t pt-2">
+      <p className="font-medium">Saved reassignment review inputs</p>
+      {draft.reassignmentVehicleId && <p className="break-words">Selected handoff vehicle ID: {draft.reassignmentVehicleId}</p>}
+      {draft.reassignmentReason && <p className="break-words">Reassignment reason: {draft.reassignmentReason}</p>}
+      <p className="text-muted-foreground">These values were not submitted automatically. Continue the saved reassignment review to verify current compatibility and confirm or revise them.</p>
+    </div>}
     {draft.physicallyConfirmed && <p>Physical movement confirmation was checked locally.</p>}
   </div>;
 }

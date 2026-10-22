@@ -795,12 +795,78 @@ const assert = require("node:assert/strict");
     assert.ok((await pickups()).some(pickup => pickup.batchId === scheduledId));
     state = (await request("GET", inventory)).state;
     assert.deepEqual(state.allocations.find(a => a.workOrderId === scheduled.id).lines[0].serials, []);
+    await request("PATCH", `${root}/work-orders/${scheduled.id}`, { assignedUserId: otherInstaller.id }, admin);
+    assert.equal((await pickups()).some(pickup => pickup.batchId === scheduledId), false);
+    const reviewUrl = `${inventory}/fulfillment/${scheduledId}/reassignment`;
+    let reassignment = await request("GET", reviewUrl);
+    assert.equal(reassignment.canApply, false);
+    assert.ok(reassignment.blockers.some(reason => /No accessible active vehicle/.test(reason)));
+    assert.equal(reassignment.orders[0].previousInstaller, user.username);
+    assert.equal(reassignment.orders[0].currentInstaller, otherInstaller.username);
+    assert.deepEqual(reassignment.items[0].serials, ["F-C"]);
+    await command("warehouse", { id: "fulfill-new-vehicle", code: "FUL-NEW", name: "Reassigned installer vehicle",
+      type: "vehicle", vin: "1HGCM82633A004353", plate: "NEW", plateState: "CO",
+      userIds: [user.id, otherInstaller.id] }, admin);
+    reassignment = await request("GET", reviewUrl);
+    assert.equal(reassignment.canApply, true, JSON.stringify(reassignment.blockers));
+    const reassignmentData = { id: scheduledId, revision: reassignment.revision, vehicleId: "fulfill-new-vehicle",
+      workOrders: reassignment.orders.map(({ workOrderId, assignmentVersion }) => ({ workOrderId, assignmentVersion })),
+      reason: "Installer reassigned; reuse these verified staged meters", confirmed: true };
+    await rejected("fulfillmentReassign", { ...reassignmentData, revision: 1 });
+    await rejected("fulfillmentReassign", { ...reassignmentData, vehicleId: "fulfill-vehicle" });
+    const stockBeforeReassignment = (await request("GET", inventory)).state.stock;
+    await expect(dialog.getByTestId(`fulfillment-review-reassignment-${scheduledId}`)).toBeVisible();
+    await dialog.getByTestId(`fulfillment-review-reassignment-${scheduledId}`).click();
+    await expect(dialog.getByTestId("fulfillment-reassignment-review")).toBeVisible();
+    await expect(dialog.getByTestId(`reassignment-order-${scheduled.id}`)).toContainText(otherInstaller.username);
+    await expect(dialog.getByTestId("reassignment-item-fulfill-meter")).toContainText("F-C");
+    await dialog.getByTestId("reassignment-vehicle-select").click();
+    await page.getByRole("option", { name: "Reassigned installer vehicle", exact: true }).click();
+    await dialog.getByTestId("reassignment-reason").fill(reassignmentData.reason);
+    await dialog.getByRole("button", { name: "Save & leave", exact: true }).click();
+    await page.reload();
+    await page.getByRole("button", { name: "Start Inventory", exact: true }).filter({ visible: true }).waitFor();
+    choices = await openFulfillmentChoices();
+    await choices.getByTestId("fulfillment-continue-reassignment").click();
+    await expect(dialog.getByTestId("fulfillment-reassignment-review")).toBeVisible();
+    await expect(dialog.getByTestId("reassignment-reason")).toHaveValue(reassignmentData.reason);
+    await expect(dialog.getByTestId("reassignment-vehicle-select")).toContainText("Reassigned installer vehicle");
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const reviewBounds = await dialog.boundingBox();
+    assert.ok(reviewBounds && reviewBounds.x >= -1 && reviewBounds.x + reviewBounds.width <= 391,
+      "Reassignment dialog must fit within the phone viewport, not just the document.");
+    assert.equal(await dialog.getByTestId("fulfillment-step-body").evaluate(body =>
+      body.scrollWidth <= body.clientWidth + 1), true, "Reassignment contents must not be horizontally clipped.");
+    await expect(dialog.getByRole("button", { name: "Continue to vehicle handoff", exact: true })).toHaveCount(0);
+    await page.screenshot({ path: "generated-artifacts/inventory-fulfillment/reassignment-phone.png" });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await dialog.getByTestId("reassignment-confirm").scrollIntoViewIfNeeded();
+    await expect(dialog.getByTestId("reassignment-confirm")).toBeEnabled();
+    await dialog.getByTestId("reassignment-confirm").click();
+    await expect(dialog.getByTestId("fulfillment-reassignment-review")).toHaveCount(0);
+    state = (await request("GET", inventory)).state;
+    assert.deepEqual(state.stock, stockBeforeReassignment, "Reusing staged stock must not record another physical pull.");
+    const reassignedBatch = state.fulfillmentBatches.find(batch => batch.id === scheduledId);
+    assert.equal(reassignedBatch.revision, 3);
+    assert.equal(reassignedBatch.vehicleId, "fulfill-new-vehicle");
+    assert.deepEqual(reassignedBatch.lines[0].stagedSerials, ["F-C"]);
+    assert.equal(state.allocations.find(allocation => allocation.workOrderId === scheduled.id).assignmentVersion,
+      reassignment.orders[0].assignmentVersion);
+    const reassignmentReceipt = state.receipts.find(receipt => receipt.action === "fulfillmentReassign" && receipt.reference === scheduledId);
+    assert.ok(reassignmentReceipt);
+    await command("fulfillmentReassign", reassignmentData, prep, reassignmentReceipt.id);
+    assert.deepEqual((await request("GET", inventory)).state.stock, stockBeforeReassignment);
+    assert.equal((await pickups()).some(pickup => pickup.batchId === scheduledId), false, "Former vehicle crew must not see the new vehicle's pickup.");
     await request("PATCH", `${root}/work-orders/${scheduled.id}`, { status: "Open", assignedUserId: null, assignedGroupId: group.name }, admin);
     assert.equal((await pickups()).some(pickup => pickup.batchId === scheduledId), false, "Reassigned scheduled work must not invite the former vehicle.");
-    await rejected("fulfillmentMove", { id: scheduledId, revision: 2, phase: "vehicle",
+    const blockedReview = await request("GET", reviewUrl);
+    assert.equal(blockedReview.canApply, false);
+    assert.ok(blockedReview.blockers.some(reason => /individually Scheduled/.test(reason)));
+    await rejected("fulfillmentMove", { id: scheduledId, revision: 3, phase: "vehicle",
       lines: [{ itemId: "fulfill-meter", quantity: 1, serials: ["F-C"] }],
       reason: "Must not deliver for an obsolete assignment", physicallyConfirmed: true });
-    await command("fulfillmentClose", { id: scheduledId, revision: 2, reason: "Assignment changed; release staged stock for warehouse review" });
+    await command("fulfillmentClose", { id: scheduledId, revision: 3, reason: "Assignment changed; release staged stock for warehouse review" });
     state = (await request("GET", inventory)).state;
     assert.equal(state.stock.find(stock => stock.warehouseId === "fulfill-stage" && stock.itemId === "fulfill-meter").quantity, 1);
     assert.equal(state.allocations.find(a => a.workOrderId === scheduled.id).lines.length, 0);

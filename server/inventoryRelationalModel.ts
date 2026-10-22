@@ -16,7 +16,8 @@ export const relationalEntities: EntityModel[] = [
     columns: { ...text("id", "name", "mode", "sourceId", "stagingId", "vehicleId", "status", "createdBy", "createdAt"), revision: "integer", pickupReady: "boolean" },
     children: [
       { name: "inventory_fulfillment_work_orders", paths: ["workOrders"],
-        columns: { workOrderId: "integer", assignmentVersion: "integer", label: "text" } },
+        columns: { workOrderId: "integer", assignmentVersion: "integer", label: "text",
+          ...text("installerId", "installer", "scheduledDate") } },
       { name: "inventory_fulfillment_lines", paths: ["lines"],
         columns: { ...line, workOrderId: "integer", stagedQuantity: "integer", deliveredQuantity: "integer" },
         arrays: ["stagedSerials", "deliveredSerials"] },

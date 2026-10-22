@@ -26,7 +26,7 @@ export function fulfillmentResumeStatus(state: InventoryState, batch: Fulfillmen
   const changed = current.some(({ saved, order }) => order!.assignmentVersion !== saved.assignmentVersion ||
     !["open", "scheduled"].includes(order!.status.toLowerCase()));
   if (batch.mode === "scheduled" && (changed || current.some(({ order }) => !order!.eligible || order!.status.toLowerCase() !== "scheduled")))
-    return invalid("Scheduled work changed; review its reservations before continuing.");
+    return invalid("Scheduled work or its assignment changed after this batch was prepared. Use Review reassignment to confirm the current installer and vehicle before handoff.");
   if (changed && unstaged) return staged && batch.mode === "crew"
     ? { resumable: true, nextStep: "vehicle", reason: "Only already-staged stock can be handed off; release the unpulled remainder." }
     : invalid("Work or assignments changed; release the unfinished remainder and review current work.");
@@ -56,7 +56,10 @@ export const fulfillmentBatchSchema = fulfillmentCreateSchema.omit({ workOrders:
   pickupReady: z.boolean().optional(),
   createdBy: id, createdAt: z.string().datetime(),
   workOrders: z.array(z.object({ workOrderId: z.number().int().positive(),
-    assignmentVersion: z.number().int().nonnegative(), label: z.string().min(1).max(500) }).strict()).min(1).max(500),
+    assignmentVersion: z.number().int().nonnegative(), label: z.string().min(1).max(500),
+    installerId: id.nullable().optional(), installer: z.string().max(500).optional(),
+    scheduledDate: z.string().optional(),
+  }).strict()).min(1).max(500),
   lines: z.array(z.object({ workOrderId: z.number().int().positive(), itemId: id,
     quantity: z.number().int().positive().max(1000000),
     stagedQuantity: z.number().int().nonnegative(), deliveredQuantity: z.number().int().nonnegative(),

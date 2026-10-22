@@ -8,6 +8,8 @@ import { fulfillmentCreateSchema, fulfillmentMoveSchema, fulfillmentCloseSchema,
   type FulfillmentBatch, type FulfillmentCandidate } from "../shared/inventory-fulfillment";
 import type { User } from "../shared/schema";
 import { isStagingType } from "../shared/inventory-location-types";
+import { fulfillmentReassignSchema } from "../shared/inventory-fulfillment-reassignment";
+import { fulfillmentReassignmentReview, reassignmentDemandState } from "./inventoryFulfillmentReassignment";
 
 export async function fulfillmentOrders(client: Pick<PoolClient, "query">, projectId: number, state: InventoryState,
   user: User, ids?: number[], lock = false): Promise<FulfillmentCandidate[]> {
@@ -44,15 +46,33 @@ export async function prepareFulfillment(client: PoolClient, projectId: number, 
     throw Object.assign(new InventoryError("Fulfillment requires work-order viewing and inventory assign, receive and transfer permissions."), { status: 403 });
   if (action !== "fulfillmentCreate") {
     const input = action === "fulfillmentMove" ? fulfillmentMoveSchema.parse(data) :
+      action === "fulfillmentReassign" ? fulfillmentReassignSchema.parse(data) :
       action === "fulfillmentReady" ? fulfillmentReadySchema.parse(data) : fulfillmentCloseSchema.parse(data);
     const batch = state.fulfillmentBatches?.find(b => b.id === input.id);
     if (!batch) throw new InventoryError("Fulfillment batch not found.");
     // Allow warehouse staff to finish custody handoff after an order is reassigned/completed:
     // crew stock is pooled, and scheduled allocations remain reviewable rather than rebased.
     // Existing visibility and location permissions are still checked on every action.
-    const visible = await fulfillmentOrders(client, projectId, state, user, batch.workOrders.map(w => w.workOrderId), true);
+    const visible = await fulfillmentOrders(client, projectId,
+      action === "fulfillmentReassign" ? reassignmentDemandState(state, batch) : state,
+      user, batch.workOrders.map(w => w.workOrderId), true);
     if (visible.length !== batch.workOrders.length)
       throw Object.assign(new InventoryError("Work-order access changed. An authorized warehouse manager must review this batch."), { status: 403 });
+    if (action === "fulfillmentReassign") {
+      const change = fulfillmentReassignSchema.parse(data);
+      if (change.revision !== batch.revision || change.workOrders.length !== visible.length ||
+        new Set(change.workOrders.map(work => work.workOrderId)).size !== visible.length ||
+        visible.some(order => change.workOrders.find(work => work.workOrderId === order.workOrderId)?.assignmentVersion !== order.assignmentVersion))
+        throw Object.assign(new InventoryError("This batch or its assignments changed again. Refresh the reassignment review; no stock moved."), { status: 409 });
+      const review = await fulfillmentReassignmentReview(client, projectId, state, batch, visible, user, admin);
+      if (!review.canApply) throw Object.assign(new InventoryError(review.blockers.join(" ")), { status: 409 });
+      if (!review.vehicles.some(vehicle => vehicle.id === change.vehicleId))
+        throw new InventoryError("Choose an accessible active vehicle assigned to the current installer. Refresh if its crew changed.");
+      return { ...batch, vehicleId: change.vehicleId, revision: batch.revision + 1,
+        workOrders: visible.map(order => ({ workOrderId: order.workOrderId, label: order.label,
+          assignmentVersion: order.assignmentVersion, installerId: order.installerId,
+          installer: order.installer, scheduledDate: order.scheduledDate })) };
+    }
     if (action === "fulfillmentMove" && fulfillmentMoveSchema.parse(data).phase === "stage" &&
         visible.some(w => batch.workOrders.find(saved => saved.workOrderId === w.workOrderId)?.assignmentVersion !== w.assignmentVersion ||
           !["open", "scheduled"].includes(String(w.status).toLowerCase())))
@@ -60,7 +80,7 @@ export async function prepareFulfillment(client: PoolClient, projectId: number, 
     if (batch.mode === "scheduled" && (action === "fulfillmentMove" || action === "fulfillmentReady")) {
       const stale = visible.some(w => batch.workOrders.find(saved => saved.workOrderId === w.workOrderId)?.assignmentVersion !== w.assignmentVersion ||
         !w.eligible || String(w.status).toLowerCase() !== "scheduled");
-      if (stale) throw Object.assign(new InventoryError("A scheduled order was reassigned or its status changed. Review its reservations in Work Order Details; do not hand this batch to the former installer."), { status: 409 });
+      if (stale) throw Object.assign(new InventoryError("A scheduled order was reassigned or its status changed. Use Review reassignment to confirm its current installer and vehicle before handoff. Do not hand this batch to the former installer."), { status: 409 });
     }
     return;
   }
@@ -93,7 +113,8 @@ export async function prepareFulfillment(client: PoolClient, projectId: number, 
   if (input.mode === "crew" && new Set(orders.map(w => w.group)).size !== 1)
     throw new InventoryError("Choose one crew/group per batch; routes and zones may be combined.");
   return { ...input, status: "active", revision: 1, createdBy: user.id, createdAt: new Date().toISOString(),
-    workOrders: orders.map(w => ({ workOrderId: w.workOrderId, assignmentVersion: w.assignmentVersion, label: w.label })),
+    workOrders: orders.map(w => ({ workOrderId: w.workOrderId, assignmentVersion: w.assignmentVersion, label: w.label,
+      installerId: w.installerId, installer: w.installer, scheduledDate: w.scheduledDate })),
     lines: orders.flatMap(w => w.lines.map(line => ({ ...line, workOrderId: w.workOrderId,
       stagedQuantity: 0, deliveredQuantity: 0, stagedSerials: [], deliveredSerials: [] }))) };
 }

@@ -9,6 +9,8 @@ import { inventoryFromRelational, inventoryToRelational } from "../server/invent
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { inventoryPrint } from "../server/inventoryPrint";
 import { inventoryActivityGroups } from "../shared/inventory-activity-groups";
+import { inventoryFulfillmentPrint } from "../server/inventoryFulfillmentPrint";
+import { reassignmentDemandState } from "../shared/inventory-fulfillment-reassignment";
 
 const post = (s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId = randomUUID()) =>
   applyInventoryCommand(s, { operationId, action, data }, "worker", true).state;
@@ -61,6 +63,55 @@ test("partial pickup readiness is explicit, versioned, replay-safe and does not 
   const restored = inventoryFromRelational(new Map([...relational].map(([name, value]) => [name, value.rows])),
     state.revision, Object.keys(state));
   assert.equal(restored.fulfillmentBatches![0].pickupReady, true);
+});
+
+for (const staged of [["A"], ["A", "B"]]) test(`scheduled reassignment reuses ${staged.length} staged units, rebases reservations and is exactly-once without stock movement`, () => {
+  let { state } = create(setup(), "scheduled");
+  state = post(state, "warehouse", { id: "new-vehicle", code: "NEW", name: "New installer's vehicle",
+    type: "vehicle", userIds: ["new-installer"], vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO" });
+  state = move(state, "stage", staged);
+  const before = structuredClone(state), batch = state.fulfillmentBatches![0];
+  const shadow = reassignmentDemandState(state, batch);
+  assert.deepEqual(fulfillmentOutstanding(shadow, 1, [{ itemId: "meter", quantity: 1 }]), [{ itemId: "meter", quantity: 1 }]);
+  assert.deepEqual(state, before, "Readiness review cannot mutate physical or reservation state.");
+  const reviewed: FulfillmentBatch = { ...batch, vehicleId: "new-vehicle", revision: batch.revision + 1,
+    workOrders: batch.workOrders.map(work => ({ ...work, assignmentVersion: 3,
+      installerId: "new-installer", installer: "New installer", scheduledDate: "2026-10-22T14:00:00.000Z" })) };
+  const command: InventoryCommand = { operationId: randomUUID(), action: "fulfillmentReassign",
+    data: { id: batch.id, revision: batch.revision, vehicleId: reviewed.vehicleId,
+      workOrders: reviewed.workOrders.map(({ workOrderId, assignmentVersion }) => ({ workOrderId, assignmentVersion })),
+      reason: "Installer changed; reuse the reviewed staged meters", confirmed: true } };
+  assert.throws(() => applyInventoryCommand(state, command, "worker", true), /verified against current/);
+  const changed = structuredClone(reviewed); changed.lines[0].stagedSerials = ["C"];
+  assert.throws(() => applyInventoryCommand(state, command, "worker", true, undefined, { fulfillmentBatch: changed }), /serial custody/);
+  state = applyInventoryCommand(state, command, "worker", true, undefined, { fulfillmentBatch: reviewed }).state;
+  assert.deepEqual(state.stock, before.stock);
+  assert.deepEqual(state.transactions, before.transactions);
+  assert.deepEqual(state.fulfillmentBatches![0].lines, before.fulfillmentBatches![0].lines);
+  assert.equal(state.fulfillmentBatches![0].vehicleId, "new-vehicle");
+  assert.ok(state.allocations.every(allocation => allocation.assignmentVersion === 3));
+  assert.equal(state.receipts.at(-1)?.action, "fulfillmentReassign");
+  assert.equal(state.receipts.at(-1)?.lines.length, 0);
+  assert.match(state.receipts.at(-1)?.reason ?? "", /no physical movement/);
+  const printed = inventoryFulfillmentPrint(state.fulfillmentBatches![0], state, "Owned project");
+  assert.match(printed, /Reassignment reviews — no stock movement/);
+  assert.match(printed, /New installer/);
+  assert.match(printed, /Installer changed; reuse the reviewed staged meters/);
+  assert.doesNotMatch(printed, new RegExp(batch.id));
+  assert.equal(applyInventoryCommand(state, command, "worker", true).replay, true);
+  assert.throws(() => applyInventoryCommand(state, { ...command, operationId: randomUUID() },
+    "worker", true, undefined, { fulfillmentBatch: reviewed }), /Batch changed/);
+  const relational = inventoryToRelational(state, 1);
+  const restored = inventoryFromRelational(new Map([...relational].map(([name, value]) => [name, value.rows])),
+    state.revision, Object.keys(state));
+  assert.equal(restored.fulfillmentBatches![0].workOrders[0].installer, "New installer");
+  assert.equal(restored.fulfillmentBatches![0].workOrders[0].scheduledDate, "2026-10-22T14:00:00.000Z");
+  state = move(state, "vehicle", ["A"]);
+  assert.equal(state.stock.find(stock => stock.warehouseId === "new-vehicle" && stock.itemId === "meter")?.quantity, 1);
+  const delivered = state.fulfillmentBatches![0];
+  assert.throws(() => applyInventoryCommand(state, { ...command, operationId: randomUUID(),
+    data: { ...command.data, revision: delivered.revision } }, "worker", true, undefined,
+    { fulfillmentBatch: { ...delivered, revision: delivered.revision + 1 } }), /Already-delivered/);
 });
 
 test("pick tickets print escaped readable identities and actual staged custody without changing stock", async () => {

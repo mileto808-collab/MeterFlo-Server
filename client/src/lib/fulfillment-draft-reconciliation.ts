@@ -8,6 +8,9 @@ export type SavedFulfillmentInputs = {
   reason: string;
   physicallyConfirmed: boolean;
   closeReason: string;
+  reassignmentBatchId?: string;
+  reassignmentVehicleId?: string;
+  reassignmentReason?: string;
 };
 export type FulfillmentDraftActivity = SavedFulfillmentInputs & {
   name: string;
@@ -22,7 +25,8 @@ export function hasMeaningfulFulfillmentWork(draft: FulfillmentDraftActivity): b
     draft.name.trim() || draft.sourceId || draft.stagingId || draft.vehicleId ||
     Object.values(draft.quantities ?? {}).some(value => value.trim() !== "" && Number(value) !== 0) ||
     Object.values(draft.serialText ?? {}).some(value => value.trim() !== "") ||
-    draft.reason.trim() || draft.physicallyConfirmed || draft.closeReason.trim());
+    draft.reason.trim() || draft.physicallyConfirmed || draft.closeReason.trim() ||
+    !!draft.reassignmentVehicleId?.trim() || !!draft.reassignmentReason?.trim());
 }
 type Batch = { id: string; status: string; workOrders: { workOrderId: number }[] };
 type Order = { workOrderId: number; missing: unknown[]; lines: unknown[] };
@@ -36,8 +40,9 @@ export function reconcileFulfillmentDraft(
 ): FulfillmentDraftOutcome {
   if (draft.pending || draft.createAttempt) return { kind: "keep" };
   let status: "completed" | "cancelled" | undefined;
-  if (draft.batchId) {
-    const batch = batches.find(batch => batch.id === draft.batchId);
+  const targetBatchId = draft.reassignmentBatchId || draft.batchId;
+  if (targetBatchId) {
+    const batch = batches.find(batch => batch.id === targetBatchId);
     if (batch?.status === "completed" || batch?.status === "cancelled") status = batch.status;
   } else if (draft.selectedIds.length) {
     const completed = new Set(batches.filter(batch => batch.status === "completed")
@@ -51,6 +56,7 @@ export function reconcileFulfillmentDraft(
   if (!status) return { kind: "keep" };
   const captures = Object.values(draft.quantities).some(value => value.trim() !== "" && Number(value) !== 0) ||
     Object.values(draft.serialText).some(value => value.trim() !== "") ||
-    !!draft.reason.trim() || draft.physicallyConfirmed || !!draft.closeReason.trim();
+    !!draft.reason.trim() || draft.physicallyConfirmed || !!draft.closeReason.trim() ||
+    !!draft.reassignmentVehicleId?.trim() || !!draft.reassignmentReason?.trim();
   return { kind: captures ? "review" : "clear", status };
 }

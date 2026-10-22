@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fulfillmentReassignSchema } from "./inventory-fulfillment-reassignment";
 import { applyCustomerHandoff } from "./inventory-customer-handoffs";
 import { requirementsSatisfied } from "./inventory-requirements";
 import { normalizeRemovalPolicy, applyRemovalRuleCommand, resolveFieldDisposition, removalChoices } from "./inventory-removal-policy";
@@ -381,6 +382,44 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     access(batch.sourceId); access(batch.stagingId); access(batch.vehicleId);
     (s.fulfillmentBatches ??= []).push(batch);
     receipt(batch.id, batch.stagingId, [], `Fulfillment batch · ${batch.name}`);
+  } else if (a === "fulfillmentReassign") {
+    const input = fulfillmentReassignSchema.parse(d);
+    const batch = s.fulfillmentBatches?.find(value => value.id === input.id);
+    assert(batch && batch.status === "active" && batch.mode === "scheduled", "Choose an active scheduled batch to review.");
+    assert(batch.revision === input.revision, "Batch changed. Refresh its reassignment review.");
+    assert(batch.lines.every(line => line.deliveredQuantity === 0), "Already-delivered stock cannot be reassigned. Review its physical transfer or return.");
+    assert(capabilities.fulfillmentBatch, "Reassignment must be verified against current work orders.");
+    const reviewed = fulfillmentBatchSchema.parse(capabilities.fulfillmentBatch);
+    assert(reviewed.id === batch.id && reviewed.sourceId === batch.sourceId && reviewed.stagingId === batch.stagingId &&
+      reviewed.vehicleId === input.vehicleId && reviewed.revision === batch.revision + 1 &&
+      reviewed.status === batch.status && reviewed.mode === batch.mode &&
+      reviewed.createdBy === batch.createdBy && reviewed.createdAt === batch.createdAt,
+    "Reassignment cannot replace the batch's recorded history.");
+    const custody = (value: typeof batch) => value.lines.map(line => [line.workOrderId, line.itemId, line.quantity,
+      line.stagedQuantity, line.deliveredQuantity, line.stagedSerials, line.deliveredSerials]);
+    assert(JSON.stringify(custody(reviewed)) === JSON.stringify(custody(batch)), "Reassignment cannot change quantities or serial custody.");
+    assert(reviewed.workOrders.length === batch.workOrders.length &&
+      new Set(input.workOrders.map(work => work.workOrderId)).size === batch.workOrders.length &&
+      batch.workOrders.every(work => reviewed.workOrders.some(value => value.workOrderId === work.workOrderId)) &&
+      reviewed.workOrders.every(work => input.workOrders.some(value =>
+        value.workOrderId === work.workOrderId && value.assignmentVersion === work.assignmentVersion)),
+    "Review every work order's current assignment before continuing.");
+    access(batch.sourceId); access(batch.stagingId);
+    const destination = access(input.vehicleId);
+    const installerId = reviewed.workOrders[0]?.installerId;
+    assert(destination.type === "vehicle" && installerId &&
+      reviewed.workOrders.every(work => work.installerId === installerId) &&
+      [destination.assignedUserId, ...(destination.userIds ?? [])].includes(installerId),
+    "Choose a vehicle assigned to the reviewed installer.");
+    const previous = [...new Set(batch.workOrders.map(work => work.installer || "previous installer not recorded"))].join(", ");
+    const previousVehicle = s.warehouses.find(value => value.id === batch.vehicleId)?.name ?? "previous vehicle";
+    batch.vehicleId = reviewed.vehicleId; batch.workOrders = reviewed.workOrders; batch.revision = reviewed.revision;
+    for (const work of reviewed.workOrders) {
+      const allocation = s.allocations.find(value => value.workOrderId === work.workOrderId && value.status === "reserved");
+      if (allocation) { allocation.assignmentVersion = work.assignmentVersion; allocation.revision++; }
+    }
+    receipt(batch.id, batch.stagingId, [],
+      `Reassignment reviewed: ${previous} → ${reviewed.workOrders[0].installer || "current installer"}; ${previousVehicle} → ${destination.name}. Existing staged stock reused; no physical movement. ${input.reason}`);
   } else if (a === "fulfillmentReady") {
     const input = fulfillmentReadySchema.parse(d);
     const batch = s.fulfillmentBatches?.find(value => value.id === input.id);

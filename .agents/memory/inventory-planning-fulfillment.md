@@ -57,6 +57,12 @@ Keep completed fulfillment batches in searchable, filterable, exportable history
 
 **How to apply:** Recheck assignment, access, and physical location eligibility against current server state on every load and posting. A crew batch may hand off already-staged stock after an assignment change, but must not pull more; changed scheduled assignments require review before handoff. Preserve physical receipts and pending drafts.
 
+Resolve compatible scheduled reassignments through a guided review rather than requiring a release and a second physical pull.
+
+**Why:** The user needs an easy resolution when a scheduled installer changes, with clear explanations of what changed and what the warehouse should do next.
+
+**How to apply:** Explicitly review the saved/current assignment and the current installer's assigned vehicle. Reuse unhanded-off staged stock without moving or duplicating it; keep historical physical custody intact. Explain incompatible requirements, split installers, access problems, and already-delivered stock with actionable alternatives. Never guess a historical installer that an older batch did not record.
+
 Opening or navigating a fulfillment workflow is not saved work. Do not offer “Continue saved workflow” or warn about replacing inputs unless the user made substantive selections or captures, or an operation needs recovery.
 
 **Why:** The user saw a false saved-workflow prompt after merely choosing a crew flow and leaving the screen open.

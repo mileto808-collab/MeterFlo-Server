@@ -17,6 +17,8 @@ export function inventoryFulfillmentPrint(batch: FulfillmentBatch, state: Invent
   const movements = state.receipts.filter(receipt => receipt.reference === batch.id &&
     ["fulfillmentMove", "fulfillmentClose"].includes(receipt.action))
     .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const reviews = state.receipts.filter(receipt => receipt.reference === batch.id && receipt.action === "fulfillmentReassign")
+    .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   const totals = new Map<string, { planned: number; staged: number; handedOff: number }>();
   for (const line of batch.lines) {
     const row = totals.get(line.itemId) ?? { planned: 0, staged: 0, handedOff: 0 };
@@ -58,5 +60,8 @@ export function inventoryFulfillmentPrint(batch: FulfillmentBatch, state: Invent
           ${receipt.lines.map(line => `<tr><td>${escape(product(line.itemId))}</td><td>${line.quantity}</td><td class="serials">${line.serials.length ? line.serials.map(escape).join(", ") : "Not serialized"}</td></tr>`).join("")}
           </tbody></table></div>`}</section>`;
     }).join("") : "<p>No physical stock movements have been recorded for this batch.</p>"}
+    ${reviews.length ? `<h2>Reassignment reviews — no stock movement</h2>${reviews.map(receipt =>
+      `<section><p>${escape(inventoryDateTime(receipt.occurredAt, timezone))} · ${escape(inventoryActorLabel(receipt.actor, actors))}</p>
+      <p>${escape(receipt.reason || "")}</p></section>`).join("")}` : ""}
     </body></html>`;
 }

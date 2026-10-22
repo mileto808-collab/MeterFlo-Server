@@ -10,6 +10,8 @@ import { usePermissions } from "@/hooks/usePermissions";
 import type { InventoryItem, InventoryState, Warehouse } from "@shared/inventory";
 import { fulfillmentReserved, type FulfillmentBatch, type FulfillmentResumeStatus } from "@shared/inventory-fulfillment";
 import { FulfillmentBatchHistory } from "./fulfillment-batch-history";
+import { FulfillmentReassignmentReview } from "./fulfillment-reassignment-review";
+import type { FulfillmentReassignmentReview as ReassignmentReview } from "@shared/inventory-fulfillment-reassignment";
 import { locationTypeFor, warehouseAccessible, isStagingType } from "@shared/inventory-location-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +38,7 @@ type InventorySnapshot = { state: InventoryState; permissions: string[]; project
 type Receipt = { id: string; action: string; reference: string; occurredAt: string; actor: string; reason?: string; lines: Array<{ itemId: string; quantity: number; serials: string[] }> };
 type PendingMove = {
   operationId: string;
-  action: "fulfillmentMove" | "fulfillmentClose" | "fulfillmentReady";
+  action: "fulfillmentMove" | "fulfillmentClose" | "fulfillmentReady" | "fulfillmentReassign";
   data: Record<string, unknown>;
 };
 type CreateAttempt = { operationId: string; id: string; data: Record<string, unknown> };
@@ -62,11 +64,15 @@ type Draft = {
   closeReason: string;
   createAttempt: CreateAttempt | null;
   pending: PendingMove | null;
+  reassignmentBatchId: string;
+  reassignmentVehicleId: string;
+  reassignmentReason: string;
 };
 const emptyDraft = (): Draft => ({
   mode: "crew", step: "orders", name: "", selectedIds: [], search: "", route: "", group: "", zone: "", installer: "", date: "",
   sourceId: "", stagingId: "", vehicleId: "", batchId: "", quantities: {}, serialText: {}, reason: "",
   physicallyConfirmed: false, closeReason: "", createAttempt: null, pending: null,
+  reassignmentBatchId: "", reassignmentVehicleId: "", reassignmentReason: "",
 });
 const splitSerials = (value: string) => value.split(/[\n,;]/).map(item => item.trim()).filter(Boolean);
 const quantityKey = (phase: string, itemId: string) => `${phase}:${itemId}`;
@@ -92,6 +98,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const [checkedOnEntry, setCheckedOnEntry] = useState(false);
   const [finishedNotice, setFinishedNotice] = useState("");
   const [showSavedInputs, setShowSavedInputs] = useState(false);
+  const [reassignmentBatchId, setReassignmentBatchId] = useState("");
   const wizardRef = useRef<HTMLDivElement>(null);
   const stepBodyRef = useRef<HTMLDivElement>(null);
   const dataKey = ["/api/projects", projectId, "inventory", "fulfillment"];
@@ -119,6 +126,12 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     refetchOnReconnect: "always",
     refetchOnWindowFocus: "always",
   });
+  useEffect(() => {
+    if (!reassignmentBatchId || !fulfillment.dataUpdatedAt) return;
+    void queryClient.invalidateQueries({
+      queryKey: [`/api/projects/${projectId}/inventory/fulfillment/${reassignmentBatchId}/reassignment`],
+    });
+  }, [reassignmentBatchId, fulfillment.dataUpdatedAt, projectId]);
   const orders = fulfillment.data?.orders ?? [];
   const state = inventory.data?.state;
   const items = state?.items ?? [];
@@ -192,6 +205,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
     setCheckedOnEntry(false);
     setFinishedNotice("");
     setShowSavedInputs(false);
+    setReassignmentBatchId("");
     setScanNotices({});
     setEditingSerialKey(null);
     setStorageReady(false);
@@ -199,6 +213,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       const saved = window.localStorage.getItem(storageKey);
       const parsed = saved ? JSON.parse(saved) as Partial<Draft> : null;
       setDraft({ ...emptyDraft(), ...parsed, pending: parsed?.pending ?? null });
+      setReassignmentBatchId(parsed?.reassignmentBatchId ?? "");
+      setShowStart(true);
     } catch {
       setDraft(emptyDraft());
       setError("Saved workflow inputs could not be read. A fresh draft is available; no inventory move was sent.");
@@ -212,16 +228,19 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useEffect(() => {
     if (!storageKey || !storageReady) return;
     try {
-      if (hasMeaningfulFulfillmentWork(draft)) window.localStorage.setItem(storageKey, JSON.stringify(draft));
+      if (hasMeaningfulFulfillmentWork(draft) || draft.reassignmentVehicleId || draft.reassignmentReason.trim())
+        window.localStorage.setItem(storageKey, JSON.stringify(draft));
       else window.localStorage.removeItem(storageKey);
     }
     catch { setError("Browser storage is unavailable. Physical moves stay disabled until their exact retry identity can be saved."); }
   }, [storageKey, storageReady, draft]);
   useEffect(() => {
     if (draft.pending && receipts.some(receipt => receipt.id === draft.pending?.operationId)) {
+      const completedPending = draft.pending;
       setDraft(current => ({ ...current, pending: null, quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "" }));
       void queryClient.invalidateQueries({ queryKey: dataKey });
       void queryClient.invalidateQueries({ queryKey: inventoryKey });
+    if (completedPending.action === "fulfillmentReassign") finishReassignment(completedPending.data);
     }
   }, [draft.pending, receipts, projectId]);
   useEffect(() => {
@@ -311,7 +330,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   const stagingComplete = batchCanReleaseRemainder && batchDemand.length > 0 && batchDemand.every(row => stageRemaining(row) <= 0);
   const hasStagedStock = batchCanReleaseRemainder && batchDemand.some(row => vehicleRemaining(row) > 0);
   const hasUnrecordedMove = Object.values(draft.quantities).some(value => value.trim() !== "" && value.trim() !== "0") ||
-    Object.values(draft.serialText).some(value => value.trim() !== "") || !!draft.reason.trim() || draft.physicallyConfirmed;
+    Object.values(draft.serialText).some(value => value.trim() !== "") || !!draft.reason.trim() || draft.physicallyConfirmed || !!draft.closeReason.trim();
   const showMoveForm = draft.step !== "stage" || !stagingComplete || hasUnrecordedMove;
   const selectionConstraintError = draft.mode === "crew"
     ? (selectedOrders.some(order => !order.group) || new Set(selectedOrders.map(order => order.group)).size > 1
@@ -452,6 +471,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       if (await receiptFound(pending.operationId)) {
         update({ pending: null, quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "" });
         await Promise.all([queryClient.invalidateQueries({ queryKey: dataKey }), queryClient.invalidateQueries({ queryKey: inventoryKey })]);
+        if (pending.action === "fulfillmentReassign") finishReassignment(pending.data);
         return;
       }
       await apiRequest("POST", `/api/projects/${projectId}/inventory/commands`, {
@@ -459,6 +479,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       });
       update({ pending: null, quantities: {}, serialText: {}, reason: "", physicallyConfirmed: false, closeReason: "" });
       await Promise.all([queryClient.invalidateQueries({ queryKey: dataKey }), queryClient.invalidateQueries({ queryKey: inventoryKey })]);
+      if (pending.action === "fulfillmentReassign") finishReassignment(pending.data);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Movement outcome is unknown.";
       const status = Number(message.match(/^\s*(\d{3}):/)?.[1] ?? 0);
@@ -471,6 +492,32 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
         setError("Movement outcome is unknown. Inputs are locked; check the matching receipt or retry this exact operation ID before beginning another move.");
       }
     } finally { setBusy(false); }
+  };
+  const finishReassignment = (data: Record<string, unknown>) => {
+    const id = String(data.id ?? "");
+    const batch = fulfillment.data?.batches.find(entry => entry.id === id);
+    const nextStep = batch?.lines.some(line => line.quantity > line.stagedQuantity) ? "stage" : "vehicle";
+    setReassignmentBatchId("");
+    setShowStart(false);
+    setShowBlocked(false);
+    update({ batchId: id, mode: "resume", step: nextStep, reassignmentBatchId: "", reassignmentVehicleId: "", reassignmentReason: "" });
+  };
+  const submitReassignment = (review: ReassignmentReview, vehicleId: string, reason: string) => {
+    if (!canPost || busy || pendingLock || hasUnrecordedMove || !storageKey || !review.canApply) return;
+    const pending: PendingMove = {
+      operationId: crypto.randomUUID(), action: "fulfillmentReassign",
+      data: { id: review.batchId, revision: review.revision, vehicleId,
+        workOrders: review.orders.map(order => ({ workOrderId: order.workOrderId, assignmentVersion: order.assignmentVersion })),
+        reason, confirmed: true },
+    };
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({ ...draft, pending }));
+      setDraft(current => ({ ...current, pending }));
+    } catch {
+      setError("Could not save the exact reassignment command before sending. No reassignment was sent.");
+      return;
+    }
+    void sendPending(pending);
   };
   const submitMove = async (phase: "stage" | "vehicle") => {
     if (movementBlocked) { setError(activeResume?.reason ?? "This batch needs review before another stock movement."); return; }
@@ -655,7 +702,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
   useWizardStepFocus({
     open,
     ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff && requestedMode === null,
-    stepKey: `${showHistory}:${showBlocked}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
+    stepKey: `${showHistory}:${showBlocked}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
     rootRef: wizardRef,
     bodyRef: stepBodyRef,
     chooseTarget: root => {
@@ -670,6 +717,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       if (showHistory) return find('[data-wizard-history]');
       if (showBlocked) return find('[data-wizard-blocked]');
       if (showStart) return find('[data-wizard-continue]', '[data-testid="fulfillment-start-screen"] button');
+      if (reassignmentBatchId) return find('[data-wizard-reassignment]');
       if (draft.pending || draft.createAttempt) return find('[data-wizard-pending]', '[data-wizard-title]');
       if (draft.step === "review") return find('[data-wizard-review]');
       if (draft.step === "orders") return draft.mode === "resume"
@@ -692,7 +740,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           <DialogTitle data-wizard-title tabIndex={-1} className="mt-1 text-xl sm:text-2xl">Fulfill / Stage Work Orders</DialogTitle>
           <DialogDescription>Build one saved crew batch, move only what is physically in custody, then hand it to one vehicle.</DialogDescription>
         </DialogHeader>
-        {!showStart && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
+        {!showStart && !reassignmentBatchId && <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`Step ${currentStepIndex + 1} of ${stepNames.length}`}>
           {stepNames.map((name, index) => <div key={name} className="min-w-0">
             <div className={`h-1 rounded-full ${index <= currentStepIndex ? "bg-primary" : "bg-border"}`} />
             <p className={`mt-1 truncate text-[10px] sm:text-xs ${index === currentStepIndex ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{name}</p>
@@ -717,9 +765,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           <AlertDescription>Your saved selections and captures remain in this browser. An administrator must restore workOrders.view before work orders or saved batches can be loaded.</AlertDescription>
         </Alert>}
         {!canPost && <Alert className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Read-only workflow</AlertTitle><AlertDescription>Posting requires workOrders.view plus inventory.assign, inventory.receive, and inventory.transfer. Your saved draft is retained while access is unavailable.</AlertDescription></Alert>}
-        {!showStart && activeBatch?.status === "active" && activeResume?.reason && <Alert className="mb-4">
+        {!showStart && !reassignmentBatchId && activeBatch?.status === "active" && activeResume?.reason && <Alert className="mb-4">
           <AlertTriangle className="h-4 w-4" /><AlertTitle>Batch review required</AlertTitle>
-          <AlertDescription>{activeResume.reason} Your saved inputs are retained. Use Release unfinished remainder below when appropriate.</AlertDescription>
+          <AlertDescription className="space-y-2">{activeResume.reason} Your saved inputs are retained. Use Review / release remainder below when appropriate.
+            {activeBatch.mode === "scheduled" && <Button type="button" size="sm" className="block" data-testid={`fulfillment-review-reassignment-${activeBatch.id}`}
+              disabled={!canPost || busy || !!draft.pending || !!draft.createAttempt}
+              onClick={() => setReassignmentBatchId(activeBatch.id)}>Review reassignment</Button>}
+          </AlertDescription>
         </Alert>}
         {(!fulfillment.isLoading && !fulfillment.isError && !inventory.isLoading && !inventory.isError && !stagingLocations.length) && <Alert className="mb-4">
           <MapPin className="h-4 w-4" /><AlertTitle>Set up a Staging location</AlertTitle><AlertDescription className="space-y-2">
@@ -735,6 +787,19 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
           <Button type="button" size="sm" variant="outline" onClick={() => { void fulfillment.refetch(); void inventory.refetch(); }}>Retry</Button>
         </AlertDescription></Alert>}
         {storageReady && checkedOnEntry && !fulfillment.isLoading && !inventory.isLoading && !fulfillment.isError && !inventory.isError && <>
+          {reassignmentBatchId && !showStart && <FulfillmentReassignmentReview projectId={projectId} batchId={reassignmentBatchId}
+            canApply={canPost} blocked={hasUnrecordedMove || !!draft.pending || !!draft.createAttempt || busy}
+            vehicleId={draft.reassignmentVehicleId} reason={draft.reassignmentReason}
+            onVehicleChange={value => update({ reassignmentBatchId, reassignmentVehicleId: value })}
+            onReasonChange={value => update({ reassignmentBatchId, reassignmentReason: value })}
+            onApply={submitReassignment}
+            onReviewRelease={() => {
+              const batch = fulfillment.data?.batches.find(entry => entry.id === reassignmentBatchId);
+              setReassignmentBatchId("");
+              update({ reassignmentBatchId: "", reassignmentVehicleId: "", reassignmentReason: "" });
+              if (batch) startResume(batch);
+              else { setShowStart(true); setShowBlocked(true); }
+            }} />}
           {showHistory && state && fulfillment.data && <div data-wizard-history tabIndex={-1} className="flex min-h-[24rem] flex-col">
             <FulfillmentBatchHistory state={state} batches={fulfillment.data.batches}
               timezone={fulfillment.data.timezone} projectName={inventory.data?.projectName ?? "Project inventory"}
@@ -746,8 +811,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
             {blockedBatches.length ? blockedBatches.map(batch => <div key={batch.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
               <div className="min-w-0"><p className="break-words font-medium">{batch.name}</p>
                 <p className="text-sm text-muted-foreground">{fulfillment.data?.resumeStatus?.[batch.id]?.reason}</p></div>
+              <div className="flex flex-wrap gap-2">
+              {batch.mode === "scheduled" && <Button type="button" variant="default" size="sm" data-testid={`fulfillment-review-reassignment-${batch.id}`}
+                disabled={!canPost || fulfillment.isFetching || !!draft.pending || !!draft.createAttempt}
+                onClick={() => { setReassignmentBatchId(batch.id); setShowBlocked(false); setShowStart(false); }}>Review reassignment</Button>}
               <Button type="button" variant="outline" size="sm" disabled={!canPost || fulfillment.isFetching}
                 onClick={() => { setShowBlocked(false); startResume(batch); }}>Review / release remainder</Button>
+              </div>
             </div>) : <p role="status" className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No batches need review. Check Resume saved batch for unfinished work.</p>}
           </div>}
           {showStart && !showHistory && !showBlocked && <div className="space-y-4" data-testid="fulfillment-start-screen">
@@ -762,8 +832,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
                   ? "A saved operation still needs confirmation. Its exact identity and inputs have been retained."
                   : "Your previous workflow inputs are saved. Continue when you are ready to return to them."}</p>
               {savedOutcome.kind === "review"
-                ? <Button type="button" variant="outline" onClick={() => setShowSavedInputs(value => !value)}>Review saved inputs</Button>
-                : <Button data-wizard-continue type="button" disabled={busy} onClick={() => setShowStart(false)}><RotateCcw className="mr-2 h-4 w-4" />Continue saved workflow</Button>}
+                ? <div className="flex flex-wrap gap-2">
+                  {draft.reassignmentBatchId && <Button data-testid="fulfillment-continue-reassignment" type="button" variant="outline" disabled={busy}
+                    onClick={() => { setReassignmentBatchId(draft.reassignmentBatchId); setShowStart(false); }}>Review saved reassignment</Button>}
+                  <Button type="button" variant="outline" onClick={() => setShowSavedInputs(value => !value)}>Review saved inputs</Button>
+                </div>
+                : <Button data-wizard-continue type="button" data-testid={draft.reassignmentBatchId ? "fulfillment-continue-reassignment" : undefined} disabled={busy}
+                  onClick={() => {
+                    if (draft.reassignmentBatchId) setReassignmentBatchId(draft.reassignmentBatchId);
+                    setShowStart(false);
+                  }}><RotateCcw className="mr-2 h-4 w-4" />{draft.reassignmentBatchId ? "Continue saved reassignment review" : "Continue saved workflow"}</Button>}
               {savedOutcome.kind === "review" && showSavedInputs && <FulfillmentSavedInputs draft={draft} items={items} />}
             </div>}
             <div className="grid gap-3 sm:grid-cols-2">
@@ -923,7 +1001,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
               {!demand.length && <p className="p-4 text-sm text-muted-foreground">No physical demand was found. Select work orders with inventory requirements before creating a batch.</p>}
             </div>
           </div>}
-          {(draft.step === "stage" || draft.step === "vehicle") && <div className="space-y-5">
+          {!reassignmentBatchId && !showStart && (draft.step === "stage" || draft.step === "vehicle") && <div className="space-y-5">
             {!activeBatch ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Batch is syncing</AlertTitle><AlertDescription>Refreshing the saved batch before a physical move is enabled.</AlertDescription></Alert> :
               activeBatch.status !== "active" ? <div className="space-y-4 rounded-xl border bg-muted/20 p-5 text-center sm:p-8">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><Check className="h-6 w-6" /></div>
@@ -1083,12 +1161,17 @@ export function FulfillmentWizard({ projectId, open, onOpenChange }: { projectId
       <DialogFooter className="min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
         {showHistory && <Button type="button" variant="outline" onClick={() => setShowHistory(false)}><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>}
         {showBlocked && <Button type="button" variant="outline" onClick={() => setShowBlocked(false)}><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>}
-        {!showStart && <div className="flex gap-2">
+        {reassignmentBatchId && <Button type="button" variant="outline" className="min-w-0 whitespace-normal" onClick={() => {
+          setReassignmentBatchId("");
+          if (draft.batchId === reassignmentBatchId) setShowStart(false);
+          else { setShowStart(true); setShowBlocked(true); }
+        }}><ArrowLeft className="mr-2 h-4 w-4 shrink-0" />Back</Button>}
+        {!showStart && !reassignmentBatchId && <div className="flex gap-2">
           {draft.step !== "orders" && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} onClick={goBack}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
           {draft.step === "orders" && !draft.batchId && <Button type="button" variant="ghost" disabled={busy || pendingLock || createLock} onClick={reset}>Clear draft</Button>}
         </div>}
         <div className="flex flex-wrap justify-end gap-2">
-          {!showStart && <>
+          {!showStart && !reassignmentBatchId && <>
           {draft.step === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") && <Button type="button" disabled={!canCreate || busy || !storageReady || !stagingLocations.length} onClick={() => update({ step: "review" })}>Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create saved batch"}</Button>}
           {draft.step === "stage" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock} onClick={() => moveToVehicle()}>

@@ -16,6 +16,9 @@ test("opening, changing mode, navigating and searching without work do not creat
   assert.equal(hasMeaningfulFulfillmentWork({ ...emptyActivity, mode: "scheduled", step: "vehicle",
     search: "route 644", route: "644", installer: "installer", date: "2026-10-21" }), false);
   assert.equal(hasMeaningfulFulfillmentWork({ ...emptyActivity, quantities: { "stage:meter": "0" } }), false);
+  assert.equal(hasMeaningfulFulfillmentWork({ ...emptyActivity, reassignmentBatchId: "batch" }), false);
+  assert.equal(hasMeaningfulFulfillmentWork({ ...emptyActivity, reassignmentReason: "Installer changed" }), true);
+  assert.equal(hasMeaningfulFulfillmentWork({ ...emptyActivity, reassignmentVehicleId: "new-vehicle" }), true);
 });
 test("actual selections, entered details and protected operation attempts remain resumable", () => {
   for (const changes of [
@@ -44,6 +47,9 @@ test("unposted captures are retained for review rather than offered as an unfini
     { quantities: { "vehicle:item": "2" } }, { serialText: { "vehicle:item": "000123" } },
     { reason: "Physically moved stock" }, { physicallyConfirmed: true }, { closeReason: "Release remainder" },
   ]) assert.deepEqual(reconcileFulfillmentDraft({ ...draft, ...captures }, completed, []), { kind: "review", status: "completed" });
+  assert.deepEqual(reconcileFulfillmentDraft({ ...draft, batchId: "", reassignmentBatchId: "batch",
+    reassignmentReason: "Installer changed", reassignmentVehicleId: "new-vehicle" }, completed, []),
+  { kind: "review", status: "completed" });
 });
 test("pre-batch selections completed elsewhere are reconciled only when current demand is covered", () => {
   assert.deepEqual(reconcileFulfillmentDraft({ ...draft, batchId: "" }, completed, [

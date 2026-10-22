@@ -7,6 +7,7 @@ import { promises as fs } from "node:fs";
 import { inventoryCommandSchema, inventoryPermissions, commandPermission, type InventoryState } from "../shared/inventory";
 import { InventoryError } from "../shared/inventory-engine";
 import { inventoryState, postInventory } from "./inventoryService";
+import { fulfillmentReassignmentReview, reassignmentDemandState } from "./inventoryFulfillmentReassignment";
 import { inventoryWorkOrderLabels, inventoryWorkOrderContext } from "./inventoryWorkOrderLabels";
 import { inventoryActivityGroups } from "../shared/inventory-activity-groups";
 import { inventoryActivityPrint } from "./inventoryActivityPrint";
@@ -113,6 +114,29 @@ export function registerInventoryRoutes(app: Express) {
       [[...(vehicle?.userIds ?? []), ...(vehicle?.assignedUserId ? [vehicle.assignedUserId] : [])]]);
     const labels = await inventoryWorkOrderLabels(c.project.databaseName, batch.workOrders.map(work => work.workOrderId));
     res.type("html").send(await inventoryPickTicket(batch, state, c.project, users, `${req.protocol}://${req.get("host")}`, labels));
+  }));
+  app.get(`${base}/fulfillment/:id/reassignment`, handler(async (req, res) => {
+    const c = res.locals.inventory;
+    if (!c.project.inventoryEnabled) throw new InventoryError("Project inventory is disabled.");
+    for (const permission of ["inventory.assign", "inventory.receive", "inventory.transfer", "workOrders.view"])
+      if (!await storage.hasPermission(c.user, permission))
+        throw Object.assign(new InventoryError("Fulfillment viewing, assign, receive and transfer permissions are required."), { status: 403 });
+    const connection = await pool.connect();
+    try {
+      await connection.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const state = normalizeInventoryLocations(await readRelationalInventory(connection, c.project.id, { readOnly: true }));
+      const batch = state.fulfillmentBatches?.find(value => value.id === req.params.id);
+      if (!batch) throw Object.assign(new InventoryError("Batch not found in this project."), { status: 404 });
+      const orders = await fulfillmentOrders(connection, c.project.id, reassignmentDemandState(state, batch),
+        c.user, batch.workOrders.map(work => work.workOrderId));
+      if (orders.length !== batch.workOrders.length)
+        throw Object.assign(new InventoryError("Work-order access changed. An authorized warehouse manager must review this batch."), { status: 403 });
+      const review = await fulfillmentReassignmentReview(connection, c.project.id, state, batch, orders, c.user, c.admin);
+      await connection.query("COMMIT");
+      res.set("Cache-Control", "no-store");
+      return review;
+    } catch (error) { await connection.query("ROLLBACK"); throw error; }
+    finally { connection.release(); }
   }));
   app.get(`${base}/fulfillment`, handler(async (_req, res) => {
     const c = res.locals.inventory;
