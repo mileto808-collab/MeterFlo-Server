@@ -45,6 +45,12 @@ Authorized users must be able to delete a fulfillment batch if inventory has not
 
 **How to apply:** Distinguish deletion of an unposted draft or batch from releasing the remainder of a batch with physical movement history. Do not treat zero current stock as proof that nothing was ever posted.
 
+If inventory has not posted, Clear draft resets inputs while retaining the draft; Delete draft deletes the draft.
+
+**Why:** The user explicitly distinguished resetting inputs from deleting a saved draft.
+
+**How to apply:** Keep Clear draft and Delete draft as separate actions. Clear must not call draft deletion, and neither action may erase posted inventory history.
+
 An explicit pick-ticket scan is an exception to the normal chooser-first entry: open that verified batch at the appropriate current step.
 
 **Why:** The user needs warehouse staff to retrieve a staged order quickly when a crew arrives later, using an HID scanner anywhere in Inventory or the fulfillment camera. The technician's pickup notice/report must also show a QR that the warehouse can scan.
