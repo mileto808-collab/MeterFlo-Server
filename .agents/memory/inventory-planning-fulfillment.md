@@ -1,4 +1,10 @@
 ---
+
+Technicians and authorized users occasionally need to add planned inventory line items in Work Order Details. Technicians should not see unnecessary fields or areas intended for higher-authority inventory work.
+
+**Why:** The user described Work Order Details → Inventory as confusing and explicitly asked for a simpler technician interface.
+
+**How to apply:** Separate simple item/quantity planning from reservation, source, serial, staging and corrective controls. Hide unauthorized areas instead of merely disabling their actions; enforce the same boundaries on the server.
 name: Inventory planning and fulfillment intent
 description: User requirements for manual planned work-order items, future warehouse fulfillment, and onsite serial selection.
 ---
