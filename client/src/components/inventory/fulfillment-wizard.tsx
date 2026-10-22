@@ -40,7 +40,14 @@ type FulfillmentOrder = {
   lines: Array<{ itemId: string; quantity: number }>;
   missing: Array<{ equipment: string; typeId: number | string }>; eligible: boolean;
 };
-type FulfillmentResponse = { orders: FulfillmentOrder[]; batches: FulfillmentBatch[]; resumeStatus: Record<string, FulfillmentResumeStatus>; deletableBatchIds?: string[]; timezone: string };
+type FulfillmentResponse = {
+  orders: FulfillmentOrder[];
+  batches: FulfillmentBatch[];
+  resumeStatus: Record<string, FulfillmentResumeStatus>;
+  deletableBatchIds?: string[];
+  batchDeletionStatus?: Record<string, { allowed: boolean; reason?: string }>;
+  timezone: string;
+};
 type InventorySnapshot = { state: InventoryState; permissions: string[]; projectName?: string };
 type PickTicketLookup = { batch: FulfillmentBatch; resume: { resumable: boolean; nextStep: "stage" | "vehicle"; reason?: string } };
 type CorrectionDraftSnapshot = {
@@ -1185,6 +1192,18 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   };
   const pendingLock = !!draft.pending;
   const createLock = !!draft.createAttempt;
+  const batchDeletionAllowed = (batch: FulfillmentBatch) =>
+    fulfillment.data?.deletableBatchIds?.includes(batch.id) === true &&
+    fulfillment.data?.batchDeletionStatus?.[batch.id]?.allowed === true;
+  const batchDeleteDisabled = (batch: FulfillmentBatch) =>
+    !canPost || fulfillment.isFetching || busy || savingDraft || !!deletingBatchId ||
+    pendingLock || createLock || hasUnrecordedMove || !batchDeletionAllowed(batch);
+  const batchDeletionBlockReason = (batch: FulfillmentBatch) => {
+    const status = fulfillment.data?.batchDeletionStatus?.[batch.id];
+    return status && !status.allowed
+      ? status.reason || "This batch is not currently eligible for deletion."
+      : null;
+  };
   const canCreate = canPost && !!draft.name.trim() && selectedOrders.length > 0 && selectedOrders.length === draft.selectedIds.length &&
     selectedOrders.every(order => order.eligible && !order.missing.length && order.lines.length > 0) &&
     !selectionConstraintError && !!draft.sourceId && !!draft.stagingId && !!draft.vehicleId &&
@@ -1488,9 +1507,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     startResume(batch);
   };
   const deleteFulfillmentBatch = async (batch: FulfillmentBatch) => {
-    if (deletingBatchId || busy || savingDraft || draft.pending || draft.createAttempt) return;
-    if (currentDraftRef.current.batchId === batch.id && hasUnrecordedMove) {
-      setError("This batch has unrecorded local movement entries. Keep or clear those entries before deleting the batch.");
+    if (batchDeleteDisabled(batch)) {
+      if (hasUnrecordedMove) setError("Unrecorded movement entries are still captured. Record or clear them before deleting a batch.");
       return;
     }
     setDeletingBatchId(batch.id);
@@ -1510,7 +1528,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
       setBatchToDelete(null);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "The batch could not be deleted.";
-      setError(`${message} The server may reject deletion if any stock movement has ever been posted; no receipt or inventory history is removed.`);
+      setError(`${message} Deletion is allowed only for never-posted or fully reversed batches. Movement, reversal, receipt, and deletion history are retained.`);
     } finally {
       setDeletingBatchId(null);
     }
@@ -1694,19 +1712,43 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             <FulfillmentBatchHistory state={state} batches={fulfillment.data.batches}
               timezone={fulfillment.data.timezone} projectName={inventory.data?.projectName ?? "Project inventory"}
               onRefresh={() => { void fulfillment.refetch(); void inventory.refetch(); }} onPrint={printBatchReceipt} />
+            {fulfillment.data.batches.some(batch => batch.status === "completed" || batch.status === "cancelled") &&
+              <section className="mt-4 space-y-3" aria-label="Completed and cancelled batch deletion">
+                <div>
+                  <h3 className="text-sm font-semibold">Batch workflow records</h3>
+                  <p className="text-xs text-muted-foreground">Eligible batches can be removed from active workflows without removing their inventory or audit history.</p>
+                </div>
+                {fulfillment.data.batches.filter(batch => batch.status === "completed" || batch.status === "cancelled").map(batch =>
+                  <div key={`history-delete-${batch.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-medium">{batch.name} <Badge variant="secondary">{batch.status}</Badge></p>
+                      {batchDeletionBlockReason(batch) && <p className="mt-1 text-xs text-muted-foreground">Deletion unavailable: {batchDeletionBlockReason(batch)}</p>}
+                    </div>
+                    {batchDeletionAllowed(batch) && <Button type="button" size="sm" variant="destructive"
+                      disabled={batchDeleteDisabled(batch)} onClick={() => setBatchToDelete(batch)}>
+                      <Trash2 className="mr-2 h-4 w-4" />Delete batch
+                    </Button>}
+                  </div>
+                )}
+              </section>}
           </div>}
           {showBlocked && <div data-wizard-blocked tabIndex={-1} className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-lg font-semibold">Batches needing review</h3><Button type="button" variant="outline" size="sm" onClick={() => setShowCorrections(true)}>Review pickup problems</Button></div>
             <p className="text-sm text-muted-foreground">These active batches cannot be resumed. Review the reason and release any unfinished remainder without undoing physical stock movements.</p>
             {blockedBatches.length ? blockedBatches.map(batch => <div key={batch.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
               <div className="min-w-0"><p className="break-words font-medium">{batch.name}</p>
-                <p className="text-sm text-muted-foreground">{fulfillment.data?.resumeStatus?.[batch.id]?.reason}</p></div>
+                <p className="text-sm text-muted-foreground">{fulfillment.data?.resumeStatus?.[batch.id]?.reason}</p>
+                {batchDeletionBlockReason(batch) && <p className="mt-1 text-xs text-muted-foreground">Deletion unavailable: {batchDeletionBlockReason(batch)}</p>}</div>
               <div className="flex flex-wrap gap-2">
               {batch.mode === "scheduled" && <Button type="button" variant="default" size="sm" data-testid={`fulfillment-review-reassignment-${batch.id}`}
                 disabled={!canPost || fulfillment.isFetching || !!draft.pending || !!draft.createAttempt}
                 onClick={() => { setReassignmentBatchId(batch.id); setShowBlocked(false); setShowStart(false); }}>Review reassignment</Button>}
               <Button type="button" variant="outline" size="sm" disabled={!canPost || fulfillment.isFetching || !!draft.pending || !!draft.createAttempt || savingDraft}
                 onClick={() => void resumeFulfillmentBatch(batch)}>Review / release remainder</Button>
+              {batchDeletionAllowed(batch) && <Button type="button" variant="destructive" size="sm"
+                disabled={batchDeleteDisabled(batch)} onClick={() => setBatchToDelete(batch)}>
+                <Trash2 className="mr-2 h-4 w-4" />Delete batch
+              </Button>}
               </div>
             </div>) : <p role="status" className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No batches need review. Check Resume saved batch for unfinished work.</p>}
           </div>}
@@ -1841,8 +1883,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                   <Button type="button" size="sm" variant="outline" onClick={() => printBatchReceipt(batch.id)}><Printer className="mr-2 h-4 w-4" />Print combined receipt</Button>}
                 <Button type="button" size="sm" disabled={!canPost || fulfillment.isFetching || !!draft.pending || !!draft.createAttempt || savingDraft}
                   onClick={() => void resumeFulfillmentBatch(batch)}><RotateCcw className="mr-2 h-4 w-4" />Resume batch</Button>
-                {fulfillment.data?.deletableBatchIds?.includes(batch.id) && <Button type="button" size="sm" variant="destructive"
-                  disabled={!!deletingBatchId || !!draft.pending || !!draft.createAttempt || (draft.batchId === batch.id && hasUnrecordedMove)}
+                {batchDeletionBlockReason(batch) && <p className="basis-full text-xs text-muted-foreground">Deletion unavailable: {batchDeletionBlockReason(batch)}</p>}
+                {batchDeletionAllowed(batch) && <Button type="button" size="sm" variant="destructive"
+                  disabled={batchDeleteDisabled(batch)}
                   onClick={() => setBatchToDelete(batch)}><Trash2 className="mr-2 h-4 w-4" />Delete batch</Button>}
               </div>
             </div>)}
@@ -1979,8 +2022,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                     ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
                     : `${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"} → ${warehouses.find(location => location.id === activeBatch.vehicleId)?.name ?? "Vehicle"}`}</p></div>
                 <Button type="button" variant="outline" size="sm" data-testid="fulfillment-open-corrections" onClick={() => setShowCorrections(true)}>Review pickup problems</Button>
-                 {fulfillment.data?.deletableBatchIds?.includes(activeBatch.id) && <Button type="button" variant="destructive" size="sm"
-                   disabled={busy || savingDraft || pendingLock || createLock || hasUnrecordedMove}
+                 {batchDeletionBlockReason(activeBatch) && <p className="basis-full text-xs text-muted-foreground">Deletion unavailable: {batchDeletionBlockReason(activeBatch)}</p>}
+                 {batchDeletionAllowed(activeBatch) && <Button type="button" variant="destructive" size="sm"
+                   disabled={batchDeleteDisabled(activeBatch)}
                    onClick={() => setBatchToDelete(activeBatch)}><Trash2 className="mr-2 h-4 w-4" />Delete batch</Button>}
                  <div className="flex flex-wrap gap-2"><Badge variant={activeBatch.pickupReady || stagingComplete ? "secondary" : "outline"}>{stagingComplete || activeBatch.pickupReady ? stagingComplete ? "Ready · full batch" : "Ready · partial" : "Not yet ready"}</Badge><Badge variant="secondary">Revision {activeBatch.revision}</Badge></div>
               </div>
@@ -2197,14 +2241,14 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
     <AlertDialog open={open && !!batchToDelete} onOpenChange={next => { if (!next && !deletingBatchId) setBatchToDelete(null); }}>
       <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete this active batch?</AlertDialogTitle>
+          <AlertDialogTitle>Remove this batch from active workflows?</AlertDialogTitle>
           <AlertDialogDescription>
-            {batchToDelete?.name} will be removed only if the server confirms that no stock movement has ever been posted. Creation audit and replay identity are retained. Posted inventory and receipts are never removed.
+          {batchToDelete?.name} will be removed from active workflows only if the server confirms that it was never posted or all stock movements were fully reversed. Movement, reversal, receipt, creation-audit, replay-identity, and deletion history are retained; inventory history is not removed.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={!!deletingBatchId}>Cancel</AlertDialogCancel>
-          <AlertDialogAction disabled={!batchToDelete || !!deletingBatchId || !!draft.pending || !!draft.createAttempt}
+          <AlertDialogAction disabled={!batchToDelete || !!batchToDelete && batchDeleteDisabled(batchToDelete)}
             onClick={event => { event.preventDefault(); if (batchToDelete) void deleteFulfillmentBatch(batchToDelete); }}>
             {deletingBatchId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
             Delete batch

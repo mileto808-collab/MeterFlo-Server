@@ -31,7 +31,8 @@ import { workKitComponentTrace } from "../shared/inventory-component-details";
 import { warehouseAccessible } from "../shared/inventory-location-types";
 import { removalConfig } from "../shared/inventory-removal-policy";
 import { fulfillmentOrders } from "./inventoryFulfillment";
-import { canDeleteUnpostedFulfillmentBatch, fulfillmentResumeStatus } from "../shared/inventory-fulfillment";
+import { fulfillmentResumeStatus } from "../shared/inventory-fulfillment";
+import { fulfillmentDeletionStatus } from "../shared/inventory-fulfillment-deletion";
 import { checkFulfillmentSerials } from "../shared/inventory-fulfillment-scans";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 import { readRelationalInventory } from "./inventoryRelational";
@@ -220,8 +221,9 @@ export function registerInventoryRoutes(app: Express) {
       const resumeStatus = Object.fromEntries(batches.map(batch => [batch.id,
         fulfillmentResumeStatus(state, batch, batchOrders, c.user.id, c.admin)]));
       await connection.query("COMMIT");
-      return { orders, batches, resumeStatus,
-        deletableBatchIds: batches.filter(batch => canDeleteUnpostedFulfillmentBatch(state, batch)).map(batch => batch.id),
+      const batchDeletionStatus = Object.fromEntries(batches.map(batch => [batch.id, fulfillmentDeletionStatus(state, batch)]));
+      return { orders, batches, resumeStatus, batchDeletionStatus,
+        deletableBatchIds: batches.filter(batch => batchDeletionStatus[batch.id].allowed).map(batch => batch.id),
         timezone: c.project.timezone ?? "UTC" };
     } catch (error) { await connection.query("ROLLBACK"); throw error; }
     finally { connection.release(); }
@@ -365,9 +367,11 @@ export function registerInventoryRoutes(app: Express) {
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
     if (req.params.kind === "fulfillment") requireFulfillment(c);
-    const record: any = req.params.kind === "activity"
+    let record: any = req.params.kind === "activity"
       ? inventoryActivityGroups(state).find(group => group.receipts.some(receipt => receipt.id === req.params.id))
       : (req.params.kind === "fulfillment" ? state.fulfillmentBatches ?? [] : req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : req.params.kind === "customer-handoff" ? state.customerHandoffs ?? [] : []).find((r: any) => r.id === req.params.id);
+    if (!record && req.params.kind === "fulfillment")
+      record = state.receipts.find(receipt => receipt.reference === req.params.id && receipt.fulfillmentDeletion)?.fulfillmentDeletion?.batch;
     if (!record) throw Object.assign(new InventoryError("Document not found."), { status: 404 });
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(record => (record.history ?? []).map(event => event.actor)),

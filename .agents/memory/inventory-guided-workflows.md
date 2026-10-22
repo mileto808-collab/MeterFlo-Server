@@ -39,11 +39,11 @@ Show Save Draft only after meaningful work, and Clear draft only for a saved dra
 
 **How to apply:** Store meaningful setup drafts in the relational database and list them in Resume saved batch, including automatically recovered work. Do not expose a separate browser-local warning or Recover local inputs workflow. Retain unknown-operation identities without exposing a second posting path. Back to workflow choices belongs in the bottom sticky footer.
 
-Authorized users must be able to delete a fulfillment batch if inventory has not been posted.
+Authorized users must be able to delete a fulfillment batch if inventory has not been posted, or if all movements have been fully reversed and verified.
 
-**Why:** The user explicitly requested deletion of unposted batches and questioned whether Clear meant the same thing.
+**Why:** The user rejected making previously posted batches linger forever after their inventory movements have been reversed.
 
-**How to apply:** Distinguish deletion of an unposted draft or batch from releasing the remainder of a batch with physical movement history. Do not treat zero current stock as proof that nothing was ever posted.
+**How to apply:** Remove eligible batches from working lists, retaining their movement, reversal, receipt and deletion history. Verify exact returned serials and quantities, outstanding reservations and unresolved issues; zero current quantity alone is not proof. Explain specifically what prevents deletion. Unlinked quantity transfers cannot establish which batch was reversed.
 
 If inventory has not posted, Clear draft resets inputs while retaining the draft; Delete draft deletes the draft.
 

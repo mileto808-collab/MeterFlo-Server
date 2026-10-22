@@ -91,7 +91,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft | undefined) : prior || null,
         after: kind === "shipmentDrafts" ? shipmentDraftAudit(value as SavedShipmentDraft) : value }];
     });
-    if (["shipmentDrafts", "fulfillmentDrafts", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
+    if (["shipmentDrafts", "fulfillmentDrafts", "fulfillmentBatches", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
       if (!(after[kind] ?? []).some(d => ((d as any).id ?? (d as any).workOrderId) === id))
         updates.push({ field: `${kind}/${id}`, before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft) : prior, after: null as any });
     }

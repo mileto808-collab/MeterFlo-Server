@@ -73,6 +73,13 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   }
   const s = backup.state;
   const batches = z.array(fulfillmentBatchSchema).parse(s.fulfillmentBatches ?? []);
+  for (const receipt of s.receipts) if (receipt.fulfillmentDeletion) {
+    const deletion = z.object({ batch: fulfillmentBatchSchema, deletedBy: z.string().min(1),
+      deletedAt: z.string().datetime() }).strict().parse(receipt.fulfillmentDeletion);
+    if (deletion.batch.id !== receipt.reference || receipt.action !== "fulfillmentDelete" ||
+        receipt.lines.length || receipt.actor !== deletion.deletedBy || receipt.occurredAt !== deletion.deletedAt)
+      throw new Error("Invalid deleted fulfillment batch history.");
+  }
   const fulfillmentDrafts = z.array(savedFulfillmentDraftSchema).parse(s.fulfillmentDrafts ?? []);
   if (new Set(fulfillmentDrafts.map(draft => draft.id)).size !== fulfillmentDrafts.length)
     throw new Error("Duplicate saved fulfillment draft identities in backup.");

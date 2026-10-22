@@ -12,7 +12,7 @@ import {
 } from "../shared/inventory-fulfillment-drafts";
 import type { InventoryState } from "../shared/inventory";
 import type { PoolClient } from "pg";
-import { canDeleteUnpostedFulfillmentBatch } from "../shared/inventory-fulfillment";
+import { fulfillmentDeletionStatus } from "../shared/inventory-fulfillment-deletion";
 
 const conflict = (message: string) => Object.assign(new InventoryError(message), { status: 409 });
 async function canReadDraft(client: PoolClient, context: any, state: InventoryState, draft: SavedFulfillmentDraft) {
@@ -61,6 +61,13 @@ export function registerFulfillmentDraftRoutes(
         throw new InventoryError("An active inventory-enabled changeout project is required.");
       const before = await lockInventory(client, c.project.id);
       const previous = before.fulfillmentDrafts?.find(draft => draft.id === id);
+      if (!remove && !clear && !previous && input.revision === 0) {
+        const { rows: [retired] } = await client.query(
+          `SELECT EXISTS(SELECT 1 FROM public.inventory_movements
+             WHERE project_id=$1 AND changes->'entities' @> $2::jsonb) AS found`,
+          [c.project.id, JSON.stringify([{ field: `fulfillmentDrafts/${id}`, after: null }])]);
+        if (retired?.found) throw conflict("This saved draft was deleted or used to create a batch. An old autosave cannot recreate it.");
+      }
       // A lost response must not create another draft or turn a successful save into a conflict.
       if (remove && !previous) {
         await client.query("COMMIT");
@@ -136,16 +143,21 @@ export function registerFulfillmentDraftRoutes(
       for (const warehouse of [batch.sourceId, batch.stagingId, batch.vehicleId])
         warehouseAccess(before, warehouse, c.user.id, c.admin);
       if (batch.revision !== revision) throw conflict("This batch changed. Reload its latest progress before deleting it.");
-      // A correction can reduce current quantities to zero; that does not erase prior postings.
-      if (!canDeleteUnpostedFulfillmentBatch(before, batch)) {
-        throw conflict("This batch has posted inventory or custody history and cannot be deleted. Correct the stock or release the unfinished remainder instead.");
-      }
+      const deletion = fulfillmentDeletionStatus(before, batch);
+      if (!deletion.allowed) throw conflict(deletion.reason!);
       const after = structuredClone(before);
       after.fulfillmentBatches = (after.fulfillmentBatches ?? []).filter(value => value.id !== id);
+      const operationId = randomUUID(), deletedAt = new Date().toISOString();
+      after.receipts.push({
+        id: operationId, action: "fulfillmentDelete", reference: batch.id, warehouseId: null,
+        lines: [], actor: c.user.id, occurredAt: deletedAt,
+        reason: `Deleted batch ${batch.name}; no outstanding batch custody. Inventory and reversal history retained.`,
+        fulfillmentDeletion: { batch: structuredClone(batch), deletedBy: c.user.id, deletedAt },
+      });
       after.revision++;
       // Retain creation receipts, operation replay identities and the audit record.
       // Batch-only demand holds disappear with the batch; independent reservations stay intact.
-      await saveInventory(client, c.project.id, before, after, randomUUID(), "fulfillmentBatchDelete");
+      await saveInventory(client, c.project.id, before, after, operationId, "fulfillmentBatchDelete");
       await client.query("COMMIT");
       return { deleted: true };
     } catch (error) { await client.query("ROLLBACK"); throw error; }

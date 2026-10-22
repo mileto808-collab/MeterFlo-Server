@@ -69,7 +69,7 @@ export const relationalEntities: EntityModel[] = [
     columns: { workOrderId: "integer", ...text("mode", "status"), revision: "integer", assignmentVersion: "integer" }, json: ["dispositions"],
     children: [{ name: "inventory_allocation_lines", paths: ["lines", "used"], columns: { ...line, warehouseId: "text", reservationMode: "text" }, arrays: ["serials"] }] },
   { name: "inventory_receipts", field: "receipts", columns: text("id", "action", "reference", "warehouseId", "actor", "occurredAt", "reason", "holdId", "resolution", "externalReference", "kitHoldId", "sourceReceiptId"),
-    json: ["holdDisposition", "kitConversion", "kitInspection", "stagingCorrection"],
+    json: ["holdDisposition", "kitConversion", "kitInspection", "stagingCorrection", "fulfillmentDeletion"],
     children: [{ name: "inventory_receipt_lines", paths: ["lines", "components", "damaged", "closedShort"], columns: { ...line, warehouseId: "text", unidentifiedQuantity: "integer", reason: "text" }, arrays: ["serials", "expectedSerials"] },
       { name: "inventory_receipt_pallets", paths: ["pallets"], columns: { ...text("id", "itemId", "label", "exceptionReason"), expectedQuantity: "integer" }, arrays: ["serials"] },
       { name: "inventory_receipt_labor", paths: ["labor"], columns: { ...text("itemId", "sku", "name", "unit"), quantity: "numeric", cost: "numeric", billingRate: "numeric" } }] },

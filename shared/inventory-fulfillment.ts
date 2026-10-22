@@ -71,15 +71,6 @@ export const fulfillmentBatchSchema = fulfillmentCreateSchema.omit({ workOrders:
   }).strict()).max(25000),
 }).strict();
 export type FulfillmentBatch = z.infer<typeof fulfillmentBatchSchema>;
-/** Historical postings, not just today's net quantities, determine whether deletion is safe. */
-export function canDeleteUnpostedFulfillmentBatch(state: InventoryState, batch: FulfillmentBatch): boolean {
-  const history = state.receipts.filter(receipt => receipt.reference === batch.id);
-  return history.some(receipt => receipt.action === "fulfillmentCreate") &&
-    !history.some(receipt => receipt.action === "fulfillmentMove" || receipt.lines.some(line => line.quantity > 0)) &&
-    !batch.lines.some(line => line.stagedQuantity > 0 || line.deliveredQuantity > 0 ||
-      line.stagedSerials.length || line.deliveredSerials.length) &&
-    !batch.issues?.length;
-}
 export type FulfillmentCandidate = {
   workOrderId: number; label: string; status: string; group: string;
   installerId: string | null; installer: string; scheduledDate: string; route: string; zone: string;

@@ -104,6 +104,7 @@ export type WorkRequirements = { workOrderId: number; lines: { itemId: string; q
   automaticLines?: { itemId: string; quantity: number }[]; manualLines?: PlannedLine[]; planRevision?: number };
 export type InventoryCount = { id: string; warehouseId: string; scope?: "selected" | "warehouse"; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
+  fulfillmentDeletion?: { batch: import("./inventory-fulfillment").FulfillmentBatch; deletedBy: string; deletedAt: string };
   stagingCorrection?: import("./inventory-staging-corrections").StagingCorrectionEvidence;
   pallets?: ReceiptPallet[];
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
