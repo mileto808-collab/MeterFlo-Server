@@ -1672,7 +1672,8 @@ export class ProjectWorkOrderStorage {
       await client.query("BEGIN");
       const { rows: [current] } = await client.query(`SELECT * FROM "${this.schemaName}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
       if (!current) { await client.query("COMMIT"); return null; }
-      await assertClaimAllowed(client, current, userId);
+      const { rows: [project] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1", [this.schemaName]);
+      await assertClaimAllowed(client, current, userId, project.id);
       // Atomic update: only claim if assigned_user_id is NULL or already assigned to this user
       // This prevents race conditions where two users try to claim simultaneously
       const result = await client.query(`
@@ -1691,7 +1692,6 @@ export class ProjectWorkOrderStorage {
         await client.query("COMMIT");
         return null;
       }
-      const { rows: [project] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1", [this.schemaName]);
       await client.query("INSERT INTO public.changeout_events(project_id,work_order_id,type,actor_id,operation_id) VALUES($1,$2,'workorder_updated',$3,$4) ON CONFLICT DO NOTHING",
         [project.id, id, userId, auditContext.getStore()?.operationId ?? null]);
       await client.query("COMMIT");

@@ -19,6 +19,7 @@ import { resolveWarehouseInput } from "../shared/inventory-location-types";
 import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
 import { guardPendingInstallationUse } from "./changeoutService";
 import { prepareFulfillment } from "./inventoryFulfillment";
+import { reconcileDispatchRequirements } from "../shared/inventory-dispatch-impact";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -245,7 +246,11 @@ export async function postInventory(projectId: number, command: InventoryCommand
     if (!result.replay && command.action === "plan") {
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       const { rows: [work] } = await client.query(`SELECT * FROM "${project.database_name}".work_orders WHERE id=$1`, [command.data.workOrderId]);
-      setWorkRequirements(result.state, await workRequirements(client, projectId, result.state, work));
+      const requirements = await workRequirements(client, projectId, result.state, work);
+      const impact = reconcileDispatchRequirements(result.state,
+        before.workRequirements?.find(value => value.workOrderId === work.id), requirements);
+      if (impact.error) throw new InventoryError(impact.error);
+      setWorkRequirements(result.state, requirements);
     }
     if (!result.replay && command.action === "typeLink") {
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
@@ -253,7 +258,13 @@ export async function postInventory(projectId: number, command: InventoryCommand
         const { rows: work } = await client.query(`SELECT * FROM "${project.database_name}".work_orders
           WHERE lower(status) NOT IN ('completed','closed','cancelled') AND NOT EXISTS (
             SELECT 1 FROM public.work_order_statuses s WHERE lower(s.code)=lower(status) AND lower(s.label) IN ('completed','closed','cancelled'))`);
-        for (const row of work) setWorkRequirements(result.state, await workRequirements(client, projectId, result.state, row));
+        for (const row of work) {
+          const requirements = await workRequirements(client, projectId, result.state, row);
+          const impact = reconcileDispatchRequirements(result.state,
+            before.workRequirements?.find(value => value.workOrderId === row.id), requirements);
+          if (impact.error) throw new InventoryError(impact.error);
+          setWorkRequirements(result.state, requirements);
+        }
       }
     }
     if (!result.replay) {
@@ -337,6 +348,8 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
         canonicalInventoryJson(saved) !== canonicalInventoryJson({ workOrderId: requirements.workOrderId, lines: requirements.lines,
           missing: requirements.missing, automaticLines: requirements.automaticLines })) {
       if (state === before) state = structuredClone(before);
+      const impact = reconcileDispatchRequirements(state, saved, requirements);
+      if (impact.error) throw new InventoryError(impact.error);
       setWorkRequirements(state, requirements);
       state.revision++;
     }
@@ -344,6 +357,35 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     if (state === before) state = structuredClone(before);
     state.workRequirements = state.workRequirements?.filter(r => r.workOrderId !== prior.id);
     state.revision++;
+  }
+  // An explicit reassignment after handoff may change the responsible technician,
+  // but only within the crew that actually holds this order's stock.
+  if (prior && next && prior.assigned_user_id !== next.assigned_user_id) {
+    const handedOff = (state.fulfillmentBatches ?? []).filter(batch => batch.mode === "scheduled" &&
+      batch.status === "completed" && batch.workOrders.some(work => work.workOrderId === next.id));
+    for (const original of handedOff) {
+      const vehicle = state.warehouses.find(value => value.id === original.vehicleId && value.active);
+      const compatible = next.assigned_user_id && vehicle &&
+        (vehicle.assignedUserId === next.assigned_user_id || vehicle.userIds.includes(next.assigned_user_id)) &&
+        String(next.status).toLowerCase() === "scheduled" &&
+        !(original.issues ?? []).some(issue => issue.status === "open") &&
+        original.lines.every(line => line.deliveredQuantity >= line.quantity);
+      if (!compatible)
+        throw new InventoryError(`Batch "${original.name}" has already been handed to its vehicle. To assign a helping technician, first add them to that vehicle in Inventory > Locations and keep the order Scheduled. Moving stock to a different vehicle requires a physical inventory resolution, not just reassignment.`);
+      if (state === before) state = structuredClone(before);
+      const batch = state.fulfillmentBatches!.find(value => value.id === original.id)!;
+      const saved = batch.workOrders.find(work => work.workOrderId === next.id)!;
+      const installer = await storage.getUser(next.assigned_user_id);
+      saved.installerId = next.assigned_user_id;
+      saved.installer = installer ? [installer.firstName, installer.lastName].filter(Boolean).join(" ") || installer.username : next.assigned_user_id;
+      // Some import paths invoke this hook before the work-order UPDATE trigger.
+      saved.assignmentVersion = (prior.assignment_version ?? 0) + 1;
+      saved.scheduledDate = next.scheduled_at ? new Date(next.scheduled_at).toISOString() : "";
+      batch.revision++;
+      const allocation = state.allocations.find(value => value.workOrderId === next.id);
+      if (allocation?.status === "reserved") allocation.assignmentVersion = saved.assignmentVersion;
+      state.revision++;
+    }
   }
   if (!next && state.workPlans?.some(plan => plan.workOrderId === prior?.id)) {
     if (state === before) state = structuredClone(before);

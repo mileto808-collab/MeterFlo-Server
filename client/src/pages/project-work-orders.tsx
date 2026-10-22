@@ -46,6 +46,7 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { WorkOrderPlanningFields } from "@/components/work-order-routing/work-order-planning-fields";
 import { formatDateTimeInTimezone, formatForExport, formatInTimezone } from "@/lib/timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
+import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { WorkOrderToolsToggle } from "@/components/work-order-tools-toggle";
 import { useHidScanner } from "@/hooks/useHidScanner";
 import { usePageHeader } from "@/contexts/page-header-context";
@@ -59,7 +60,7 @@ import { Label } from "@/components/ui/label";
 import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, SystemType, ModuleType } from "@shared/schema";
 import { insertProjectWorkOrderSchema, permissionKeys } from "@shared/schema";
 import { usePermissions } from "@/hooks/usePermissions";
-import type { ProjectWorkOrder } from "../../../server/projectDb";
+import type { ProjectWorkOrder as BaseProjectWorkOrder } from "../../../server/projectDb";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -104,6 +105,25 @@ import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/wo
 import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
 import { RoutePlanner } from "@/components/work-order-routing/route-planner";
 import { hasScheduledRouteScope } from "@shared/workOrderRouting";
+
+type InventoryDispatch = {
+  batchId: string;
+  batchName: string;
+  receiptNumber: string;
+  vehicleId: string;
+  vehicleName: string;
+  stage: "awaiting_pickup" | "ready_for_field" | "needs_review";
+  canStart: boolean;
+  reason?: string;
+};
+type ProjectWorkOrder = BaseProjectWorkOrder & { inventoryDispatch?: InventoryDispatch };
+
+const dispatchStageLabel = (stage?: InventoryDispatch["stage"]) => {
+  if (stage === "awaiting_pickup") return "Awaiting pickup";
+  if (stage === "ready_for_field") return "Ready for field";
+  if (stage === "needs_review") return "Needs review";
+  return "";
+};
 
 type Assignee = {
   type: "user" | "group";
@@ -200,6 +220,12 @@ export default function ProjectWorkOrders() {
   }, [projectId]);
   
   const projectEvents = useProjectEvents(projectId, { onWorkOrderUpdated: handleWorkOrderUpdated });
+  const handleInventoryChange = useCallback(() => {
+    if (!projectId) return;
+    void queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+    void queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+  }, [projectId]);
+  useInventoryEvents(projectId, { onChange: handleInventoryChange });
   
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
@@ -242,6 +268,8 @@ export default function ProjectWorkOrders() {
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
   const [selectedAssignedGroup, setSelectedAssignedGroup] = useState<string>("all");
   const [selectedTrouble, setSelectedTrouble] = useState<string>("all");
+  const [selectedDispatchStage, setSelectedDispatchStage] = useState<string>("all");
+  const [selectedDispatchVehicle, setSelectedDispatchVehicle] = useState<string>("all");
   const [selectedOldSystemType, setSelectedOldSystemType] = useState<string>("all");
   const [selectedNewSystemType, setSelectedNewSystemType] = useState<string>("all");
   const [selectedOldModuleType, setSelectedOldModuleType] = useState<string>("all");
@@ -362,6 +390,8 @@ export default function ProjectWorkOrders() {
     { key: "oldGps", label: "Old GPS" },
     { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
+    { key: "dispatchStage", label: "Dispatch Stage" },
+    { key: "dispatchVehicle", label: "Dispatch Vehicle" },
     { key: "scheduledAt", label: "Scheduled At" },
     { key: "scheduledBy", label: "Scheduled By" },
     { key: "assignedTo", label: "Assigned User" },
@@ -402,6 +432,8 @@ export default function ProjectWorkOrders() {
     { key: "newModuleId", label: "New Module ID" },
     { key: "newModuleType", label: "New Module Type" },
     { key: "status", label: "Status" },
+    { key: "dispatchStage", label: "Dispatch Stage" },
+    { key: "dispatchVehicle", label: "Dispatch Vehicle" },
     { key: "scheduledAt", label: "Scheduled At" },
     { key: "scheduledBy", label: "Scheduled By" },
     { key: "assignedTo", label: "Assigned To (User)" },
@@ -545,6 +577,14 @@ export default function ProjectWorkOrders() {
     enabled: !!projectId && !accessDenied,
     retry: false,
   });
+  const dispatchVehicles = useMemo(() => {
+    const vehicles = new Map<string, string>();
+    for (const order of workOrders) {
+      const dispatch = (order as any).inventoryDispatch ?? (order as any).inventory_dispatch;
+      if (dispatch?.vehicleId) vehicles.set(String(dispatch.vehicleId), dispatch.vehicleName || String(dispatch.vehicleId));
+    }
+    return Array.from(vehicles, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [workOrders]);
 
   const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
@@ -1665,6 +1705,8 @@ export default function ProjectWorkOrders() {
     oldGps: { label: "Old GPS", sortKey: "oldGps" },
     newGps: { label: "New GPS", sortKey: "newGps" },
     status: { label: "Status", sortKey: "status" },
+    dispatchStage: { label: "Dispatch Stage", sortKey: "dispatchStage" },
+    dispatchVehicle: { label: "Dispatch Vehicle", sortKey: "dispatchVehicle" },
     scheduledAt: { label: "Scheduled At", sortKey: "scheduledAt" },
     scheduledBy: { label: "Scheduled By", sortKey: "scheduledBy" },
     assignedTo: { label: "Assigned User", sortKey: "assignedUserId" },
@@ -1747,8 +1789,22 @@ export default function ProjectWorkOrders() {
     switch (key) {
       case "id":
         return <TableCell key={key} className={`font-medium text-muted-foreground ${baseClass}`} style={cellStyle} data-testid={`text-system-wo-id-${workOrder.id}`}>{workOrder.id}</TableCell>;
-      case "customerWoId":
-        return <TableCell key={key} className={`font-medium ${baseClass}`} style={cellStyle} data-testid={`text-wo-id-${workOrder.id}`}>{workOrder.customerWoId || "-"}</TableCell>;
+      case "customerWoId": {
+        const dispatch = (woAny.inventoryDispatch ?? woAny.inventory_dispatch) as InventoryDispatch | undefined;
+        return (
+          <TableCell key={key} className={`font-medium ${baseClass}`} style={cellStyle} data-testid={`text-wo-id-${workOrder.id}`}>
+            <div>{workOrder.customerWoId || "-"}</div>
+            {dispatch && (
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <Badge variant={dispatch.stage === "needs_review" ? "destructive" : "secondary"} className="px-1.5 py-0 text-[10px]">
+                  {dispatchStageLabel(dispatch.stage)}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{dispatch.vehicleName || "No vehicle"}</span>
+              </div>
+            )}
+          </TableCell>
+        );
+      }
       case "customerId":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.customerId || "-"}</TableCell>;
       case "customerName":
@@ -1771,6 +1827,14 @@ export default function ProjectWorkOrders() {
         return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-zone-${workOrder.id}`}>{workOrder.zone || "-"}</TableCell>;
       case "serviceType":
         return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-service-${workOrder.id}`}>{getServiceTypeBadge(workOrder.serviceType)}</TableCell>;
+      case "dispatchStage": {
+        const dispatch = (woAny.inventoryDispatch ?? woAny.inventory_dispatch) as InventoryDispatch | undefined;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{dispatch ? <Badge variant={dispatch.stage === "needs_review" ? "destructive" : "secondary"}>{dispatchStageLabel(dispatch.stage)}</Badge> : "-"}</TableCell>;
+      }
+      case "dispatchVehicle": {
+        const dispatch = (woAny.inventoryDispatch ?? woAny.inventory_dispatch) as InventoryDispatch | undefined;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{dispatch?.vehicleName || "-"}</TableCell>;
+      }
       case "oldSystemId":
         return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-old-system-${workOrder.id}`}>{workOrder.oldSystemId || "-"}</TableCell>;
       case "oldSystemReading":
@@ -1858,6 +1922,19 @@ export default function ProjectWorkOrders() {
     // Filter by status (multi-select)
     if (selectedStatuses.length > 0) {
       result = result.filter(wo => selectedStatuses.includes(wo.status));
+    }
+
+    if ((project as any)?.inventoryEnabled === true && selectedDispatchStage !== "all") {
+      result = result.filter(wo => {
+        const dispatch = (wo as any).inventoryDispatch ?? (wo as any).inventory_dispatch;
+        return selectedDispatchStage === "none" ? !dispatch : dispatch?.stage === selectedDispatchStage;
+      });
+    }
+    if ((project as any)?.inventoryEnabled === true && selectedDispatchVehicle !== "all") {
+      result = result.filter(wo => {
+        const dispatch = (wo as any).inventoryDispatch ?? (wo as any).inventory_dispatch;
+        return selectedDispatchVehicle === "none" ? !dispatch?.vehicleId : String(dispatch?.vehicleId ?? "") === selectedDispatchVehicle;
+      });
     }
 
     // Sub-status filtering is independent of the core-status filter/grouping.
@@ -2088,8 +2165,14 @@ export default function ProjectWorkOrders() {
       
       result.sort((a, b) => {
         for (const criterion of sortCriteria) {
-          let aVal = (a as any)[criterion.column];
-          let bVal = (b as any)[criterion.column];
+          const valueFor = (order: ProjectWorkOrder) => {
+            const dispatch = (order as any).inventoryDispatch ?? (order as any).inventory_dispatch;
+            if (criterion.column === "dispatchStage") return dispatchStageLabel(dispatch?.stage);
+            if (criterion.column === "dispatchVehicle") return dispatch?.vehicleName;
+            return (order as any)[criterion.column];
+          };
+          let aVal = valueFor(a);
+          let bVal = valueFor(b);
           let comparison = 0;
           
           if (dateColumns.includes(criterion.column)) {
@@ -2116,7 +2199,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatuses, selectedSubStatusId, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, project, searchQuery, sortCriteria, selectedStatuses, selectedDispatchStage, selectedDispatchVehicle, selectedSubStatusId, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
   const paginatedWorkOrders = useMemo(() => {
@@ -2246,6 +2329,8 @@ export default function ProjectWorkOrders() {
     setSelectedAssignedTo("all");
     setSelectedAssignedGroup("all");
     setSelectedTrouble("all");
+    setSelectedDispatchStage("all");
+    setSelectedDispatchVehicle("all");
     setSelectedOldSystemType("all");
     setSelectedNewSystemType("all");
     setSelectedOldModuleType("all");
@@ -2281,10 +2366,12 @@ export default function ProjectWorkOrders() {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = selectedStatuses.length > 0 || selectedSubStatusId !== "" || selectedServiceTypes.length > 0 || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatuses.length > 0 || selectedDispatchStage !== "all" || selectedDispatchVehicle !== "all" || selectedSubStatusId !== "" || selectedServiceTypes.length > 0 || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const activeFilterCount = [
     selectedStatuses.length > 0,
+    selectedDispatchStage !== "all",
+    selectedDispatchVehicle !== "all",
     selectedSubStatusId !== "",
     selectedServiceTypes.length > 0,
     selectedAssignedTo !== "all",
@@ -2378,6 +2465,8 @@ export default function ProjectWorkOrders() {
       case "route": return wo.route || "";
       case "zone": return wo.zone || "";
       case "serviceType": return wo.serviceType || "";
+      case "dispatchStage": return dispatchStageLabel(((wo as any).inventoryDispatch ?? (wo as any).inventory_dispatch)?.stage) || "";
+      case "dispatchVehicle": return ((wo as any).inventoryDispatch ?? (wo as any).inventory_dispatch)?.vehicleName || "";
       case "oldSystemId": return wo.oldSystemId || "";
       case "oldSystemType": return wo.oldSystemType?.toString() || "";
       case "oldSystemReading": return wo.oldSystemReading?.toString() ?? "";
@@ -2686,6 +2775,7 @@ export default function ProjectWorkOrders() {
             setEditingWorkOrderVersion(version => version + 1);
           }}
           canSystemChangeout={hasPermission('workOrders.meterChangeout')}
+          inventoryDispatch={(editingWorkOrder as any).inventoryDispatch ?? (editingWorkOrder as any).inventory_dispatch}
           autoLaunchSystemChangeout={autoLaunchSystemChangeout}
           autoLaunchChangeoutScope={autoLaunchChangeoutScope}
           operationalHours={{
@@ -3829,6 +3919,11 @@ export default function ProjectWorkOrders() {
   return (
     <div className="p-4 flex flex-col gap-2 h-[calc(100vh-72px)] overflow-hidden">
       {projectId && <ProjectPickupBanner projectId={projectId} />}
+      {(project as any)?.inventoryEnabled === true && (
+        <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground" data-testid="inventory-crew-help">
+          <span className="font-medium text-foreground">Crew access:</span> An authorized manager adds helpers to a vehicle in Inventory &gt; Locations. Scheduled work orders require reassignment after the vehicle crew changes.
+        </div>
+      )}
       <ChangeoutDraftRecovery
         projectId={Number(projectId)}
         onResume={(workOrderId) => {
@@ -3936,6 +4031,12 @@ export default function ProjectWorkOrders() {
                 setSelectedAssignedGroup={setSelectedAssignedGroup}
                 selectedTrouble={selectedTrouble}
                 setSelectedTrouble={setSelectedTrouble}
+                selectedDispatchStage={selectedDispatchStage}
+                setSelectedDispatchStage={setSelectedDispatchStage}
+                selectedDispatchVehicle={selectedDispatchVehicle}
+                setSelectedDispatchVehicle={setSelectedDispatchVehicle}
+                dispatchVehicles={dispatchVehicles}
+                showInventoryDispatch={(project as any)?.inventoryEnabled === true}
                 filterCustomerId={filterCustomerId}
                 setFilterCustomerId={setFilterCustomerId}
                 filterCustomerName={filterCustomerName}

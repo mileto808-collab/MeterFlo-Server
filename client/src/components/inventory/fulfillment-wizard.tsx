@@ -2357,6 +2357,10 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
                 </label>
               </section>}
               {draft.uiSubstep === "movementReview" && <section className="space-y-3" data-wizard-movement-review>
+                {(!canReviewMovement || movementBlocked || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed) &&
+                  <Alert className="border-amber-500/40 bg-amber-500/5"><AlertDescription>
+                    Your saved inputs are retained. Recording is blocked until quantities, eligible serials, batch readiness, and the physical movement confirmation are valid. Use Back to review and correct the affected step; you do not need to re-enter unchanged data.
+                  </AlertDescription></Alert>}
                 <div><Badge variant="outline">Final physical record</Badge><h4 className="mt-2 text-xl font-semibold">{draft.step === "stage" ? "Review & stage" : "Review & handoff"}</h4>
                   <p className="text-sm text-muted-foreground">Movement path · {draft.step === "stage"
                     ? `${warehouses.find(location => location.id === activeBatch.sourceId)?.name ?? "Source"} → ${warehouses.find(location => location.id === activeBatch.stagingId)?.name ?? "Staging"}`
@@ -2425,7 +2429,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           {draft.step === "orders" && draft.uiSubstep === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") &&
             <Button type="button" disabled={!canContinueOrders || busy || savingDraft || !storageReady} onClick={() => update({ uiSubstep: "setup" })}>Next: Batch setup<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "orders" && draft.uiSubstep === "setup" &&
-            <Button type="button" disabled={!canCreate || busy || savingDraft || !storageReady || !stagingLocations.length} onClick={() => update({ uiSubstep: "review" })}>Next: Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+            <Button type="button" disabled={!canContinueOrders || busy || savingDraft || !storageReady} onClick={() => update({ uiSubstep: "review" })}>Next: Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "orders" && draft.uiSubstep === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy || savingDraft} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create batch"}</Button>}
           {draft.step === "stage" && draft.uiSubstep === "pick" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => moveToVehicle()}>
             <Truck className="mr-2 h-4 w-4" />Continue to vehicle pickup
@@ -2433,8 +2437,8 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           {draft.step === "stage" && draft.uiSubstep === "pick" && !stagingComplete && hasStagedStock && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => moveToVehicle()}>Partial pickup from Staging<Truck className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "stage" && draft.uiSubstep === "pick" && !stagingComplete && <Button type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => update({ uiSubstep: "capture" })}>Picking complete — enter quantities<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "vehicle" && draft.uiSubstep === "verify" && <Button type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => update({ uiSubstep: "capture" })}>Next: Capture handoff<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "capture" && <Button type="button" disabled={!canReviewMovement || busy || pendingLock || movementBlocked || batchSetupBlocked} onClick={() => update({ uiSubstep: "confirm" })}>Next: Confirm<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "confirm" && <Button type="button" disabled={!canReviewMovement || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed || busy || pendingLock || movementBlocked || batchSetupBlocked} onClick={() => update({ uiSubstep: "movementReview" })}>Next: Review movement<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "capture" && <Button type="button" disabled={!activeBatch || !canPost || busy || pendingLock || savingDraft} onClick={() => update({ uiSubstep: "confirm" })}>Next: Confirm<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "confirm" && <Button type="button" disabled={!activeBatch || !canPost || busy || pendingLock || savingDraft} onClick={() => update({ uiSubstep: "movementReview" })}>Next: Review movement<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "movementReview" && batchCanReleaseRemainder && <Button data-wizard-record type="button" disabled={!canReviewMovement || serialCheckBlocked || movementBlocked || !canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : draft.step === "stage" ? <ArrowRight className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}

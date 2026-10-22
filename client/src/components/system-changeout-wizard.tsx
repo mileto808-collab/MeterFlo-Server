@@ -283,6 +283,7 @@ export function SystemChangeoutWizard({
   const { hasPermission } = usePermissions();
   const inventoryQueryKey = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
   type WizardInventory = { enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
+    inventoryDispatch?: import("@shared/inventory-dispatch").InventoryDispatch;
     fieldSettings?: FieldStockSettings[]; canChangeFieldStock?: boolean;
     locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements;
     removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
@@ -296,7 +297,7 @@ export function SystemChangeoutWizard({
   const [fieldSourceOverridden, setFieldSourceOverridden] = useState(false);
   const fieldPreferenceKey = `meterflo.field-stock:${projectId}:${user?.id ?? ""}`;
   const fieldStock = workInventory && user?.id ? resolveFieldStock(workInventory, user.id, user.role === "admin",
-    fieldSourceId, workInventory.canChangeFieldStock && fieldSourceOverridden ? fieldSourceId : "") : undefined;
+    workInventory.inventoryDispatch?.vehicleId || fieldSourceId, workInventory.canChangeFieldStock && fieldSourceOverridden ? fieldSourceId : "") : undefined;
   const actualUseInitializedFor = useRef<number | null>(null);
   const actualUseBaseline = useRef<string | null>(null);
   const actualUseLocationBaseline = useRef(new Map<string, string>());
@@ -355,7 +356,7 @@ export function SystemChangeoutWizard({
       if (session !== defaultsSession.current) return;
       if (checked.isError || !checked.data) throw new Error("Current project defaults could not load. Your entries have been kept.");
       const latest = checked.data;
-      const resolved = resolveFieldStock(latest, user!.id, user?.role === "admin", fieldSourceId);
+      const resolved = resolveFieldStock(latest, user!.id, user?.role === "admin", latest.inventoryDispatch?.vehicleId || fieldSourceId);
       const source = resolved.source;
       if (!source) throw new Error(resolved.reason + " Your entries have been kept.");
       const lines = refreshApprovedUse(actualUse, latest.requirements?.lines ?? [], latest.items,
@@ -421,7 +422,7 @@ export function SystemChangeoutWizard({
       actualUseInitializedFor.current = workOrderId;
       let preferred = "";
       try { preferred = localStorage.getItem(fieldPreferenceKey) ?? ""; } catch { /* Browser storage may be disabled. */ }
-      const resolved = resolveFieldStock(workInventory, user.id, user.role === "admin", preferred);
+      const resolved = resolveFieldStock(workInventory, user.id, user.role === "admin", workInventory.inventoryDispatch?.vehicleId || preferred);
       setFieldSourceId(resolved.source?.id ?? "");
       const reserved = workInventory.allocation?.lines ?? [];
       const initial = reserved.length

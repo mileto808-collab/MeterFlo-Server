@@ -96,6 +96,17 @@ interface OperationalHoursConfig {
   end: string | null;
 }
 
+interface InventoryDispatch {
+  batchId: string;
+  batchName: string;
+  receiptNumber: string;
+  vehicleId: string;
+  vehicleName: string;
+  stage: "awaiting_pickup" | "ready_for_field" | "needs_review";
+  canStart: boolean;
+  reason?: string;
+}
+
 interface WorkOrderDetailProps {
   workOrder: any;
   form: UseFormReturn<any>;
@@ -140,6 +151,7 @@ interface WorkOrderDetailProps {
   };
   equipmentVisibility?: EquipmentVisibility;
   inventoryEnabled?: boolean;
+  inventoryDispatch?: InventoryDispatch;
   onReopened?: (workOrder: any) => void;
 }
 
@@ -182,6 +194,7 @@ export function WorkOrderDetail({
   searchMethodSettings,
   equipmentVisibility = { showSystem: true, showModule: true },
   inventoryEnabled = false,
+  inventoryDispatch,
   onReopened,
 }: WorkOrderDetailProps) {
   const [claimedAssignmentVersion, setClaimedAssignmentVersion] = useState<number | undefined>(
@@ -195,6 +208,16 @@ export function WorkOrderDetail({
   const rawStatus = workOrder.statusCode ?? workOrder.status_code ?? workOrder.status;
   const matchedStatus = workOrderStatuses.find(status => status.code === rawStatus || status.label === rawStatus);
   const isClosed = String(workOrder.statusCode ?? workOrder.status_code ?? matchedStatus?.code ?? rawStatus ?? "").toLowerCase() === "closed";
+  const dispatchBlocked = !!inventoryDispatch && (
+    inventoryDispatch.canStart === false ||
+    inventoryDispatch.stage === "awaiting_pickup" ||
+    inventoryDispatch.stage === "needs_review"
+  );
+  const dispatchStageLabel = inventoryDispatch?.stage === "awaiting_pickup"
+    ? "Awaiting pickup"
+    : inventoryDispatch?.stage === "ready_for_field"
+      ? "Ready for field"
+      : inventoryDispatch?.stage === "needs_review" ? "Needs review" : "";
   canEdit = canEdit && !isClosed;
   const planningDefaults = { defaultServiceMinutes, defaultAppointmentToleranceMinutes };
   const planningSummary = <section className="space-y-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
@@ -361,6 +384,14 @@ export function WorkOrderDetail({
 
   // Start system changeout - claim and open wizard directly (scope is auto-determined)
   const handleStartSystemChangeout = useCallback(async () => {
+    if (dispatchBlocked) {
+      toast({
+        title: "Changeout not ready",
+        description: inventoryDispatch?.reason || "This work order is not cleared for field work yet.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (isClosed) return;
     setIsClaiming(true);
     try {
@@ -394,7 +425,7 @@ export function WorkOrderDetail({
     } finally {
       setIsClaiming(false);
     }
-  }, [projectId, workOrder.id, toast, isClosed]);
+  }, [projectId, workOrder.id, toast, isClosed, dispatchBlocked, inventoryDispatch?.reason]);
 
   // Scroll to top when component mounts (triggered by key prop change)
   useEffect(() => {
@@ -404,13 +435,13 @@ export function WorkOrderDetail({
   // Auto-launch system changeout wizard if requested
   // When coming from scan workflow, work order is already claimed
   useEffect(() => {
-    if (autoLaunchSystemChangeout && canSystemChangeout && !isClosed && !autoLaunchTriggered.current) {
+    if (autoLaunchSystemChangeout && canSystemChangeout && !isClosed && !dispatchBlocked && !autoLaunchTriggered.current) {
       autoLaunchTriggered.current = true;
       // Scope is now auto-determined based on work order data
       // Since coming from scan, work order is already claimed, just open wizard
       setShowSystemChangeoutWizard(true);
     }
-  }, [autoLaunchSystemChangeout, canSystemChangeout, isClosed]);
+  }, [autoLaunchSystemChangeout, canSystemChangeout, isClosed, dispatchBlocked]);
 
   const getWorkOrderSubStatus = () => {
     const assignedId = (workOrder as any).subStatusId ?? (workOrder as any).sub_status_id;
@@ -533,11 +564,27 @@ export function WorkOrderDetail({
         
         {/* Action buttons */}
         <div className="flex items-center gap-1.5 flex-wrap">
+          {inventoryDispatch && (
+            <div className="mr-2 flex flex-wrap items-center gap-2" data-testid="inventory-dispatch-status">
+              <Badge variant={inventoryDispatch.stage === "needs_review" ? "destructive" : "secondary"}>
+                {dispatchStageLabel}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                Vehicle: {inventoryDispatch.vehicleName || "Not assigned"}
+              </span>
+              {(dispatchBlocked || inventoryDispatch.reason) && (
+                <span className="basis-full text-xs text-destructive" role="status" data-testid="inventory-dispatch-reason">
+                  {inventoryDispatch.reason || "Inventory dispatch must be cleared before starting field work."}
+                </span>
+              )}
+            </div>
+          )}
           {canSystemChangeout && workOrder.status !== 'Completed' && !isClosed && (
             <Button 
               size="sm" 
               onClick={handleStartSystemChangeout}
-              disabled={isClaiming}
+              disabled={isClaiming || dispatchBlocked}
+              title={dispatchBlocked ? (inventoryDispatch?.reason || "Inventory dispatch is not ready for field work.") : undefined}
               data-testid="header-button-start-system-changeout"
               className="bg-green-600 text-white dark:bg-green-600"
             >

@@ -6,6 +6,24 @@ import { storage } from "./storage";
 import { auditContext } from "./auditContext";
 import { insertAuditEvent } from "./auditService";
 import { permissionKeys, type User } from "../shared/schema";
+import { inventoryDispatchScope } from "./inventoryDispatch";
+
+export async function assertInventoryDispatchAllowed(client: Pick<PoolClient, "query">, projectId: number, row: any, user: User) {
+  if (await storage.isAdminUser(user) || !user.subroleId ||
+      (await storage.getSubrole(user.subroleId))?.key !== "field_technician") return false;
+  const scope = await inventoryDispatchScope(projectId, user.id, [{
+    id: row.id, assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
+    newSystemType: row.new_system_type, newModuleType: row.new_module_type,
+    assignmentVersion: row.assignment_version, status: row.status,
+  }], client);
+  if (!scope.enabled) return false;
+  const dispatch = scope.dispatch.get(row.id);
+  if (dispatch && !dispatch.canStart)
+    throw new ChangeoutError(dispatch.reason ?? "The vehicle handoff must be completed before starting.");
+  if (!dispatch && (scope.requires.has(row.id) || scope.batched.has(row.id)))
+    throw new ChangeoutError("This work is not handed off to one of your authorized vehicles. Ask the warehouse to prepare it or a manager to add you to the helping crew.", 403);
+  return !!dispatch;
+}
 
 export class ChangeoutError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -23,7 +41,7 @@ export async function canStart(user: User) {
     await storage.hasPermission(user, permissionKeys.WORK_ORDERS_VIEW) &&
     await storage.hasPermission(user, permissionKeys.WORK_ORDERS_METER_CHANGEOUT);
 }
-export async function assertClaimAllowed(client: PoolClient, row: any, userId: string) {
+export async function assertClaimAllowed(client: PoolClient, row: any, userId: string, projectId?: number) {
   const user = await storage.getUser(userId);
   if (!user || !await canStart(user)) throw new ChangeoutError("Changeout permission is required.", 403);
   const status = await canonicalStatus(client, row.status);
@@ -32,7 +50,9 @@ export async function assertClaimAllowed(client: PoolClient, row: any, userId: s
     throw new ChangeoutError("This work order has already been assigned to another technician.");
   if (status === "scheduled" && row.assigned_user_id !== user.id)
     throw new ChangeoutError("Scheduled work must be assigned to you before starting.");
+  const vehicleCrew = projectId ? await assertInventoryDispatchAllowed(client, projectId, row, user) : false;
   if (row.assigned_user_id === user.id) return;
+  if (vehicleCrew) return;
   const admin = await storage.isAdminUser(user);
   if (!admin) {
     const groups = await storage.getUserGroupMemberships(user.id);
@@ -61,6 +81,20 @@ export async function acceptCompletion(client: PoolClient, schema: string, prior
   const admin = await storage.isAdminUser(actor);
   if (!admin && prior.assigned_user_id !== actor.id)
     throw new ChangeoutError("Claim this work order before submitting. It may have been reassigned.", 403);
+  if (!admin) {
+    const vehicleWork = await assertInventoryDispatchAllowed(client, project.id, prior, actor);
+    if (vehicleWork) {
+      const scope = await inventoryDispatchScope(project.id, actor.id, [{
+        id: prior.id, assignedUserId: prior.assigned_user_id, assignedGroupId: prior.assigned_group_id,
+        newSystemType: prior.new_system_type, newModuleType: prior.new_module_type,
+        assignmentVersion: prior.assignment_version, status: prior.status,
+      }], client);
+      const dispatch = scope.dispatch.get(prior.id)!;
+      if (Array.isArray(updates.inventoryUsage?.used) &&
+          updates.inventoryUsage.used.some((line: any) => line.warehouseId !== dispatch.vehicleId))
+        throw new ChangeoutError("Use inventory from this order's dispatched vehicle. Record an authorized stock transfer and resolve dispatch before using a different vehicle.");
+    }
+  }
   const token = updates.changeoutSubmissionId || randomUUID();
   if (!z.string().uuid().safeParse(token).success) throw new ChangeoutError("Invalid submission identity.", 400);
   const { rows: [draft] } = await client.query(`SELECT assignment_version FROM public.changeout_drafts

@@ -72,7 +72,7 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     // Visibility follows direct/group assignments; routing alone filters Scheduled.
     const all=await getProjectWorkOrderStorage(project.databaseName).getWorkOrders();
     const technicianScope=await technicianAssignmentScope(ctx.user);
-    const visible=await visibleAssignedOrders(ctx.user,all);
+    const visible=await visibleAssignedOrders(ctx.user,all,project.id);
     const wanted=new Set(ids),orders=visible.filter(wo=>wanted.has(wo.id));
     if(orders.length!==ids.length)throw new RoutingError(403,"One or more selected work orders are no longer available. Refresh the list.");
     const definitions=await listSubStatuses(project.id);

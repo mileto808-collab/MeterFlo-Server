@@ -413,8 +413,12 @@ export function registerInventoryRoutes(app: Express) {
     if (!c.project.databaseName || !/^[a-z0-9_]+$/.test(c.project.databaseName)) throw new InventoryError("Work-order storage unavailable.");
     const { rows: [wo] } = await pool.query(`SELECT * FROM "${c.project.databaseName}".work_orders WHERE id=$1`, [id]);
     if (!wo) throw new InventoryError("Work order not found.");
-    if (!(await visibleAssignedOrders(c.user, [{ assignedUserId: wo.assigned_user_id, assignedGroupId: wo.assigned_group_id }])).length)
-      throw Object.assign(new InventoryError("This work order is not assigned to you or your field group."), { status: 403 });
+    const visible = await visibleAssignedOrders(c.user, [{ id: wo.id,
+      assignedUserId: wo.assigned_user_id, assignedGroupId: wo.assigned_group_id,
+      newSystemType: wo.new_system_type, newModuleType: wo.new_module_type,
+      assignmentVersion: wo.assignment_version, status: wo.status }], c.project.id);
+    if (!visible.length)
+      throw Object.assign(new InventoryError("This work order is not dispatched to your authorized vehicle or assigned work."), { status: 403 });
     const s = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
     const allocation = s.allocations.find(a => a.workOrderId === id) || null;
     const { rows: labels } = await pool.query("SELECT code,label FROM public.work_order_statuses WHERE lower(code)=lower($1) OR lower(label)=lower($1)", [wo.status]);
@@ -440,7 +444,8 @@ export function registerInventoryRoutes(app: Express) {
     const referencedWarehouses = new Set([...(allocation?.lines ?? []), ...(allocation?.used ?? []),
       ...(allocation?.dispositions ?? [])].map(line => line.warehouseId));
     return { enabled: !!c.project.inventoryEnabled, canSelect, canManageInventory: c.canViewInventory,
-      allocation, editable: canSelect, workOrderStatus: wo.status, timezone: c.project.timezone ?? "UTC",
+      allocation, inventoryDispatch: (visible[0] as any).inventoryDispatch,
+      editable: canSelect, workOrderStatus: wo.status, timezone: c.project.timezone ?? "UTC",
       plan: s.workPlans?.find(plan => plan.workOrderId === id) ?? { workOrderId: id, revision: 0, lines: [] },
       stagingReceipts: s.receipts.filter(receipt => receipt.action === "stageWorkOrder" && receipt.reference === `wo-${id}`),
       reservationNeedsReview: allocation?.status === "reserved" && allocation.assignmentVersion !== undefined &&

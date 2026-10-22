@@ -57,6 +57,12 @@ interface WorkOrderFiltersDialogProps {
   setSelectedAssignedGroup: (value: string) => void;
   selectedTrouble: string;
   setSelectedTrouble: (value: string) => void;
+  selectedDispatchStage: string;
+  setSelectedDispatchStage: (value: string) => void;
+  selectedDispatchVehicle: string;
+  setSelectedDispatchVehicle: (value: string) => void;
+  dispatchVehicles: Array<{ id: string; name: string }>;
+  showInventoryDispatch: boolean;
   filterCustomerId: string;
   setFilterCustomerId: (value: string) => void;
   filterCustomerName: string;
@@ -150,6 +156,12 @@ export function WorkOrderFiltersDialog({
   setSelectedAssignedGroup,
   selectedTrouble,
   setSelectedTrouble,
+  selectedDispatchStage,
+  setSelectedDispatchStage,
+  selectedDispatchVehicle,
+  setSelectedDispatchVehicle,
+  dispatchVehicles,
+  showInventoryDispatch,
   filterCustomerId,
   setFilterCustomerId,
   filterCustomerName,
@@ -429,6 +441,41 @@ export function WorkOrderFiltersDialog({
                     </SelectContent>
                   </Select>
                 </div>
+              )}
+              {showInventoryDispatch && (
+                <>
+                  <Separator className="my-3" />
+                  <div>
+                    <Label htmlFor="dialog-filter-dispatch-stage">Inventory dispatch stage</Label>
+                    <Select value={selectedDispatchStage} onValueChange={setSelectedDispatchStage}>
+                      <SelectTrigger id="dialog-filter-dispatch-stage" data-testid="dialog-select-dispatch-stage">
+                        <SelectValue placeholder="All dispatch stages" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All dispatch stages</SelectItem>
+                        <SelectItem value="none">No inventory dispatch</SelectItem>
+                        <SelectItem value="awaiting_pickup">Awaiting pickup</SelectItem>
+                        <SelectItem value="ready_for_field">Ready for field</SelectItem>
+                        <SelectItem value="needs_review">Needs review</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="dialog-filter-dispatch-vehicle">Dispatch vehicle</Label>
+                    <Select value={selectedDispatchVehicle} onValueChange={setSelectedDispatchVehicle}>
+                      <SelectTrigger id="dialog-filter-dispatch-vehicle" data-testid="dialog-select-dispatch-vehicle">
+                        <SelectValue placeholder="All vehicles" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All vehicles</SelectItem>
+                        <SelectItem value="none">No vehicle assigned</SelectItem>
+                        {dispatchVehicles.map(vehicle => (
+                          <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
               )}
             </div>
 

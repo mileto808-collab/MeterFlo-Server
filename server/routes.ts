@@ -2276,7 +2276,7 @@ export async function registerRoutes(
         try {
           const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
           let workOrders = await workOrderStorage.getWorkOrders({});
-          workOrders = await visibleAssignedOrders(currentUser, workOrders);
+          workOrders = await visibleAssignedOrders(currentUser, workOrders, project.id);
           
           // Add project info to each work order
           workOrders = workOrders.map((wo: any) => ({
@@ -2331,9 +2331,10 @@ export async function registerRoutes(
           const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
           const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
           
-          if (workOrder && (await visibleAssignedOrders(currentUser, [workOrder])).length) {
+          const visible = workOrder ? await visibleAssignedOrders(currentUser, [workOrder], project.id) : [];
+          if (visible.length) {
             return res.json({
-              ...workOrder,
+              ...visible[0],
               projectId: project.id,
               projectName: project.name
             });
@@ -2398,7 +2399,7 @@ export async function registerRoutes(
       let workOrders = await workOrderStorage.getWorkOrders(filters);
       
       // Visibility follows direct/group assignment; Scheduled is a routing filter only.
-      workOrders = await visibleAssignedOrders(currentUser, workOrders);
+      workOrders = await visibleAssignedOrders(currentUser, workOrders, projectId);
       
       res.json(workOrders);
     } catch (error) {
@@ -2441,7 +2442,7 @@ export async function registerRoutes(
         const subrole = await storage.getSubrole(currentUser.subroleId);
         if (subrole?.key === "field_technician" && !await storage.isAdminUser(currentUser)) {
           const allWorkOrders = await workOrderStorage.getWorkOrders({});
-          const filteredWorkOrders = await visibleAssignedOrders(currentUser, allWorkOrders);
+          const filteredWorkOrders = await visibleAssignedOrders(currentUser, allWorkOrders, projectId);
           
           // Compute stats from filtered work orders
           const statusCounts: Record<string, number> = {};
@@ -2587,15 +2588,19 @@ export async function registerRoutes(
         }
         
         const workOrder = result.rows[0];
-        if (!(await visibleAssignedOrders(currentUser, [{
-          assignedUserId: workOrder.assigned_user_id, assignedGroupId: workOrder.assigned_group_id,
-        }])).length) return res.status(404).json({ message: "Work order not found" });
+        const visible = await visibleAssignedOrders(currentUser, [{
+          id: workOrder.id, assignedUserId: workOrder.assigned_user_id, assignedGroupId: workOrder.assigned_group_id,
+          newSystemType: workOrder.new_system_type, newModuleType: workOrder.new_module_type,
+          assignmentVersion: workOrder.assignment_version, status: workOrder.status,
+        }], projectId);
+        if (!visible.length) return res.status(404).json({ message: "Work order not found" });
         
         if (currentUser?.role === "customer" && workOrder.status !== "completed") {
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
         }
         
-        res.json({ ...workOrder, assignmentVersion: workOrder.assignment_version, ...schedulingDto(workOrder), ...gpsFixDto(workOrder) });
+        res.json({ ...workOrder, inventoryDispatch: (visible[0] as any).inventoryDispatch,
+          assignmentVersion: workOrder.assignment_version, ...schedulingDto(workOrder), ...gpsFixDto(workOrder) });
       } finally {
         client.release();
       }
@@ -9199,11 +9204,23 @@ export async function registerRoutes(
         let paramCount = 1;
         
         // Personal/group scope is independent of status; active-only policy is applied below.
-        if (isFieldTechnician) {
+        if (isFieldTechnician && !project.inventoryEnabled) {
           const scope = await technicianAssignmentScope(currentUser);
           conditions.push(`(w.assigned_user_id = $${paramCount++} OR w.assigned_group_id = ANY($${paramCount++}::text[]))`);
           values.push(currentUser.id);
           values.push(scope?.groupNames ?? []);
+        }
+        if (isFieldTechnician && project.inventoryEnabled) {
+          // Apply authorization before LIMIT/OFFSET, not after paging other crews' rows.
+          const { rows: candidates } = await client.query(`SELECT id,status,assigned_user_id,assigned_group_id,
+            new_system_type,new_module_type,assignment_version FROM "${project.databaseName}".work_orders
+            WHERE lower(status) NOT IN ('completed','closed')`);
+          const visible = await visibleAssignedOrders(currentUser, candidates.map((row: any) => ({
+            id: row.id, status: row.status, assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
+            newSystemType: row.new_system_type, newModuleType: row.new_module_type, assignmentVersion: row.assignment_version,
+          })), projectId);
+          conditions.push(`w.id=ANY($${paramCount++}::int[])`);
+          values.push(visible.map(work => work.id));
         }
         
         // Filter by last sync timestamp (incremental sync)
@@ -9251,6 +9268,13 @@ export async function registerRoutes(
         }
         
         const result = await client.query(query, values);
+        // Inventory dispatch can grant another group's crew work through vehicle
+        // membership, or remove bulk-group work that has not been staged.
+        const scopedRows = await visibleAssignedOrders(currentUser, result.rows.map((row: any) => ({
+          ...row, assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
+          newSystemType: row.new_system_type, newModuleType: row.new_module_type,
+          assignmentVersion: row.assignment_version,
+        })), projectId);
         
         // Get server timestamp for client to use in next sync
         const serverTimestamp = new Date().toISOString();
@@ -9296,7 +9320,7 @@ export async function registerRoutes(
         res.json({
           success: true,
           serverTimestamp,
-          workOrders: withExactReadings(result.rows).map((wo: any) => ({ ...wo,
+          workOrders: withExactReadings(scopedRows).map((wo: any) => ({ ...wo,
             ...gpsFixDto(wo),
             ...schedulingDto(wo),
             subStatusId: wo.sub_status_id ?? null,
@@ -9317,7 +9341,7 @@ export async function registerRoutes(
             assignees: { users, groups }
           },
           meta: {
-            count: result.rows.length,
+            count: scopedRows.length,
             projectId,
             projectName: project.name,
             gpsContractVersion: 2,
