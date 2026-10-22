@@ -1,7 +1,7 @@
 import type { OperationsDataset, OperationsKind, OperationsRow } from "./inventory-operations-data";
 
 type Context = { project: string; timezone: string };
-const titles: Record<OperationsKind, string> = { locations: "Locations", exceptions: "Shipment exceptions", returns: "Removed Equipment", activity: "Activity", categories: "Categories", counts: "Cycle counts" };
+const titles: Record<OperationsKind, string> = { locations: "Locations", exceptions: "Shipment exceptions", returns: "Removed Equipment", activity: "Activity", categories: "Categories", counts: "Cycle counts", fulfillment: "Completed batches" };
 const escape = (value: string | number) => String(value).replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 export const operationsExportRows = (dataset: OperationsDataset, rows: readonly OperationsRow[]) =>
@@ -34,6 +34,7 @@ export async function operationsWorkbook(context: Context, kind: OperationsKind,
 }
 export function operationsPrintHtml(context: Context, kind: OperationsKind, dataset: OperationsDataset, rows: readonly OperationsRow[]) {
   const printKeys: Record<OperationsKind, string[]> = {
+    fulfillment: ["name", "mode", "workOrders", "source", "staging", "vehicle", "staged", "delivered", "completed"],
     locations: ["code", "name", "type", "status", "address", "plate", "assigned"],
     exceptions: ["reference", "order", "sku", "location", "status", "held", "actor", "date", "reason"],
     returns: ["equipment", "serial", "status", "workOrder", "location", "sku"],

@@ -23,7 +23,7 @@ type Props = {
   persistentHeaderAction?: ReactNode;
 };
 const selectClass = "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const nouns: Record<OperationsKind, string> = { locations: "locations", exceptions: "exceptions", returns: "returns", activity: "activity", categories: "categories", counts: "counts" };
+const nouns: Record<OperationsKind, string> = { locations: "locations", exceptions: "exceptions", returns: "returns", activity: "activity", categories: "categories", counts: "counts", fulfillment: "completed batches" };
 
 export function InventoryRecordsWorkspace({ kind, title, description, dataset, projectName, timezone, onRefresh, renderRow, headerAction, persistentHeaderAction }: Props) {
   const { toast } = useToast();
@@ -110,6 +110,7 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
     catch (error) { toast({ title: `${format === "xlsx" ? "Excel" : format.toUpperCase()} export failed`, description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
   };
   const placeholder: Record<OperationsKind, string> = {
+    fulfillment: "Batch, work order, item, location or serial",
     locations: "Name, code, address or assigned crew",
     exceptions: "Order, item, serial or location",
     returns: "Serial, equipment, work order or location",

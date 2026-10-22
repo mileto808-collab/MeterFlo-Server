@@ -11,7 +11,7 @@ import { removalConfig } from "@shared/inventory-removal-policy";
 import { removalDispositionDisplay, warehouseRemovalDecision, removalFilterKey, removalActivityIndex, removalActivityDisplay, removalStatusLabel } from "@shared/inventory-removal-display";
 import { inventoryDateTime } from "@shared/inventory-date-time";
 
-export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
+export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts" | "fulfillment";
 export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; facetValues?: Record<string, string[]>; timestamps?: string[]; searchFields?: Record<string, string[]>; children?: OperationsRow[] };
 export type OperationsDataset = {
   rows: OperationsRow[];
@@ -61,7 +61,38 @@ export function buildOperationsDataset(
   let cols: OperationsDataset["columns"];
   let filterKeys: [string, string][];
   let sorts: OperationsDataset["sorts"];
-  if (kind === "categories") {
+  if (kind === "fulfillment") {
+    rows = (state.fulfillmentBatches ?? []).filter(batch => batch.status === "completed").map(batch => {
+      const receipts = state.receipts.filter(receipt => receipt.reference === batch.id &&
+        ["fulfillmentMove", "fulfillmentClose"].includes(receipt.action));
+      const completedAt = receipts.map(receipt => receipt.occurredAt).sort().at(-1) ?? "";
+      return textSearch({
+        id: batch.id,
+        cells: {
+          name: batch.name, mode: batch.mode === "crew" ? "Crew batch" : "Scheduled installer",
+          status: "Completed", source: locationName(batch.sourceId), staging: locationName(batch.stagingId),
+          vehicle: locationName(batch.vehicleId), workOrders: batch.workOrders.map(work => work.label).join(", "),
+          orderCount: batch.workOrders.length, quantity: batch.lines.reduce((sum, line) => sum + line.quantity, 0),
+          staged: batch.lines.reduce((sum, line) => sum + line.stagedQuantity, 0),
+          delivered: batch.lines.reduce((sum, line) => sum + line.deliveredQuantity, 0),
+          createdAt: batch.createdAt, created: displayTime(batch.createdAt, timezone),
+          completedAt, completed: completedAt ? displayTime(completedAt, timezone) : "Not recorded",
+          items: [...new Set(batch.lines.map(line => items.get(line.itemId)?.name ?? "Unavailable item"))].join(", "),
+          serials: [...new Set(batch.lines.flatMap(line => line.deliveredSerials))].join(", "),
+        },
+        facets: { mode: batch.mode === "crew" ? "Crew batch" : "Scheduled installer",
+          source: locationName(batch.sourceId), staging: locationName(batch.stagingId), vehicle: locationName(batch.vehicleId) },
+        timestamps: completedAt ? [completedAt] : [],
+      });
+    });
+    cols = columns([["name", "Batch"], ["status", "Status"], ["mode", "Work type"], ["workOrders", "Work orders"],
+      ["orderCount", "Work-order count"], ["source", "Source"], ["staging", "Staging"], ["vehicle", "Vehicle"],
+      ["quantity", "Required"], ["staged", "Staged"], ["delivered", "Handed off"], ["created", "Created"],
+      ["completed", "Completed"], ["items", "Items"], ["serials", "Custody serials"]]);
+    filterKeys = [["mode", "Work type"], ["source", "Source"], ["staging", "Staging"], ["vehicle", "Vehicle"]];
+    sorts = [{ key: "completedAt:desc", label: "Completed · newest first" }, { key: "completedAt:asc", label: "Completed · oldest first" },
+      { key: "name:asc", label: "Batch · A–Z" }, { key: "orderCount:desc", label: "Most work orders" }];
+  } else if (kind === "categories") {
     const catalog = state.categoryCatalog;
     const categoryRows = catalog !== undefined
       ? catalog.map(category => ({
@@ -239,7 +270,7 @@ export function buildOperationsDataset(
       { key: "customerWorkOrderId", label: "Customer work-order ID" },
       { key: "equipmentId", label: "System / module ID" },
     ] : undefined,
-    dateFilterLabel: ({ returns: "Custody or decision activity", counts: "Count activity", exceptions: "Arrival recorded", activity: "Movement recorded" } as Partial<Record<OperationsKind, string>>)[kind],
+    dateFilterLabel: ({ fulfillment: "Batch completed", returns: "Custody or decision activity", counts: "Count activity", exceptions: "Arrival recorded", activity: "Movement recorded" } as Partial<Record<OperationsKind, string>>)[kind],
     filters: filterKeys.map(([key, label]) => ({
       key, label, options: [...new Set([
         ...(key === "fieldDisposition" || key === "warehouseDisposition" ? dispositionOptions[key].keys() : []),

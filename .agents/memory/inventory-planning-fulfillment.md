@@ -39,6 +39,12 @@ The user approved a Staging-location approach for the shared stock pool. The ful
 
 **How to apply:** Keep shared crew pools distinct from individually scheduled reservations. Treat Staging as physical custody, never installation, and retain onsite selection of actual installed serials.
 
+Keep completed fulfillment batches in searchable, filterable, exportable history, separate from resuming unfinished work. Active batches that cannot safely resume still need a distinct review/release path; do not silently hide their remaining holds.
+
+**Why:** The user expects “Resume saved batch” to contain only valid unfinished batches, while completed batches remain findable and warehouse workers still need to resolve interrupted or reassigned custody work.
+
+**How to apply:** Recheck assignment, access, and physical location eligibility against current server state on every load and posting. A crew batch may hand off already-staged stock after an assignment change, but must not pull more; changed scheduled assignments require review before handoff. Preserve physical receipts and pending drafts.
+
 After a staging pull is recorded, moving to the vehicle-handoff step must not require another reason or physical confirmation for that same pull.
 
 **Why:** The user found repeated pull controls confusing and expects to continue directly when staging is complete. Vehicle handoff is still a separate physical movement that must be recorded.

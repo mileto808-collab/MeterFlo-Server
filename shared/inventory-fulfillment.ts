@@ -2,7 +2,36 @@ import { z } from "zod";
 import type { InventoryState, StockLine } from "./inventory";
 import { stockLineSchema } from "./inventory";
 import { InventoryError } from "./inventory-errors";
-import { isStagingType } from "./inventory-location-types";
+import { isStagingType, warehouseAccessible } from "./inventory-location-types";
+
+export type FulfillmentResumeStatus = { resumable: boolean; nextStep: "stage" | "vehicle"; reason?: string };
+/** Discovery mirrors movement rules without promising that stock is still available at posting time. */
+export function fulfillmentResumeStatus(state: InventoryState, batch: FulfillmentBatch,
+  orders: readonly Pick<FulfillmentCandidate, "workOrderId" | "assignmentVersion" | "status" | "eligible">[],
+  actor: string, admin: boolean): FulfillmentResumeStatus {
+  const unstaged = batch.lines.some(line => line.quantity > line.stagedQuantity);
+  const staged = batch.lines.some(line => line.stagedQuantity > line.deliveredQuantity);
+  const nextStep = unstaged ? "stage" as const : "vehicle" as const;
+  const invalid = (reason: string): FulfillmentResumeStatus => ({ resumable: false, nextStep, reason });
+  if (batch.status !== "active") return invalid("This batch is no longer active.");
+  if (!unstaged && !staged) return invalid("There is no unfinished stock movement.");
+  if (batch.lines.some(line => line.quantity > line.deliveredQuantity &&
+    !state.items.some(item => item.id === line.itemId && item.active && item.kind !== "labor")))
+    return invalid("A required inventory item is inactive or unavailable; warehouse review is required.");
+  if ([batch.sourceId, batch.stagingId, batch.vehicleId].some(id =>
+    !warehouseAccessible(state, state.warehouses.find(location => location.id === id), actor, admin)))
+    return invalid("A batch location is inactive, unavailable, or no longer accessible.");
+  const current = batch.workOrders.map(saved => ({ saved, order: orders.find(order => order.workOrderId === saved.workOrderId) }));
+  if (current.some(({ order }) => !order)) return invalid("Work-order access changed; warehouse review is required.");
+  const changed = current.some(({ saved, order }) => order!.assignmentVersion !== saved.assignmentVersion ||
+    !["open", "scheduled"].includes(order!.status.toLowerCase()));
+  if (batch.mode === "scheduled" && (changed || current.some(({ order }) => !order!.eligible || order!.status.toLowerCase() !== "scheduled")))
+    return invalid("Scheduled work changed; review its reservations before continuing.");
+  if (changed && unstaged) return staged && batch.mode === "crew"
+    ? { resumable: true, nextStep: "vehicle", reason: "Only already-staged stock can be handed off; release the unpulled remainder." }
+    : invalid("Work or assignments changed; release the unfinished remainder and review current work.");
+  return { resumable: true, nextStep };
+}
 
 const id = z.string().min(1).max(100);
 export const fulfillmentCreateSchema = z.object({

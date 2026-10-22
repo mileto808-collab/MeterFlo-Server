@@ -29,6 +29,7 @@ import { workKitComponentTrace } from "../shared/inventory-component-details";
 import { warehouseAccessible } from "../shared/inventory-location-types";
 import { removalConfig } from "../shared/inventory-removal-policy";
 import { fulfillmentOrders } from "./inventoryFulfillment";
+import { fulfillmentResumeStatus } from "../shared/inventory-fulfillment";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 import { readRelationalInventory } from "./inventoryRelational";
 
@@ -102,10 +103,13 @@ export function registerInventoryRoutes(app: Express) {
       const orders = await fulfillmentOrders(connection, c.project.id, state, c.user);
       // Batch history contains customer work identities: apply the same work visibility.
       const allIds = [...new Set((state.fulfillmentBatches ?? []).flatMap(b => b.workOrders.map(w => w.workOrderId)))];
-      const visible = allIds.length ? new Set((await fulfillmentOrders(connection, c.project.id, state, c.user, allIds)).map(w => w.workOrderId)) : new Set<number>();
+      const batchOrders = allIds.length ? await fulfillmentOrders(connection, c.project.id, state, c.user, allIds) : [];
+      const visible = new Set(batchOrders.map(w => w.workOrderId));
       const batches = (state.fulfillmentBatches ?? []).filter(b => b.workOrders.every(w => visible.has(w.workOrderId)));
+      const resumeStatus = Object.fromEntries(batches.map(batch => [batch.id,
+        fulfillmentResumeStatus(state, batch, batchOrders, c.user.id, c.admin)]));
       await connection.query("COMMIT");
-      return { orders, batches, timezone: c.project.timezone ?? "UTC" };
+      return { orders, batches, resumeStatus, timezone: c.project.timezone ?? "UTC" };
     } catch (error) { await connection.query("ROLLBACK"); throw error; }
     finally { connection.release(); }
   }));
