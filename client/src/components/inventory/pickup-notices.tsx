@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InventoryPickupNotice, InventoryPickupResponse } from "@shared/inventory-pickups";
@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
-import { Boxes, MapPin, Truck, AlertTriangle, ArrowUpRight, RotateCcw } from "lucide-react";
+import { Boxes, MapPin, Truck, AlertTriangle, RotateCcw } from "lucide-react";
 import { useMemo } from "react";
 
 type PickupNotice = InventoryPickupNotice;
@@ -217,7 +217,6 @@ export function PickupNoticeDetails({ notice: rawNotice, onViewed }: { notice: P
       <div className="flex flex-wrap items-start justify-between gap-3">
        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{notice.batchName}</h3><Badge variant={notice.status === "review" ? "destructive" : notice.status === "partial" ? "outline" : "secondary"}>{notice.status === "review" ? "Pickup needs review" : notice.status === "partial" ? "Partial pickup" : "Ready"}</Badge></div>
         <p className="mt-1 text-sm text-muted-foreground">{notice.projectName} · {notice.ticketNumber}</p></div>
-      <Link href={pickupHref(notice)} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">Open in project <ArrowUpRight className="h-4 w-4" /></Link>
     </div>
     <section data-testid="pickup-ticket-qr" aria-label="Pick ticket QR code"
       className="flex flex-col items-center gap-4 rounded-xl border bg-card p-4 text-center sm:flex-row sm:items-center sm:text-left">
