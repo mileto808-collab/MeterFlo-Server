@@ -44,8 +44,38 @@ const { randomUUID } = require("node:crypto");
     await command("fulfillmentCreate", { id: batchId, name: "HID batch", mode: "crew", sourceId: "hid-source",
       stagingId: "hid-stage", vehicleId: "hid-vehicle",
       workOrders: [{ workOrderId: work.id, assignmentVersion: candidate.assignmentVersion }] });
+    await command("fulfillmentMove", { id: batchId, revision: 1, phase: "stage", physicallyConfirmed: true,
+      reason: "Physically verified both meters on the staging shelf",
+      lines: [{ itemId: "hid-meter", quantity: 2, serials: ["HID-001", "HID-002"] }] });
     const before = (await request(admin, "GET", inventory)).state.revision;
-    const ticket = `${baseURL}/projects/${fixture.projectId}/inventory?pickup=${batchId}`;
+    // Decode the actual server-rendered QR PNG, not a hand-constructed test link.
+    const printed = await admin.request.get(`${inventory}/fulfillment/${batchId}/pick-ticket`);
+    assert.equal(printed.status(), 200);
+    const printedHtml = await printed.text();
+    const printedQr = /<img[^>]+src="(data:image\/png;base64,[^"]+)"/.exec(printedHtml)?.[1];
+    assert.ok(printedQr, "Printed ticket contains a PNG QR image.");
+    const decoderPage = await admin.newPage();
+    await decoderPage.setContent('<div id="qr-roundtrip-decoder"></div>');
+    await decoderPage.addScriptTag({ path: "node_modules/html5-qrcode/html5-qrcode.min.js" });
+    const decode = data => decoderPage.evaluate(async image => {
+      const blob = await (await fetch(image)).blob();
+      const reader = new Html5Qrcode("qr-roundtrip-decoder");
+      try { return await reader.scanFile(new File([blob], "pick-ticket.png", { type: "image/png" }), false); }
+      finally { reader.clear(); }
+    }, data);
+    const ticket = await decode(printedQr);
+    const parsed = new URL(ticket);
+    assert.equal(parsed.origin, new URL(baseURL).origin, "Ticket points to the serving instance.");
+    assert.equal(parsed.pathname, `/projects/${fixture.projectId}/work-orders`);
+    assert.equal(parsed.searchParams.get("pickup"), batchId);
+    const pickupPage = await admin.newPage();
+    await pickupPage.goto(`/projects/${fixture.projectId}/work-orders?pickup=${batchId}`);
+    const pickupQr = pickupPage.getByTestId("pickup-ticket-qr").locator("img");
+    await expect(pickupQr).toBeVisible();
+    assert.equal(await decode(await pickupQr.getAttribute("src")), ticket, "Pickup notice and printed ticket encode the same URL.");
+    await pickupPage.close();
+    await decoderPage.close();
+    console.log("PASS decoded actual printed and pickup-notice QR PNGs: serving origin, project, batch and matching links.");
     await fs.mkdir("generated-artifacts/inventory-pick-ticket-hid", { recursive: true });
 
     for (const entry of ["inventory", "tasks", "fulfillment", "modal-desktop", "modal-mobile"]) {
