@@ -15,6 +15,12 @@ An editable draft and a submitted request with an unknown outcome are different 
 
 **How to apply:** Preserve the exact pending request across accounts and retries. Resolve it under the same transaction lock as stock posting; only discard its retry identity after the server proves it posted or is permanently unable to post. A resolution of an old request must not cancel a newer request.
 
+Treat another worker's prepared draft as physical-posting recovery even when the local editor still holds an older editable revision. Keeping local text as a separate draft is not an alternative to resolving that frozen operation.
+
+**Why:** A worker's stale editable state cannot prove that the shared physical operation is still safe to replace; a second identity can duplicate the same physical movement.
+
+**How to apply:** Require explicit review of the exact shared operation, then retain its frozen identity across retries and reloads. Every path that starts a new draft is a posting-identity boundary: protect vehicle changes and navigation shortcuts, not only the named conflict actions. Do not offer a separate-draft shortcut for prepared or posted peer state.
+
 Recovery by another authorized worker may return the existing receipt, but must retain the original posting actor rather than rewriting audit evidence or weakening replay rules for unrelated inventory commands.
 
 An autosave acknowledges its submitted snapshot, not any newer text entered while the request was running. Unchanged saves should be no-ops rather than manufacture new edit revisions.

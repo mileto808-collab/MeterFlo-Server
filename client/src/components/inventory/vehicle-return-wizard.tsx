@@ -492,6 +492,9 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
     setMessage("Loaded the latest shared draft. Physical context must be refreshed before review.");
   };
   const keepLocalAsSeparateDraft = () => {
+    if (pendingSaveRef.current || frozenCommandRef.current ||
+      draft?.status === "submitting" || draft?.status === "posted" ||
+      conflictDraft?.status === "submitting" || conflictDraft?.status === "posted") return;
     setConflictDraft(null);
     setDraft(null);
     setPhysicallyConfirmed(false);
@@ -574,16 +577,21 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
         receiptId={receiptId} receiptEvidence={receiptEvidence} message={message} syncError={syncError}
         conflictDraft={conflictDraft} queryError={workflowQuery.isError}
         canKeepLocalSeparate={!pendingSaveRef.current && !frozenCommandRef.current &&
-          draft?.status !== "submitting" && draft?.status !== "posted"}
-        canOpenSharedDraft={!pendingSaveRef.current && !syncing}
+          draft?.status !== "submitting" && draft?.status !== "posted" &&
+          conflictDraft?.status !== "submitting" && conflictDraft?.status !== "posted"}
+        canOpenSharedDraft={!pendingSaveRef.current && !syncing && !syncError && !conflictDraft}
         onRetryContext={() => void workflowQuery.refetch()} onRetrySync={retrySync} onUseLatestDraft={useLatestDraft}
         onKeepLocalAsSeparateDraft={keepLocalAsSeparateDraft}
         onSourceChange={sourceId => {
+          if (conflictDraft || frozenCommandRef.current ||
+            draft?.status === "submitting" || draft?.status === "posted") {
+            setMessage("Resolve the exact shared draft before changing vehicles. Your local entries and any frozen operation are retained.");
+            return;
+          }
           if (pendingSaveRef.current || syncing) {
             setMessage("Finish syncing the exact pending save before changing vehicles.");
             return;
           }
-          if (draft?.status === "submitting") return;
           if (meaningfulVehicleReturn(capture) && !window.confirm("Changing vehicles starts a separate draft and clears this wizard’s selected items, quantities, scans, destination, and reason. The existing shared draft remains available. Continue?")) return;
           const next: VehicleReturnCapture = { ...capture, sourceId, destinationId: "", itemIds: [], returnIds: [], quantities: {}, scans: {}, reason: "" };
           captureRef.current = next;
@@ -602,7 +610,7 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
         updateCapture={updateCapture} toggleItem={toggleItem} verifyScans={verifyScans} setScope={setScope}
         setAddItemId={setAddItemId} addItem={addItem} baselineFor={baselineFor}
         onOpenDraft={value => {
-          if (value.id === draft?.id || pendingSaveRef.current || syncing) return;
+          if (value.id === draft?.id || pendingSaveRef.current || syncing || syncError || conflictDraft) return;
           if (meaningfulVehicleReturn(capture) && value.id !== draft?.id &&
             !window.confirm("Open this shared draft and replace the current local capture? Continue only if the current text is saved or no longer needed.")) return;
           setDraft(value); frozenCommandRef.current = value.command; setCapture(value.capture);
