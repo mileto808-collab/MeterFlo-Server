@@ -8,6 +8,8 @@ export const replacementBackupSchema = z.object({
   vehicleId: z.string().nullable(), operationId: z.string().uuid(), actorId: z.string(),
   predecessorFingerprint: z.string().length(64), active: z.boolean(), cancelledAt: z.string().datetime().nullable().default(null),
   cancelledBy: z.string().nullable().default(null),
+  cancelledAssignee: z.string().nullable().default(null),
+  deletedAt: z.string().datetime().nullable().default(null), deletedBy: z.string().nullable().default(null),
 }).strict();
 
 export function replacementBackupDto(row: any) {
@@ -19,6 +21,9 @@ export function replacementBackupDto(row: any) {
     active: row.replacement_active,
     cancelledAt: row.replacement_cancelled_at?.toISOString?.() ?? row.replacement_cancelled_at ?? null,
     cancelledBy: row.replacement_cancelled_by ?? null,
+    cancelledAssignee: row.replacement_cancelled_assignee ?? null,
+    deletedAt: row.replacement_deleted_at?.toISOString?.() ?? row.replacement_deleted_at ?? null,
+    deletedBy: row.replacement_deleted_by ?? null,
   } : null;
 }
 export function validateReplacementBackup(orders: any[]) {
@@ -36,6 +41,8 @@ export function validateReplacementBackup(orders: any[]) {
     if (visit.active && (visit.cancelledAt || ["completed", "closed", "cancelled"].includes(String(order.status).toLowerCase())))
       throw new Error("A completed replacement cannot also be active.");
     if (visit.cancelledAt && visit.active) throw new Error("A cancelled replacement cannot be active.");
+    if (visit.deletedAt && (!visit.cancelledAt || visit.active || ["completed", "closed"].includes(String(order.status).toLowerCase())))
+      throw new Error("A deleted replacement must be an unused cancelled visit.");
     operations.add(visit.operationId); if (visit.active) activeRoots.add(visit.rootWorkOrderId);
   }
 }
@@ -45,8 +52,10 @@ export async function restoreReplacementMetadata(db: PoolClient, schema: string,
     const v = replacementBackupSchema.parse(order.replacementRecovery);
     await db.query(`UPDATE "${schema}".work_orders SET replacement_root_id=$2,replacement_parent_id=$3,
       replacement_equipment=$4,replacement_reason=$5,replacement_vehicle_id=$6,replacement_operation_id=$7,
-      replacement_actor_id=$8,replacement_predecessor_fingerprint=$9,replacement_active=$10,replacement_cancelled_at=$11,replacement_cancelled_by=$12 WHERE id=$1`,
+      replacement_actor_id=$8,replacement_predecessor_fingerprint=$9,replacement_active=$10,replacement_cancelled_at=$11,replacement_cancelled_by=$12,
+      replacement_cancelled_assignee=$13,replacement_deleted_at=$14,replacement_deleted_by=$15 WHERE id=$1`,
     [mapping.get(order.id), mapping.get(v.rootWorkOrderId), mapping.get(v.parentWorkOrderId),
-      v.equipment, v.reason, v.vehicleId, v.operationId, v.actorId, v.predecessorFingerprint, v.active, v.cancelledAt, v.cancelledBy]);
+      v.equipment, v.reason, v.vehicleId, v.operationId, v.actorId, v.predecessorFingerprint, v.active, v.cancelledAt, v.cancelledBy,
+      v.cancelledAssignee, v.deletedAt, v.deletedBy]);
   }
 }

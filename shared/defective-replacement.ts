@@ -33,6 +33,18 @@ export interface ReplacementHistoryRow {
   newModuleId: string | null;
   completedAt: string | null;
   accountingStatus: "pending" | "failed" | "succeeded" | "not_required" | null;
+  operationId: string | null;
+  cancelledAt: string | null;
+  recovery: { canRestore: boolean; canDelete: boolean; restoreReason: string | null; deleteReason: string | null;
+    restoreAssigneeLabel: string; usesOriginalRequester: boolean } | null;
+}
+export const replacementRecoverySchema = z.object({ reason: z.string().trim().min(10).max(1000) }).strict();
+export const deleteUnusedReplacementSchema = replacementRecoverySchema.extend({ noPhysicalReplacement: z.literal(true) }).strict();
+export interface ReplacementOperationStatus {
+  operationId: string;
+  workOrderId: number;
+  label: string;
+  status: "active" | "cancelled" | "deleted" | "completed";
 }
 export interface ReplacementEligibility {
   contractVersion: 1;

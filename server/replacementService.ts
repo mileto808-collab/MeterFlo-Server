@@ -16,6 +16,7 @@ import { actualEquipmentLines, requirementsSatisfied } from "../shared/inventory
 import { fieldStockSourceAllowed, fieldFulfillmentAllowed, fieldStockSettingsSchema } from "../shared/inventory-field-stock";
 import { validateRemovalWorkflow } from "../shared/inventory-removal-policy";
 import { workRequirements } from "./inventoryRequirements";
+import { recoveryOwner, unusedReplacementBlock } from "./replacementRecovery";
 
 type Query = Pick<PoolClient, "query">;
 const terminal = async (db: Query, value: unknown) => ["completed", "closed"].includes(await canonicalStatus(db, value));
@@ -25,11 +26,15 @@ export const replacementLabel = (row: any) => row.customer_wo_id || `Work order 
 export async function replacementContext(db: Query, schema: string, project: any, user: User, id: number): Promise<ReplacementEligibility> {
   const { rows: [selected] } = await db.query(`SELECT * FROM "${schema}".work_orders WHERE id=$1`, [id]);
   if (!selected) throw new ChangeoutError("Work order not found.", 404, "REPLACEMENT_NOT_FOUND");
+  if (selected.replacement_deleted_at) throw new ChangeoutError("This unused replacement was deleted.", 410, "REPLACEMENT_DELETED");
   const rootId = selected.replacement_root_id ?? selected.id;
-  const { rows } = await db.query(`SELECT w.*,c.status accounting_status FROM "${schema}".work_orders w
+  const { rows } = await db.query(`SELECT w.*,c.status accounting_status,
+    coalesce(nullif(concat_ws(' ',restore_user.first_name,restore_user.last_name),''),restore_user.username,'Unavailable user') AS restore_assignee_label
+    FROM "${schema}".work_orders w
+    LEFT JOIN public.users restore_user ON restore_user.id=coalesce(w.replacement_cancelled_assignee,w.replacement_actor_id)
     LEFT JOIN LATERAL (SELECT status FROM public.changeout_completions WHERE project_id=$1 AND work_order_id=w.id
       ORDER BY created_at DESC,id DESC LIMIT 1) c ON true
-    WHERE w.id=$2 OR w.replacement_root_id=$2 ORDER BY w.id`, [project.id, rootId]);
+    WHERE (w.id=$2 OR w.replacement_root_id=$2) AND w.replacement_deleted_at IS NULL ORDER BY w.id`, [project.id, rootId]);
   const root = rows.find(row => row.id === rootId);
   if (!root) throw new ChangeoutError("Replacement history is incomplete. Authorized review is required.", 409, "REPLACEMENT_HISTORY");
   const admin = await storage.isAdminUser(user);
@@ -39,7 +44,8 @@ export async function replacementContext(db: Query, schema: string, project: any
   const vehicleMode = !inventory || canOverride || fieldStockSettingsSchema.parse(inventory.fieldSettings ?? {}).sourceMode === "assigned_vehicle";
   const vehicles = inventory?.warehouses.filter(w => vehicleMode && w.active && locationTypeFor(inventory, w)?.kind === "vehicle" &&
     warehouseAccessible(inventory, w, user.id, admin)) ?? [];
-  if (fieldScope && !rows.some(row => row.completed_by === user.id || row.assigned_user_id === user.id)) {
+  if (fieldScope && !rows.some(row => row.completed_by === user.id || row.assigned_user_id === user.id ||
+      row.replacement_cancelled_by === user.id || row.replacement_cancelled_assignee === user.id)) {
     const { rows: custody } = await db.query(`SELECT 1 FROM public.inventory_fulfillment_work_orders saved
       JOIN public.inventory_fulfillment_batches b ON b.project_id=saved.project_id AND b._key=saved.parent_id
       WHERE saved.project_id=$1 AND saved.work_order_id=ANY($2::int[])
@@ -57,6 +63,9 @@ export async function replacementContext(db: Query, schema: string, project: any
     systemId: system?.new_system_id ?? null, systemType: system?.new_system_type ?? null,
     moduleId: module?.new_module_id ?? null, moduleType: module?.new_module_type ?? null,
   };
+  const fingerprint = digest({ rootId, system: system ? [system.id, system.new_system_id, system.new_system_type] : null,
+    module: module ? [module.id, module.new_module_id, module.new_module_type] : null });
+  const recoveryState = inventory ?? (rows.some(row => row.replacement_cancelled_at) ? await inventoryState(project.id, db) : null);
   const availableEquipment: ReplacementEligibility["availableEquipment"] = [];
   if (baseline.systemId && project.changeout_equipment_type !== "module") availableEquipment.push("system");
   if (baseline.moduleId && project.changeout_equipment_type !== "system") availableEquipment.push("module");
@@ -71,16 +80,24 @@ export async function replacementContext(db: Query, schema: string, project: any
     reason = "Inventory view and use permissions are required for an inventory-enabled replacement.";
   return {
     contractVersion: 1, timezone: project.timezone || "UTC", canCreate: !reason, reason, rootWorkOrderId: rootId,
-    predecessorFingerprint: digest({ rootId, system: system ? [system.id, system.new_system_id, system.new_system_type] : null,
-      module: module ? [module.id, module.new_module_id, module.new_module_type] : null }),
+    predecessorFingerprint: fingerprint,
     inventoryEnabled: !!project.inventory_enabled, availableEquipment, baseline,
     vehicles: vehicles.map(w => ({ id: w.id, code: w.code, name: w.name })),
     activeVisit: active ? { workOrderId: active.id, label: replacementLabel(active),
       canResume: admin || active.assigned_user_id === user.id } : null,
-    history: rows.map(row => ({ workOrderId: row.id, label: replacementLabel(row), status: row.replacement_cancelled_at ? "Cancelled" : row.status,
+    history: rows.map(row => {
+      const blocked = !recoveryOwner(row, user.id, admin) ? "This visit is outside your recovery authority." :
+        unusedReplacementBlock(row, recoveryState, !!row.accounting_status);
+      const restoreReason = blocked || (active ? "Another replacement visit is already active." :
+        fingerprint !== row.replacement_predecessor_fingerprint ? "Installed equipment changed. Start from the current installation." : reason);
+      return { workOrderId: row.id, label: replacementLabel(row), status: row.replacement_cancelled_at ? "Cancelled" : row.status,
+      operationId: row.replacement_operation_id ?? null, cancelledAt: row.replacement_cancelled_at ?? null,
+      recovery: row.replacement_cancelled_at ? { canRestore: !restoreReason, canDelete: !blocked, restoreReason, deleteReason: blocked,
+        restoreAssigneeLabel: row.restore_assignee_label, usesOriginalRequester: !row.replacement_cancelled_assignee } : null,
       equipment: row.replacement_equipment ?? null, reason: row.replacement_reason ?? null,
       oldSystemId: row.old_system_id, newSystemId: row.new_system_id, oldModuleId: row.old_module_id,
-      newModuleId: row.new_module_id, completedAt: row.completed_at, accountingStatus: row.accounting_status ?? null })),
+      newModuleId: row.new_module_id, completedAt: row.completed_at, accountingStatus: row.accounting_status ?? null };
+    }),
   };
 }
 
@@ -99,6 +116,7 @@ export async function createReplacement(schema: string, project: any, user: User
           old.replacement_equipment !== input.equipment || old.replacement_reason !== input.reason ||
           old.replacement_vehicle_id !== input.vehicleId || old.replacement_predecessor_fingerprint !== input.predecessorFingerprint)
         throw new ChangeoutError("This operation was already used with different replacement inputs.", 409, "REPLACEMENT_PAYLOAD_MISMATCH");
+      if (old.replacement_deleted_at) throw new ChangeoutError("This unused replacement was deleted. Start a new request.", 410, "REPLACEMENT_DELETED");
       await db.query("COMMIT");
       return { id: old.id, replay: true };
     }
@@ -148,13 +166,19 @@ export async function createReplacement(schema: string, project: any, user: User
       [project.id, created.id, user.id, input.operationId]);
     await db.query("COMMIT");
     return { id: created.id, replay: false };
-  } catch (error) { await db.query("ROLLBACK"); throw error; }
+  } catch (error: any) {
+    await db.query("ROLLBACK");
+    if (error.code === "23505") throw new ChangeoutError("The equipment identity or active visit now conflicts with another work order. Refresh the replacement history and review the current installation.",
+      409, "REPLACEMENT_IDENTITY_CONFLICT");
+    throw error;
+  }
   finally { db.release(); }
 }
 
 /** Called on all write paths, not just the new wizard. */
 export async function assertReplacementChange(db: Query, schema: string, before: any, after: any) {
   if (!before) return;
+  if (before.replacement_deleted_at) throw new ChangeoutError("This unused replacement was deleted.", 410, "REPLACEMENT_DELETED");
   if (before.replacement_cancelled_at) throw new ChangeoutError("This unused replacement was cancelled. Keep it in history and start a new authorized visit.", 409, "REPLACEMENT_HISTORY");
   if (before.replacement_root_id) {
     if (!after) throw new ChangeoutError("Keep replacement visits for installation history; cancel an unposted visit instead.", 409, "REPLACEMENT_HISTORY");
@@ -198,7 +222,9 @@ export async function cancelReplacement(schema: string, project: any, user: User
     if (allocation && (allocation.lines.length || allocation.status === "consumed") ||
         state.fulfillmentBatches?.some(b => b.status !== "cancelled" && b.workOrders.some(w => w.workOrderId === id)))
       throw new ChangeoutError("Resolve the fulfillment batch and release unposted reservations before cancelling this visit. Inventory is unchanged.", 409, "REPLACEMENT_NOT_ELIGIBLE");
+    if (row.replacement_deleted_at) throw new ChangeoutError("This unused replacement was deleted.", 410, "REPLACEMENT_DELETED");
     await db.query(`UPDATE "${schema}".work_orders SET replacement_active=false,replacement_cancelled_at=now(),replacement_cancelled_by=$3,
+      replacement_cancelled_assignee=assigned_user_id,
       assigned_user_id=NULL,assigned_group_id=NULL,updated_at=now(),updated_by=$2 WHERE id=$1`, [id, user.username || user.id, user.id]);
     await insertAuditEvent(db, { projectId: project.id,
       action: "workOrder.replacementCancelled", entityType: "workOrder", entityId: String(id),
@@ -212,6 +238,9 @@ export async function cancelReplacement(schema: string, project: any, user: User
 
 export async function validateReplacementCompletion(db: Query, schema: string, prior: any, next: any, updates: any, user: User, projectId: number) {
   if (!prior.replacement_root_id) return;
+  if (updates.changeoutAssignmentVersion !== Number(prior.assignment_version ?? 0))
+    throw new ChangeoutError("This replacement attempt belongs to an earlier assignment or cancellation. Resume the current visit and review its captures.",
+      409, "REPLACEMENT_STALE_ASSIGNMENT");
   await db.query(`SELECT id FROM "${schema}".work_orders WHERE id=$1 FOR UPDATE`, [prior.replacement_root_id]);
   if (!prior.replacement_active) throw new ChangeoutError("This replacement visit is no longer active.", 409, "REPLACEMENT_INACTIVE");
   await assertReplacementChange(db, schema, prior, next);

@@ -18,7 +18,8 @@ export async function fulfillmentOrders(client: Pick<PoolClient, "query">, proje
   if (!project?.database_name || !/^[a-z0-9_]+$/.test(project.database_name)) throw new InventoryError("Project storage unavailable.");
   const { rows } = await client.query(`SELECT w.*,u.username AS installer_name FROM "${project.database_name}".work_orders w
     LEFT JOIN public.users u ON u.id=w.assigned_user_id
-    ${ids ? "WHERE w.id=ANY($1::int[])" : "WHERE lower(w.status) IN ('open','scheduled') OR EXISTS (SELECT 1 FROM public.work_order_statuses s WHERE (lower(s.code)=lower(w.status) OR lower(s.label)=lower(w.status)) AND lower(s.code) IN ('open','scheduled'))"}
+    WHERE w.replacement_cancelled_at IS NULL AND w.replacement_deleted_at IS NULL AND
+    (${ids ? "w.id=ANY($1::int[])" : "lower(w.status) IN ('open','scheduled') OR EXISTS (SELECT 1 FROM public.work_order_statuses s WHERE (lower(s.code)=lower(w.status) OR lower(s.label)=lower(w.status)) AND lower(s.code) IN ('open','scheduled'))"})
     ORDER BY w.id ${lock ? "FOR UPDATE OF w" : ""}`, ids ? [ids] : []);
   const visible = new Set((await visibleAssignedOrders(user, rows.map(w => ({
     id: w.id, assignedUserId: w.assigned_user_id, assignedGroupId: w.assigned_group_id,

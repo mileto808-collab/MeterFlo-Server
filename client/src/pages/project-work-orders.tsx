@@ -2809,8 +2809,10 @@ export default function ProjectWorkOrders() {
               window.history.replaceState({ ...window.history.state, workOrderDetail: true, workOrderId }, "");
               setEditingWorkOrder(selected);
               setEditingWorkOrderVersion(version => version + 1);
+              return true;
             } catch (error) {
               toast({ title: "Unable to open replacement work order", description: error instanceof Error ? error.message : "Please retry.", variant: "destructive" });
+              return false;
             }
           }}
           canSystemChangeout={hasPermission('workOrders.meterChangeout')}

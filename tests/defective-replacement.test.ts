@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createReplacementSchema, replacementVisitDto } from "../shared/defective-replacement";
+import { createReplacementSchema, replacementVisitDto, replacementRecoverySchema, deleteUnusedReplacementSchema } from "../shared/defective-replacement";
 import { validateReplacementBackup } from "../server/replacementBackup";
 
 const recovery = { rootWorkOrderId: 1, parentWorkOrderId: 1, equipment: "system",
@@ -32,4 +32,18 @@ test("backup rejects missing/circular predecessors and competing active replacem
   assert.throws(() => validateReplacementBackup([root, child, { id: 3, status: "Open",
     replacementRecovery: { ...recovery, operationId: "22222222-2222-4222-8222-222222222222" } }]), /competing/);
   assert.throws(() => validateReplacementBackup([root, { ...child, status: "Completed" }]), /cannot also be active/);
+});
+test("recovery requires a reason and deletion requires explicit no-physical-work confirmation", () => {
+  assert.equal(replacementRecoverySchema.safeParse({ reason: "Accidental cancellation" }).success, true);
+  assert.equal(replacementRecoverySchema.safeParse({ reason: "oops" }).success, false);
+  assert.equal(deleteUnusedReplacementSchema.safeParse({ reason: "Wrong customer work order" }).success, false);
+  assert.equal(deleteUnusedReplacementSchema.safeParse({ reason: "Wrong customer work order", noPhysicalReplacement: true }).success, true);
+  assert.equal(deleteUnusedReplacementSchema.safeParse({ reason: "Wrong customer work order", noPhysicalReplacement: false }).success, false);
+  const root = { id: 1, status: "Completed" };
+  assert.doesNotThrow(() => validateReplacementBackup([root, { id: 2, status: "Open", replacementRecovery: {
+    ...recovery, active: false, cancelledAt: "2026-10-23T00:00:00.000Z", deletedAt: "2026-10-23T00:01:00.000Z", deletedBy: "synthetic-technician",
+  } }]));
+  assert.throws(() => validateReplacementBackup([root, { id: 2, status: "Open", replacementRecovery: {
+    ...recovery, deletedAt: "2026-10-23T00:01:00.000Z",
+  } }]), /deleted replacement/);
 });

@@ -7,6 +7,7 @@ import { getProjectWorkOrderStorage } from "./projectDb";
 import { createReplacement, replacementContext, cancelReplacement } from "./replacementService";
 import { emitWorkOrderCreated, emitWorkOrderUpdated } from "./eventEmitter";
 import { replacementReceipt } from "./replacementReceipt";
+import { restoreReplacement, deleteUnusedReplacement } from "./replacementRecovery";
 
 export function registerReplacementRoutes(app: Express, auth: any) {
   const route = "/api/projects/:projectId/work-orders/:workOrderId/replacement";
@@ -22,7 +23,8 @@ export function registerReplacementRoutes(app: Express, auth: any) {
       if (!project?.databaseName || !/^project_[a-z0-9_]+$/.test(project.databaseName))
         throw new ChangeoutError("Project not found.", 404, "REPLACEMENT_NOT_FOUND");
       const workOrders = getProjectWorkOrderStorage(project.databaseName);
-      if (!await workOrders.getWorkOrder(id)) throw new ChangeoutError("Work order not found.", 404, "REPLACEMENT_NOT_FOUND");
+      if (!(await pool.query(`SELECT 1 FROM "${project.databaseName}".work_orders WHERE id=$1`, [id])).rowCount)
+        throw new ChangeoutError("Work order not found.", 404, "REPLACEMENT_NOT_FOUND");
       const rawProject = (await pool.query("SELECT * FROM public.projects WHERE id=$1", [projectId])).rows[0];
       res.set("Cache-Control", "no-store");
       await fn(req, res, { project: rawProject, user, id, schema: project.databaseName, workOrders });
@@ -47,6 +49,27 @@ export function registerReplacementRoutes(app: Express, auth: any) {
     const replay = await cancelReplacement(schema, project, user, id);
     emitWorkOrderUpdated(project.id, id, user.id);
     res.json({ workOrder: await workOrders.getWorkOrder(id), replay });
+  }));
+  app.get(`${route}/operations/:operationId`, auth, handle(async (req: any, res: any, { user, id, schema }: any) => {
+    const operationId = z.string().uuid().parse(req.params.operationId);
+    const { rows: [row] } = await pool.query(`SELECT * FROM "${schema}".work_orders
+      WHERE replacement_operation_id=$1 AND replacement_parent_id=$2`, [operationId, id]);
+    if (!row) throw new ChangeoutError("The operation has not been confirmed. Keep its identity when retrying.", 404, "REPLACEMENT_OPERATION_UNKNOWN");
+    if (row.replacement_actor_id !== user.id && !await storage.isAdminUser(user))
+      throw new ChangeoutError("This request belongs to another user.", 403, "REPLACEMENT_FORBIDDEN");
+    res.json({ operationId, workOrderId: row.id, label: row.customer_wo_id || `Work order ${row.id}`,
+      status: row.replacement_deleted_at ? "deleted" : row.replacement_cancelled_at ? "cancelled" : row.replacement_active ? "active" : "completed" });
+  }));
+  app.post(`${route}/restore`, auth, handle(async (req: any, res: any, { project, user, id, schema, workOrders }: any) => {
+    const replay = await restoreReplacement(schema, project, user, id, req.body);
+    emitWorkOrderUpdated(project.id, id, user.id);
+    const workOrder = await workOrders.getWorkOrder(id);
+    res.json({ workOrder, replacementVisit: workOrder?.replacementVisit, replay });
+  }));
+  app.post(`${route}/delete`, auth, handle(async (req: any, res: any, { project, user, id, schema }: any) => {
+    const replay = await deleteUnusedReplacement(schema, project, user, id, req.body);
+    emitWorkOrderUpdated(project.id, id, user.id);
+    res.json({ deleted: true, workOrderId: id, replay });
   }));
   app.get(`${route}/receipt`, auth, handle(async (_req: any, res: any, { project, user, id, schema }: any) => {
     const context = await replacementContext(pool, schema, project, user, id);

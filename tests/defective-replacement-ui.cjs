@@ -97,12 +97,99 @@ const pg = require("pg");
     assert.ok(eligibility.canCreate);
     assert.equal((await api("GET", `${root}/work-orders/${disabledOriginal.id}`, undefined, tech)).new_system_id, "INITIAL-disabled");
     assert.equal((await admin.request.patch(`${root}/work-orders/${disabledOriginal.id}`, { data: { newSystemId: "REWRITE" } })).status(), 409);
-    const unused = await api("POST", path, { ...disabledInput, operationId: randomUUID(), predecessorFingerprint: eligibility.predecessorFingerprint }, tech);
+    const unusedInput = { ...disabledInput, operationId: randomUUID(), predecessorFingerprint: eligibility.predecessorFingerprint };
+    const unused = await api("POST", path, unusedInput, tech);
     await api("PATCH", `${root}/work-orders/${unused.workOrder.id}`, { assignedUserId: users[1].id });
+    const beforeCancel = await api("GET", `${root}/work-orders/${unused.workOrder.id}`, undefined, outsider);
+    const draftId = randomUUID(), draftPath = `${root}/work-orders/${unused.workOrder.id}/changeout-draft`;
+    const capture = { step: "notes", selectedWorkflowMode: "changeout", basisAccepted: true,
+      data: { completionNotes: "Captured before accidental cancellation", canChange: true, oldSystemReading: "0001.00" } };
+    await api("PUT", draftPath, { baseRevision: 0, submissionId: draftId, assignmentVersion: beforeCancel.assignmentVersion,
+      step: "notes", capture }, outsider);
     assert.equal((await tech.request.post(`${root}/work-orders/${unused.workOrder.id}/replacement/cancel`, { data: {} })).status(), 403);
     const cancelled = await api("POST", `${root}/work-orders/${unused.workOrder.id}/replacement/cancel`, {}, outsider);
     assert.equal(cancelled.workOrder.replacementVisit.active, false);
     assert.equal((await api("POST", `${root}/work-orders/${unused.workOrder.id}/replacement/cancel`, {}, outsider)).replay, true);
+    const recoverPath = `${root}/work-orders/${unused.workOrder.id}/replacement`;
+    const recoveryReason = { reason: "Recover accidental cancellation before any physical work" };
+    assert.equal((await tech.request.post(`${recoverPath}/restore`, { data: recoveryReason })).status(), 403);
+    const recoveryPage = await outsider.newPage();
+    await recoveryPage.goto(`/projects/${fixture.projectId}/work-orders?edit=${disabledOriginal.id}`);
+    await recoveryPage.getByTestId(`button-restore-replacement-${unused.workOrder.id}`).click();
+    await expect(recoveryPage.getByTestId("button-confirm-restore-replacement")).toBeDisabled();
+    assert.ok(!await recoveryPage.evaluate(() => ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)));
+    await recoveryPage.getByTestId("input-replacement-recovery-reason").fill(recoveryReason.reason);
+    await recoveryPage.getByTestId("button-confirm-restore-replacement").click();
+    await expect(recoveryPage.getByTestId("button-resume-replacement")).toBeVisible();
+    await recoveryPage.screenshot({ path: "generated-artifacts/project-workspace/replacement-restored-desktop.jpg" });
+    await recoveryPage.close();
+    const restoredVisit = await api("POST", `${recoverPath}/restore`, recoveryReason, outsider);
+    assert.equal(restoredVisit.workOrder.replacementVisit.active, true);
+    assert.equal(restoredVisit.workOrder.assignedUserId, users[1].id);
+    assert.equal(restoredVisit.workOrder.assignmentVersion, cancelled.workOrder.assignmentVersion + 1);
+    const recoveredDraft = (await api("GET", draftPath, undefined, outsider)).draft;
+    assert.equal(recoveredDraft.capture.data.completionNotes, capture.data.completionNotes);
+    assert.equal(recoveredDraft.assignmentVersion, restoredVisit.workOrder.assignmentVersion);
+    assert.notEqual(recoveredDraft.submissionId, draftId, "Old completion attempts remain fenced.");
+    assert.equal(recoveredDraft.capture.basisAccepted, false);
+    assert.equal((await api("POST", `${recoverPath}/restore`, recoveryReason, outsider)).replay, true);
+    assert.equal((await outsider.request.patch(`${root}/work-orders/${unused.workOrder.id}`, { data: {
+      status: "Completed", oldSystemReading: "1", newSystemReading: "0", newSystemId: "STALE-LATE-SUBMISSION",
+      changeoutSubmissionId: draftId, changeoutAssignmentVersion: beforeCancel.assignmentVersion,
+    } })).status(), 409);
+    const remove = { reason: "Replacement was opened for the wrong customer work order", noPhysicalReplacement: true };
+    assert.equal((await outsider.request.post(`${recoverPath}/delete`, { data: remove })).status(), 409, "Cancel before deletion.");
+    await api("POST", `${recoverPath}/cancel`, {}, outsider);
+    const retryPage = await tech.newPage();
+    await retryPage.goto(`/projects/${fixture.projectId}/work-orders?edit=${disabledOriginal.id}`);
+    const pendingKey = `meterflo.replacement-operation:${users[0].id}:${fixture.projectId}:${disabledOriginal.id}`;
+    await retryPage.evaluate(({ key, payload }) => localStorage.setItem(key, JSON.stringify({ payload })), { key: pendingKey, payload: unusedInput });
+    await retryPage.reload();
+    await expect.poll(() => retryPage.evaluate(key => localStorage.getItem(key), pendingKey)).toBeNull();
+    await expect(retryPage.getByTestId("button-retry-replacement")).toHaveCount(0);
+    const unknownInput = { ...unusedInput, operationId: randomUUID() };
+    await retryPage.evaluate(({ key, payload }) => localStorage.setItem(key, JSON.stringify({ payload })), { key: pendingKey, payload: unknownInput });
+    await retryPage.reload();
+    await expect(retryPage.getByTestId("button-retry-replacement")).toBeVisible();
+    assert.ok(await retryPage.evaluate(key => localStorage.getItem(key), pendingKey), "Unknown outcomes retain their retry identity.");
+    await retryPage.evaluate(key => localStorage.removeItem(key), pendingKey);
+    await retryPage.close();
+    assert.equal((await outsider.request.post(`${recoverPath}/delete`, { data: { reason: remove.reason } })).status(), 400);
+    assert.equal((await tech.request.post(`${recoverPath}/delete`, { data: remove })).status(), 403);
+    const deletePage = await outsider.newPage();
+    await deletePage.setViewportSize({ width: 390, height: 844 });
+    await deletePage.goto(`/projects/${fixture.projectId}/work-orders?edit=${disabledOriginal.id}`);
+    await deletePage.getByTestId(`button-delete-unused-replacement-${unused.workOrder.id}`).click();
+    assert.ok(!await deletePage.evaluate(() => ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)));
+    await deletePage.getByTestId("input-replacement-recovery-reason").fill(remove.reason);
+    await expect(deletePage.getByTestId("button-confirm-delete-replacement")).toBeDisabled();
+    await deletePage.getByTestId("checkbox-no-physical-replacement").check();
+    await deletePage.screenshot({ path: "generated-artifacts/project-workspace/replacement-delete-mobile.jpg" });
+    await deletePage.getByTestId("button-confirm-delete-replacement").click();
+    await expect(deletePage.getByTestId(`button-delete-unused-replacement-${unused.workOrder.id}`)).toHaveCount(0);
+    await deletePage.close();
+    assert.equal((await api("POST", `${recoverPath}/delete`, remove, outsider)).replay, true);
+    assert.ok(!(await api("GET", `${root}/changeout-drafts`, undefined, outsider)).drafts.some(d => d.workOrderId === unused.workOrder.id),
+      "Deleted visits do not linger in saved server drafts.");
+    assert.equal((await outsider.request.post(`${recoverPath}/restore`, { data: recoveryReason })).status(), 410);
+    assert.equal((await tech.request.post(path, { data: unusedInput })).status(), 410, "Old create identity cannot resurrect a deleted visit.");
+    const deletedStatus = await api("GET", `${path}/operations/${unusedInput.operationId}`, undefined, tech);
+    assert.equal(deletedStatus.status, "deleted");
+    assert.equal((await tech.request.get(`${root}/work-orders/${unused.workOrder.id}`)).status(), 404);
+    eligibility = await api("GET", path, undefined, tech);
+    assert.ok(!eligibility.history.some(row => row.workOrderId === unused.workOrder.id));
+    assert.equal(eligibility.canCreate, true);
+    assert.equal((await admin.request.post(`${root}/work-orders/${created.workOrder.id}/replacement/delete`, { data: remove })).status(), 409);
+    const stale = await api("POST", path, { ...disabledInput, operationId: randomUUID(), predecessorFingerprint: eligibility.predecessorFingerprint }, tech);
+    const stalePath = `${root}/work-orders/${stale.workOrder.id}/replacement`;
+    await api("POST", `${stalePath}/cancel`, {}, tech);
+    const later = await api("POST", path, { ...disabledInput, operationId: randomUUID(), predecessorFingerprint: eligibility.predecessorFingerprint }, tech);
+    assert.equal((await tech.request.post(`${stalePath}/restore`, { data: recoveryReason })).status(), 409, "An active visit fences restoration.");
+    await api("PATCH", `${root}/work-orders/${later.workOrder.id}`, { status: "Completed", workflowMode: "changeout", canChange: true,
+      oldSystemReading: "1", newSystemReading: "0", newSystemId: "THIRD-disabled", signatureData: png, signatureName: "Synthetic",
+      changeoutSubmissionId: randomUUID(), changeoutAssignmentVersion: later.workOrder.assignmentVersion }, tech);
+    assert.equal((await tech.request.post(`${stalePath}/restore`, { data: recoveryReason })).status(), 409, "A changed installed baseline fences restoration.");
+    await api("POST", `${stalePath}/delete`, remove, tech);
     const receipt = await tech.request.get(`${path}/receipt`);
     assert.equal(receipt.status(), 200);
     assert.match(await receipt.text(), /DISABLED-SECOND/);
@@ -199,11 +286,15 @@ const pg = require("pg");
     await fs.writeFile("generated-artifacts/project-workspace/replacement-mobile-examples.json", JSON.stringify(examples, null, 2));
     const backup = await api("GET", `${root}/database/backup`);
     assert.ok(backup.workOrders.some(w => w.replacementRecovery?.rootWorkOrderId === original.id));
+    const deletedBackup = backup.workOrders.find(w => w.id === unused.workOrder.id);
+    assert.ok(deletedBackup?.replacementRecovery?.deletedAt, "Portable backup retains deleted operation tombstones.");
     const restored = await admin.request.post(`${root}/database/restore`, { multipart: {
       backup: { name: "owned-replacement.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(backup)) },
       clearExisting: "true",
     } });
     assert.ok(restored.ok(), await restored.text());
+    assert.equal((await api("GET", `${path}/operations/${unusedInput.operationId}`, undefined, tech)).status, "deleted");
+    assert.equal((await tech.request.get(`${root}/work-orders/${unused.workOrder.id}`)).status(), 404);
     eligibility = await api("GET", enabledPath, undefined, tech);
     assert.equal(eligibility.baseline.systemId, "ONBOARD-D");
     assert.equal(eligibility.history.filter(row => row.equipment === "system").length, 2);

@@ -15,6 +15,7 @@ import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventorySer
 import { acceptCompletion, acceptMobileTrouble, assertClaimAllowed, canonicalStatus, ChangeoutError, submissionReplay } from "./changeoutService";
 import { mobileSubmissionContext } from "./mobileSubmissionContext";
 import { installChangeoutProject } from "./changeoutSchema";
+import { installReplacementProject } from "./replacementSchema";
 import { replacementVisitDto, type ReplacementVisit } from "../shared/defective-replacement";
 import { replacementBackupDto, validateReplacementBackup, restoreReplacementMetadata } from "./replacementBackup";
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
@@ -213,25 +214,26 @@ export async function createProjectSchema(projectName: string, projectId: number
     
     // Add unique partial indexes for system and module IDs (only for non-null values)
     // These ensure no duplicate meters/modules are created within a project
+    await installReplacementProject(client, schemaName);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_old_system_id 
       ON "${schemaName}".work_orders (old_system_id) 
-      WHERE old_system_id IS NOT NULL
+      WHERE old_system_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_system_id 
       ON "${schemaName}".work_orders (new_system_id) 
-      WHERE new_system_id IS NOT NULL
+      WHERE new_system_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_old_module_id 
       ON "${schemaName}".work_orders (old_module_id) 
-      WHERE old_module_id IS NOT NULL
+      WHERE old_module_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_module_id 
       ON "${schemaName}".work_orders (new_module_id) 
-      WHERE new_module_id IS NOT NULL
+      WHERE new_module_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     
     await initializeExactReadings(client,schemaName);
@@ -528,22 +530,22 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     await indexClient.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_old_system_id 
       ON "${schemaName}".work_orders (old_system_id) 
-      WHERE old_system_id IS NOT NULL
+      WHERE old_system_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     await indexClient.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_system_id 
       ON "${schemaName}".work_orders (new_system_id) 
-      WHERE new_system_id IS NOT NULL
+      WHERE new_system_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     await indexClient.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_old_module_id 
       ON "${schemaName}".work_orders (old_module_id) 
-      WHERE old_module_id IS NOT NULL
+      WHERE old_module_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     await indexClient.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_module_id 
       ON "${schemaName}".work_orders (new_module_id) 
-      WHERE new_module_id IS NOT NULL
+      WHERE new_module_id IS NOT NULL AND replacement_cancelled_at IS NULL AND replacement_deleted_at IS NULL
     `);
     console.log(`Added unique indexes for system and module IDs to ${schemaName}`);
   } catch (indexError: any) {
@@ -644,7 +646,7 @@ export class ProjectWorkOrderStorage {
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
          LEFT JOIN public.users au ON w.assigned_user_id = au.id
-         WHERE w.id = $1`,
+         WHERE w.id = $1 AND w.replacement_deleted_at IS NULL`,
         [id]
       );
       return result.rows[0] ? this.mapRowToWorkOrder(result.rows[0]) : undefined;
@@ -2077,9 +2079,9 @@ async function restoreProjectDatabaseData(
       try {
         const restoredOrder = await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (${preserveIdentity ? "id, " : ""}status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text,assignment_version)
+           (${preserveIdentity ? "id, " : ""}status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text,assignment_version,replacement_cancelled_at,replacement_deleted_at)
            ${preserveIdentity ? "OVERRIDING SYSTEM VALUE" : ""}
-           VALUES (${preserveIdentity ? "$46, " : ""}$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44,$45) RETURNING id`,
+           VALUES (${preserveIdentity ? "$46, " : ""}$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44,$45,$${preserveIdentity ? 47 : 46},$${preserveIdentity ? 48 : 47}) RETURNING id`,
           [
             wo.status || "Open",
             wo.createdBy || null,
@@ -2124,6 +2126,8 @@ async function restoreProjectDatabaseData(
             ...exactReadingFields.map(({key}) => capturedReadingText(wo[key])),
             Number.isInteger(wo.assignmentVersion) && wo.assignmentVersion >= 0 ? wo.assignmentVersion : 0,
             ...(preserveIdentity ? [zInventoryId(wo.id)] : []),
+            wo.replacementRecovery?.cancelledAt ?? null,
+            wo.replacementRecovery?.deletedAt ?? null,
           ]
         );
         replacementIdMapping.set(wo.id, restoredOrder.rows[0].id);

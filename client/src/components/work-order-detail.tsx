@@ -155,7 +155,7 @@ interface WorkOrderDetailProps {
   inventoryEnabled?: boolean;
   inventoryDispatch?: InventoryDispatch;
   onReopened?: (workOrder: any) => void;
-  onOpenWorkOrder?: (workOrderId: number) => void;
+  onOpenWorkOrder?: (workOrderId: number) => void | Promise<boolean | void>;
 }
 
 export function WorkOrderDetail({
@@ -688,6 +688,7 @@ export function WorkOrderDetail({
         workOrder={workOrder}
         onLaunch={launchReplacement}
         onOpenWorkOrder={onOpenWorkOrder}
+        onDeletedVisit={onBack}
       />}
 
       {/* Form with Collapsible Sections */}

@@ -20,3 +20,9 @@ Do not create the mobile-agent handoff until the replacement workflow is working
 **Why:** The user asked to get this working before creating the handoff.
 
 **How to apply:** Finish and verify the warehouse-fulfilled and onboard replacement paths before preparing or updating the mobile handoff.
+
+Unused cancelled replacement visits need safe restore and delete actions; they should not permanently clutter operational history or prevent a corrected request using the same installed device. Retain audit/replay identity, and require explicit confirmation that no physical replacement occurred before deleting.
+
+**Why:** The user approved recovery after an accidental cancellation and asked how to remove a replacement started against the wrong work order.
+
+**How to apply:** Recheck current installation and access before restoring. Preserve captures without reviving an old submission attempt. Do not treat accepted completion or posted inventory as unused simply because its current quantity is zero.

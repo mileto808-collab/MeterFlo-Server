@@ -44,6 +44,7 @@ export async function canStart(user: User) {
     await storage.hasPermission(user, permissionKeys.WORK_ORDERS_METER_CHANGEOUT);
 }
 export async function assertClaimAllowed(client: PoolClient, row: any, userId: string, projectId?: number) {
+  if (row.replacement_deleted_at) throw new ChangeoutError("This unused replacement was deleted.", 410, "REPLACEMENT_DELETED");
   if (row.replacement_cancelled_at) throw new ChangeoutError("This replacement visit was cancelled.", 409, "REPLACEMENT_NOT_ELIGIBLE");
   const user = await storage.getUser(userId);
   if (!user || !await canStart(user)) throw new ChangeoutError("Changeout permission is required.", 403);
