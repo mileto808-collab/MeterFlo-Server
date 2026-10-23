@@ -39,7 +39,7 @@ import { importedVisitScheduling, mapSqlImportRow, schedulingDto, validateVisitS
 import bcrypt from "bcryptjs";
 import { BOOTSTRAP_ADMIN_USERNAME, bootstrapAdminHash } from "./bootstrapAdmin";
 import { registerProjectPackageRoutes } from "./project-packages/routes";
-import { copyCleanProjectInventory } from "./inventoryProjectCopy";
+import { copyProjectSetup, projectCopyOptions } from "./projectCopy";
 import { deleteProjectCompletely } from "./projectDeletion";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
@@ -1821,7 +1821,16 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to create projects" });
       }
       
-      const sourceProjectId = parseInt(req.params.id);
+      const options = projectCopyOptions.safeParse(req.body ?? {});
+      if (!options.success) return res.status(400).json({ message: "Invalid project copy options." });
+      const admin = await storage.isAdminUser(currentUser);
+      if (options.data.copyAccess && !admin)
+        return res.status(403).json({ message: "Administrator permission is required to copy project access assignments." });
+      const sourceProjectId = Number(req.params.id);
+      if (!Number.isSafeInteger(sourceProjectId) || sourceProjectId <= 0)
+        return res.status(400).json({ message: "Invalid source project." });
+      if (!admin && !await storage.isUserAssignedToProject(currentUser.id, sourceProjectId))
+        return res.status(403).json({ message: "Source project access required." });
       const sourceProject = await storage.getProject(sourceProjectId);
       if (!sourceProject) {
         return res.status(404).json({ message: "Source project not found" });
@@ -1831,60 +1840,9 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Administrator and inventory configuration permission required to copy an inventory-enabled project." });
       }
       
-      // Create new project with copied settings (convert nulls to undefined for proper typing)
-      const sourceAuthType = sourceProject.customerApiAuthType;
-      const customerApiAuthType: CustomerApiAuthType =
-        sourceAuthType === "api_key" ||
-        sourceAuthType === "bearer_token" ||
-        sourceAuthType === "basic_auth"
-          ? sourceAuthType
-          : "none";
-      const wizardMode: WizardMode =
-        sourceProject.wizardMode === "reading_only" || sourceProject.wizardMode === "user_choice"
-          ? sourceProject.wizardMode
-          : "changeout";
-      const wizardGpsMode: GpsMode =
-        sourceProject.wizardGpsMode === "manual_step" || sourceProject.wizardGpsMode === "disabled"
-          ? sourceProject.wizardGpsMode
-          : "automatic";
-      const newProjectData = {
-        name: `Copy of ${sourceProject.name}`,
-        inventoryEnabled: sourceProject.inventoryEnabled ?? false,
-        description: sourceProject.description ?? undefined,
-        customerEmail: sourceProject.customerEmail ?? undefined,
-        phone: sourceProject.phone ?? undefined,
-        address: sourceProject.address ?? undefined,
-        city: sourceProject.city ?? undefined,
-        state: sourceProject.state ?? undefined,
-        zip: sourceProject.zip ?? undefined,
-        notes: sourceProject.notes ?? undefined,
-        isActive: sourceProject.isActive ?? true,
-        webhookUrl: sourceProject.webhookUrl ?? undefined,
-        webhookEnabled: sourceProject.webhookEnabled ?? false,
-        customerApiEnabled: sourceProject.customerApiEnabled ?? false,
-        customerApiUrl: sourceProject.customerApiUrl ?? undefined,
-        customerApiAuthType,
-        customerApiKeyHeader: sourceProject.customerApiKeyHeader ?? undefined,
-        customerApiSecretEnvVar: sourceProject.customerApiSecretEnvVar ?? undefined,
-        customerApiSendPhotos: sourceProject.customerApiSendPhotos ?? true,
-        operationalHoursEnabled: sourceProject.operationalHoursEnabled ?? false,
-        operationalHoursStart: sourceProject.operationalHoursStart ?? undefined,
-        operationalHoursEnd: sourceProject.operationalHoursEnd ?? undefined,
-        operationalHoursDays: sourceProject.operationalHoursDays ?? undefined,
-        timezone: sourceProject.timezone ?? undefined,
-        wizardMode,
-        wizardGpsMode,
-        wizardReuseOldGps: sourceProject.wizardReuseOldGps ?? false,
-        wizardGpsMaxAccuracyMetres: sourceProject.wizardGpsMaxAccuracyMetres ?? null,
-        ...getReadingPrecision(sourceProject),
-        wizardShowNotesStep: sourceProject.wizardShowNotesStep ?? true,
-        wizardShowGpsStep: sourceProject.wizardShowGpsStep ?? true,
-        wizardShowBeforePhotosStep: sourceProject.wizardShowBeforePhotosStep ?? true,
-        wizardShowAfterPhotosStep: sourceProject.wizardShowAfterPhotosStep ?? true,
-        wizardShowSignatureStep: sourceProject.wizardShowSignatureStep ?? true,
-      };
-      
-      const newProject = await storage.createProjectWithFullData(newProjectData);
+      // Provision empty storage first; all source configuration is then copied
+      // together from one consistent snapshot. Failures clean up this project.
+      const newProject = await storage.createProjectWithFullData({ name: `Copy of ${sourceProject.name}` });
       createdProjectId = newProject.id;
       
       // Create database schema for new project
@@ -1894,19 +1852,10 @@ export async function registerRoutes(
       // Create project directory
       await ensureProjectDirectory(newProject.name, newProject.id);
       
-      // Copy project holidays
-      const holidays = await storage.getProjectHolidays(sourceProjectId);
-      for (const holiday of holidays) {
-        await storage.createProjectHoliday({
-          projectId: newProject.id,
-          date: holiday.date,
-          name: holiday.name,
-        });
-      }
-      if (sourceProject.inventoryEnabled) await copyCleanProjectInventory(sourceProjectId, newProject.id);
+      const copyReport = await copyProjectSetup(sourceProjectId, newProject.id, options.data.copyAccess, admin);
       
       const updatedProject = await storage.getProject(newProject.id);
-      res.status(201).json(updatedProject);
+      res.status(201).json({ ...updatedProject, copyReport });
     } catch (error) {
       console.error("Error copying project:", error);
       if (createdProjectId !== undefined) {

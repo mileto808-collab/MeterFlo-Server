@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project, User, ServiceTypeRecord } from "@shared/schema";
+import { ADMINISTRATOR_SUBROLE_KEY } from "@shared/schema";
 import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Copy, Scan, Settings2, ClipboardList, CalendarClock, Cable, Package } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,6 +31,8 @@ import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/
 import { ProjectTroubleCodeManager } from "@/components/project-trouble-code-manager";
 import { ProjectFieldStockSettings } from "@/components/inventory/project-field-stock-settings";
 import { WorkOrderClosingSettings } from "@/components/work-orders/work-order-closing-settings";
+import { ProjectCopyDialog } from "@/components/projects/project-copy-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -106,7 +109,10 @@ export default function ProjectForm() {
   const isEditing = !!id;
 
   const { toast } = useToast();
-  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const { hasPermission, isLoading: permissionsLoading, user: permissionUser } = usePermissions();
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyReport, setCopyReport] = useState<{ review: string[]; accessCopied: boolean;
+    inventory: { items: number; locations: number; typeLinks: number } | null } | null>(null);
   const canConfigureReadingPrecision = hasPermission("projects.readingPrecision");
   const canManageSubStatuses = hasPermission("projects.manageSubStatuses");
   const canManageTroubleCodes = hasPermission("projects.manageTroubleCodes");
@@ -386,15 +392,15 @@ export default function ProjectForm() {
   });
 
   const copyMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/projects/${id}/copy`);
+    mutationFn: async (options: { copyAccess: boolean }) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/copy`, options);
       return response.json();
     },
-    onSuccess: (newProject: Project) => {
+    onSuccess: (newProject: Project & { copyReport: NonNullable<typeof copyReport> }) => {
+      setCopyDialogOpen(false);
+      setCopyReport(newProject.copyReport);
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: newProject.inventoryEnabled
-        ? "Project copied with Locations, Items, Categories and Vendors. Stock and inventory history start empty; location user assignments are cleared."
-        : "Project copied successfully" });
+      toast({ title: "Project setup copied", description: "Review the copy summary and external services before using the new project." });
       setLocation(`/projects/${newProject.id}/edit`);
     },
     onError: (error: Error) => {
@@ -571,6 +577,21 @@ export default function ProjectForm() {
 
   return (
     <div ref={workspaceRef} data-testid="project-workspace" className="flex min-h-0 w-full flex-col overflow-hidden px-3 pb-3 pt-2 sm:px-5 sm:pb-4 [@media(max-height:450px)]:pb-2">
+      <ProjectCopyDialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen} projectName={project?.name ?? ""}
+        canCopyAccess={permissionUser?.subroleKey === ADMINISTRATOR_SUBROLE_KEY} pending={copyMutation.isPending} onCopy={options => copyMutation.mutate(options)} />
+      <Dialog open={!!copyReport} onOpenChange={open => { if (!open) setCopyReport(null); }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto" data-testid="project-copy-summary">
+          <DialogHeader><DialogTitle>Project setup copied</DialogTitle>
+            <DialogDescription>The new project has independent setup records and no operational history.</DialogDescription></DialogHeader>
+          <div className="rounded-lg border p-3 text-sm">
+            <p>Project configuration, type selections, custom codes and scheduling rules copied.</p>
+            {copyReport?.inventory && <p className="mt-2">{copyReport.inventory.locations} locations · {copyReport.inventory.items} items · {copyReport.inventory.typeLinks} inventory type links</p>}
+            <p className="mt-2">{copyReport?.accessCopied ? "Project users, user-group access and location assignments copied." : "Access assignments left empty, as selected."}</p>
+          </div>
+          <ul className="list-disc space-y-3 pl-5 text-sm">{copyReport?.review.map(line => <li key={line}>{line}</li>)}</ul>
+          <DialogFooter><Button type="button" onClick={() => setCopyReport(null)}>Done</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <header data-testid="project-workspace-header" className="mb-3 flex shrink-0 items-center justify-between gap-3 border-b border-border/70 pb-3 [@media(max-height:450px)]:mb-2 [@media(max-height:450px)]:pb-2">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/projects" className="inline-flex">
@@ -1695,12 +1716,13 @@ export default function ProjectForm() {
                 <Link href="/projects">
                   <Button variant="outline" type="button" data-testid="button-cancel">Cancel</Button>
                 </Link>
-                {isEditing && (
+                {isEditing && hasPermission("projects.create") && (!project?.inventoryEnabled ||
+                  permissionUser?.subroleKey === ADMINISTRATOR_SUBROLE_KEY && hasPermission("inventory.configure")) && (
                   <Button 
                     type="button" 
                     variant="secondary"
                     disabled={copyMutation.isPending}
-                    onClick={() => copyMutation.mutate()}
+                    onClick={() => setCopyDialogOpen(true)}
                     data-testid="button-copy-project"
                   >
                     {copyMutation.isPending ? (

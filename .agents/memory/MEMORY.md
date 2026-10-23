@@ -73,7 +73,7 @@
 - [Mobile read snapshots](mobile-read-snapshots.md) — consistent sync inventory reads must not acquire write locks; verify full/delta downloads with real PostgreSQL.
 - [Inventory dispatch policy](inventory-dispatch-policy.md) — preserve non-inventory group lists; inventory dispatch should follow staged vehicle batches and authorized multi-vehicle crews.
 - [Inventory planning intent](inventory-planning-fulfillment.md) — manual additions stay planned; future crew fulfillment must allow onsite selection of installed serials.
-- [Clean project copies](inventory-project-copy.md) — copy inventory setup only: Locations, Items, Categories and Vendors; no stock, operational history or location user assignments.
+- [Complete project setup copies](inventory-project-copy.md) — complete configuration with optional user/group/location access; independent identities, no stock or operational history.
 - [Receiving pallet scope](receiving-pallet-scope.md) — optional receiving scan groups stay with receipt history; trusted serial-file import does not require pallet setup.
 - [Scanner commit boundary](scanner-commit-boundary.md) — commit on scan delimiters or paste; blur-time rewriting can disrupt visual acceptance and partial tokens need preservation.
 - [Inventory step guidance](inventory-step-guidance.md) — validate before advancing; start steps at top, highlight required inputs without autofocus or mobile keyboard activation.

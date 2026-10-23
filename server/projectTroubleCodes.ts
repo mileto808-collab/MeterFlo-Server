@@ -134,10 +134,16 @@ export async function initializeAllProjectTroubleCodes() {
       const exists = await client.query("SELECT to_regclass($1) AS t", [`"${row.database_name}".work_orders`]);
       if (exists.rows[0].t) await installProjectTroubleCodes(client, row.database_name);
     }
-    // Do not remove schema-declared keys at startup. The managed production
-    // database may still have code-based project FKs when Publish compares it
-    // with development. Remove the staged key only through a reviewed schema
-    // change after checking the target's installed references.
+    // All owned work-order references have now been converted to rule_key.
+    // Never remove the staged global key while any installed legacy FK still
+    // depends on code (including unknown/custom tables).
+    const legacyReferences = await client.query(`SELECT 1 FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attname='code'
+      WHERE c.contype='f' AND c.confrelid='public.trouble_codes'::regclass
+        AND a.attnum=ANY(c.confkey) LIMIT 1`);
+    if (legacyReferences.rowCount)
+      throw new Error("Trouble-code scope migration requires review: a legacy code-based reference remains.");
+    await client.query("ALTER TABLE public.trouble_codes DROP CONSTRAINT IF EXISTS trouble_codes_code_key");
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS trouble_codes_core_code_unique ON public.trouble_codes(lower(code)) WHERE project_id IS NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS trouble_codes_project_code_unique ON public.trouble_codes(project_id,lower(code)) WHERE project_id IS NOT NULL`);
     await client.query("COMMIT");
