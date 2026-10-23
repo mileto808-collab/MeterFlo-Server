@@ -3,7 +3,6 @@ import type { InventoryState, Stock, StockLine } from "./inventory";
 import { InventoryError } from "./inventory-errors";
 import { isLaborItem } from "./inventory-pricing";
 import { countStockScopeMatches } from "./inventory-count-stock";
-import { isStagingType } from "./inventory-location-types";
 
 export const vehicleReturnKinds = ["equipment", "count", "stock"] as const;
 export const vehicleReturnKindSchema = z.enum(vehicleReturnKinds);
@@ -101,8 +100,7 @@ export function applyVehicleWarehouseReturn(state: InventoryState, command: { op
   const evidence: VehicleReturnEvidence = { kind: capture.kind, sourceId: vehicle.id, destinationId: capture.destinationId };
   let lines: StockLine[] = [];
   if (capture.kind !== "count") {
-    const target = state.warehouses.find(row => row.id === capture.destinationId && row.active && row.type === "physical" &&
-      (capture.kind === "stock" || !isStagingType(state.locationTypes?.find(type => type.id === row.locationTypeId))));
+    const target = state.warehouses.find(row => row.id === capture.destinationId && row.active && row.type === "physical");
     if (!target) throw new InventoryError("Choose an active receiving warehouse or an eligible staging location.");
     tools.access(target.id);
   }

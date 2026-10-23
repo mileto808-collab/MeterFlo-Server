@@ -84,10 +84,14 @@ const { execFileSync } = require("node:child_process");
     const stateResponse = await request("post", `/api/projects/${fixture.projectId}/inventory/commands`, posted.command);
     assert.equal(stateResponse.state.stock.find(row => row.warehouseId === "return-van" && row.itemId === "return-meter").quantity, 1);
     await request("delete", `${prefix}/drafts/${editing.id}`, { revision: posted.revision }, 409);
-    const equipment = await save(capture("equipment"));
+    const equipmentContext = await request("get", `${prefix}?kind=equipment&sourceId=return-van`);
+    assert.ok(equipmentContext.destinations.some(row => row.id === "return-staging"), "staging locations must be selectable for equipment receiving");
+    const equipment = await save({ ...capture("equipment"), destinationId: "return-staging" });
     const prepared = (await request("post", `${prefix}/drafts/${equipment.id}/prepare`, { revision: equipment.revision,
       operationId: randomUUID(), physicallyConfirmed: true })).draft;
-    await request("post", `/api/projects/${fixture.projectId}/inventory/commands`, prepared.command);
+    const received = await request("post", `/api/projects/${fixture.projectId}/inventory/commands`, prepared.command);
+    assert.equal(received.state.returns.find(row => row.id === "return-old").warehouseId, "return-staging");
+    assert.equal(received.state.returns.find(row => row.id === "return-old").status, "quarantine");
     const equipmentReceipt = await context.request.get(`${prefix}/receipts/${prepared.command.operationId}/print`);
     assert.equal(equipmentReceipt.status(), 200);
     assert.match(await equipmentReceipt.text(), /REMOVED-001/);

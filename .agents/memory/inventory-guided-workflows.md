@@ -29,6 +29,12 @@ Vehicle verification must retain missing and unexpected serials as count evidenc
 
 **How to apply:** Reject duplicate scans, but keep unexpected count observations for investigation. Ordinary stock returns still require eligible source stock and must protect inventory committed to outstanding dispatched work.
 
+Removed-equipment returns must allow a selectable receiving destination, including active staging-type locations such as a dedicated Returns area.
+
+**Why:** The user intends to receive removed equipment into a Returns location configured as Staging, rather than being restricted to the main warehouse.
+
+**How to apply:** Use authorized active physical locations for receiving choices and final validation. Receiving there still places equipment in quarantine; staging type does not make it usable stock.
+
 On the fulfillment entry screen, workflow selector cards sit directly below “Choose a fulfillment workflow.” QR scanning is a button above that heading opening a scan modal; pickup-problem review must be prominent.
 
 **Why:** The user requested a simpler entry screen without the expanded scanner form separating the heading from its choices.

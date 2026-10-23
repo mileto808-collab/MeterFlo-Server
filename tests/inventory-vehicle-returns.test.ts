@@ -97,6 +97,24 @@ test("equipment requires exact verified scans and remains protected against repe
   state.returns[0].status = "quarantine";
   assert.throws(() => applyInventoryCommand(state, command, "operator", true), /no longer pending/);
 });
+test("removed equipment can be received into a chosen staging location without adding usable stock", () => {
+  const state = post(fixture(), "warehouse", { id: "returns-staging", code: "RETURNS", name: "Returns",
+    type: "physical", locationTypeId: "57e15eca-f991-4328-a091-000000000003", address: "Returns staging area" });
+  const command = freeze(state, "equipment", { destinationId: "returns-staging" });
+  const next = applyInventoryCommand(state, command, "operator", true).state;
+  assert.equal(next.returns[0].warehouseId, "returns-staging");
+  assert.equal(next.returns[0].status, "quarantine");
+  assert.equal(next.receipts.at(-1)!.vehicleReturn!.destinationId, "returns-staging");
+  assert.deepEqual(next.stock, state.stock);
+});
+test("removed-equipment receiving still rejects inactive or vehicle destinations", () => {
+  for (const destinationId of ["main", "van"]) {
+    const state = fixture();
+    if (destinationId === "main") state.warehouses.find(row => row.id === "main")!.active = false;
+    const command = freeze(state, "equipment", { destinationId });
+    assert.throws(() => applyInventoryCommand(state, command, "operator", true), /active receiving warehouse/);
+  }
+});
 test("matching vehicle verification completes a selected count without changing stock", () => {
   const state = fixture(), command = freeze(state, "count");
   const next = applyInventoryCommand(state, command, "operator", true).state;

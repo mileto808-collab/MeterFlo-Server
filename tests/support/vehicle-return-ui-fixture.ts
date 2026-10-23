@@ -13,6 +13,8 @@ async function seed() {
     const before = await lockInventory(client, fixture.projectId), after = structuredClone(before);
     after.warehouses.push(warehouseSchema.parse({ id: "return-van", code: "RETURN-VAN", name: "Return vehicle",
       type: "vehicle", vin: "1HGCM82633A004352", plate: "RTN-1", plateState: "CO" }));
+    after.warehouses.push(warehouseSchema.parse({ id: "return-staging", code: "RETURNS", name: "Returns",
+      type: "physical", locationTypeId: "57e15eca-f991-4328-a091-000000000003", address: "Test returns staging area" }));
     after.items.push(itemSchema.parse({ id: "return-meter", sku: "RETURN-M", name: "Return meter", tracking: "serialized" }),
       itemSchema.parse({ id: "return-part", sku: "RETURN-P", name: "Return parts", tracking: "regular" }));
     after.stock.push({ warehouseId: "return-van", itemId: "return-meter", quantity: 2, serials: ["RETURN-A", "RETURN-B"], revision: 1 },

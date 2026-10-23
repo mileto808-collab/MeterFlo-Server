@@ -10,7 +10,7 @@ import { workRows } from "./inventoryVehicleTransfer";
 import { inventoryWorkOrderLabels } from "./inventoryWorkOrderLabels";
 import { applyInventoryCommand, canonicalInventoryJson, reserved } from "../shared/inventory-engine";
 import { InventoryError } from "../shared/inventory-errors";
-import { warehouseAccessible, isStagingType } from "../shared/inventory-location-types";
+import { warehouseAccessible } from "../shared/inventory-location-types";
 import { isLaborItem } from "../shared/inventory-pricing";
 import { assertVehicleReturnDraft, meaningfulVehicleReturn, vehicleReturnCaptureSchema, vehicleReturnKindSchema,
   type VehicleReturnCapture, type SavedVehicleReturnDraft, type VehicleReturnKind } from "../shared/inventory-vehicle-returns";
@@ -106,8 +106,7 @@ export function registerVehicleReturnRoutes(app: Express, base: string,
       }
       await client.query("COMMIT");
       return { revision: state.revision, vehicles: accessible.filter(row => row.type === "vehicle"),
-        destinations: accessible.filter(row => row.type === "physical" &&
-          (kind !== "equipment" || !isStagingType(state.locationTypes?.find(type => type.id === row.locationTypeId)))),
+        destinations: accessible.filter(row => row.type === "physical"),
         items: state.items.filter(row => row.active && !isLaborItem(row)),
         stock: state.stock.filter(row => row.warehouseId === sourceId).map(row => ({ ...row,
           serials: kind === "stock" ? row.serials.filter(serial => !state.allocations.some(allocation => allocation.status === "reserved" &&
