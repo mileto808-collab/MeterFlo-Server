@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { InventoryItem, WorkRequirements } from "@shared/inventory";
+import { inventoryDateTime } from "@shared/inventory-date-time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -184,7 +185,7 @@ export function WorkOrderPlanEditor({ projectId, workOrderId, items, requirement
         </div>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Plan what the job is expected to need. Planning does not reserve, transfer, deduct, or prove installation of stock.</p>
       </div>
-      {currentPlan.updatedAt && <span className="text-xs text-muted-foreground">Updated {new Date(currentPlan.updatedAt).toLocaleString(undefined, { timeZone: timezone })}</span>}
+      {currentPlan.updatedAt && <span className="text-xs text-muted-foreground">Updated {inventoryDateTime(currentPlan.updatedAt, timezone)}</span>}
     </div>
 
     {changedElsewhere && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">

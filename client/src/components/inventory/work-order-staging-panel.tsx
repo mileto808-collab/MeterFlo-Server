@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import type { Allocation, InventoryItem, StockLine, Warehouse } from "@shared/inventory";
+import { inventoryDateTime } from "@shared/inventory-date-time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SerialScanField } from "./serial-scan-field";
@@ -286,15 +287,7 @@ export function WorkOrderStagingPanel({
     const warehouse = warehouses.find(value => value.id === id);
     return warehouse ? `${warehouse.code} · ${warehouse.name}` : id;
   };
-  const receiptDate = (value: string) => {
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return value;
-    try {
-      return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: timezone || "UTC" }).format(date);
-    } catch {
-      return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date);
-    }
-  };
+  const receiptDate = (value: string) => inventoryDateTime(value, timezone || "UTC");
 
   return <section aria-label="Manual stock staging" className="space-y-4 rounded-lg border border-border/80 bg-card/60 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
