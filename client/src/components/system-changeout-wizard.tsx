@@ -66,6 +66,7 @@ import {
   RotateCcw,
   Bluetooth,
 } from "lucide-react";
+import type { ReplacementVisit } from "@shared/defective-replacement";
 
 type WizardStep =
   | "modeSelection"
@@ -74,6 +75,7 @@ type WizardStep =
   | "oldReading"
   | "beforePhotos"
   | "physicalChange"
+  | "defectiveHandling"
   | "newSystemId"
   | "newReading"
   | "afterPhotos"
@@ -170,6 +172,7 @@ interface SystemChangeoutWizardProps {
   onComplete: (data: SystemChangeoutData) => Promise<void>;
   wizardConfig?: WizardConfig;
   searchMethodSettings?: SearchMethodSettings;
+  replacementVisit?: ReplacementVisit | null;
 }
 
 const stepLabels: Record<WizardStep, string> = {
@@ -179,6 +182,7 @@ const stepLabels: Record<WizardStep, string> = {
   oldReading: "Capture Old Reading",
   beforePhotos: "Before Photos",
   physicalChange: "Perform Changeout",
+  defectiveHandling: "Defective Equipment Handling",
   newSystemId: "New System ID",
   newReading: "Capture New Reading",
   afterPhotos: "After Photos",
@@ -240,6 +244,27 @@ function buildSuccessSteps(
   return steps;
 }
 
+function buildReplacementSteps(
+  config: WizardConfig,
+  gpsMode: GpsCaptureMode,
+  inventoryEnabled: boolean,
+  hasReusableOldGps: boolean,
+): WizardStep[] {
+  const steps: WizardStep[] = ["canChange"];
+  if (inventoryEnabled) steps.push("physicalChange");
+  steps.push("newSystemId", "oldReading");
+  if (config.showBeforePhotosStep) steps.push("beforePhotos");
+  steps.push("newReading");
+  if (config.showAfterPhotosStep) steps.push("afterPhotos");
+  if (gpsMode === "manual_step" && !hasReusableOldGps) steps.push("gps");
+  if (config.showNotesStep) steps.push("notes");
+  if (config.showSignatureStep) steps.push("signature");
+  steps.push("defectiveHandling");
+  if (inventoryEnabled) steps.push("inventoryReview");
+  steps.push("confirm");
+  return steps;
+}
+
 export function SystemChangeoutWizard({
   isOpen,
   onClose,
@@ -268,6 +293,7 @@ export function SystemChangeoutWizard({
   onComplete,
   wizardConfig,
   searchMethodSettings,
+  replacementVisit,
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -296,8 +322,28 @@ export function SystemChangeoutWizard({
   const [fieldSourceId, setFieldSourceId] = useState("");
   const [fieldSourceOverridden, setFieldSourceOverridden] = useState(false);
   const fieldPreferenceKey = `meterflo.field-stock:${projectId}:${user?.id ?? ""}`;
-  const fieldStock = workInventory && user?.id ? resolveFieldStock(workInventory, user.id, user.role === "admin",
-    workInventory.inventoryDispatch?.vehicleId || fieldSourceId, workInventory.canChangeFieldStock && fieldSourceOverridden ? fieldSourceId : "") : undefined;
+  const resolveWizardFieldStock = (snapshot: WizardInventory, preferred = fieldSourceId, allowOverride = fieldSourceOverridden) => {
+    if (!user?.id) return undefined;
+    const dispatchVehicleId = snapshot.inventoryDispatch?.vehicleId ?? "";
+    if (replacementVisit?.vehicleId) {
+      const pinned = resolveFieldStock(snapshot, user.id, user.role === "admin", replacementVisit.vehicleId, replacementVisit.vehicleId);
+      return pinned.source?.id === replacementVisit.vehicleId
+        ? pinned
+        : { ...pinned, source: undefined, reason: "The replacement visit's assigned vehicle is unavailable to this technician." };
+    }
+    const permittedOverride = snapshot.canChangeFieldStock && allowOverride ? preferred : "";
+    if (replacementVisit && dispatchVehicleId) {
+      const dispatched = resolveFieldStock(snapshot, user.id, user.role === "admin", dispatchVehicleId, dispatchVehicleId);
+      const selectedAssignedVehicle = allowOverride && dispatched.vehicles.some(vehicle => vehicle.id === preferred) ? preferred : "";
+      const expectedSourceId = permittedOverride || selectedAssignedVehicle || dispatchVehicleId;
+      const resolved = resolveFieldStock(snapshot, user.id, user.role === "admin", dispatchVehicleId, expectedSourceId);
+      return resolved.source?.id === expectedSourceId
+        ? resolved
+        : { ...resolved, source: undefined, reason: "The handed-off inventory source is unavailable to this technician." };
+    }
+    return resolveFieldStock(snapshot, user.id, user.role === "admin", dispatchVehicleId || preferred, permittedOverride);
+  };
+  const fieldStock = workInventory ? resolveWizardFieldStock(workInventory) : undefined;
   const actualUseInitializedFor = useRef<number | null>(null);
   const actualUseBaseline = useRef<string | null>(null);
   const actualUseLocationBaseline = useRef(new Map<string, string>());
@@ -356,7 +402,8 @@ export function SystemChangeoutWizard({
       if (session !== defaultsSession.current) return;
       if (checked.isError || !checked.data) throw new Error("Current project defaults could not load. Your entries have been kept.");
       const latest = checked.data;
-      const resolved = resolveFieldStock(latest, user!.id, user?.role === "admin", latest.inventoryDispatch?.vehicleId || fieldSourceId);
+      const resolved = resolveWizardFieldStock(latest, fieldSourceId);
+      if (!resolved) throw new Error("Your field account could not be resolved. Your entries have been kept.");
       const source = resolved.source;
       if (!source) throw new Error(resolved.reason + " Your entries have been kept.");
       const lines = refreshApprovedUse(actualUse, latest.requirements?.lines ?? [], latest.items,
@@ -422,20 +469,23 @@ export function SystemChangeoutWizard({
       actualUseInitializedFor.current = workOrderId;
       let preferred = "";
       try { preferred = localStorage.getItem(fieldPreferenceKey) ?? ""; } catch { /* Browser storage may be disabled. */ }
-      const resolved = resolveFieldStock(workInventory, user.id, user.role === "admin", workInventory.inventoryDispatch?.vehicleId || preferred);
-      setFieldSourceId(resolved.source?.id ?? "");
+      const preferredSource = replacementVisit?.vehicleId || workInventory.inventoryDispatch?.vehicleId || preferred;
+      const resolved = resolveWizardFieldStock(workInventory, preferredSource, false);
+      const selectedSource = replacementVisit?.vehicleId || resolved?.source?.id || "";
+      setFieldSourceId(selectedSource);
+      setFieldSourceOverridden(false);
       const reserved = workInventory.allocation?.lines ?? [];
       const initial = reserved.length
         ? initialActualUse(workInventory.allocation, workInventory.requirements?.lines, workInventory.items)
         : plannedUseDrafts(workInventory.requirements?.lines ?? [], workInventory.items,
-          resolved.source?.id ?? "", resolved.settings.fulfillment);
+          resolved?.source?.id ?? "", resolved?.settings.fulfillment ?? "components");
       setActualUse(initial);
       captureLocationBasis(workInventory, initial.map(line => line.warehouseId));
       actualUseBaseline.current = inventoryBasis;
       actualUseTouched.current = false;
       setBasisAccepted(false);
     }
-  }, [isOpen, workInventory, workOrderId, inventoryBasis, user?.id, fieldPreferenceKey]);
+  }, [isOpen, workInventory, workOrderId, inventoryBasis, user?.id, fieldPreferenceKey, replacementVisit?.vehicleId]);
   
   // Default search method settings - all enabled by default
   const searchSettings: SearchMethodSettings = searchMethodSettings ?? {
@@ -468,6 +518,7 @@ export function SystemChangeoutWizard({
   
   // Determine the effective workflow mode
   const getEffectiveWorkflowMode = (): "changeout" | "reading_only" => {
+    if (replacementVisit) return "changeout";
     if (config.wizardMode === "user_choice") {
       return selectedWorkflowMode ?? "changeout";
     }
@@ -480,14 +531,16 @@ export function SystemChangeoutWizard({
   
   // Determine initial step based on wizard mode using the generated steps array
   const getInitialStep = (): WizardStep => {
-    const steps = buildSuccessSteps(
-      config.wizardMode === "reading_only" ? "reading_only" : "changeout",
-      config,
-      config.wizardMode === "user_choice",
-      effectiveGpsMode,
-      inventoryEnabled,
-      !!reusableOldGps,
-    );
+    const steps = replacementVisit
+      ? buildReplacementSteps(config, effectiveGpsMode, inventoryEnabled, !!reusableOldGps)
+      : buildSuccessSteps(
+          config.wizardMode === "reading_only" ? "reading_only" : "changeout",
+          config,
+          config.wizardMode === "user_choice",
+          effectiveGpsMode,
+          inventoryEnabled,
+          !!reusableOldGps,
+        );
     return steps[0] || "canChange";
   };
   
@@ -534,6 +587,7 @@ export function SystemChangeoutWizard({
     signatureName: "",
     signatureType: null,
   });
+  const [defectiveHandling, setDefectiveHandling] = useState("");
   const [changeoutSubmissionId, setChangeoutSubmissionId] = useState<string>(() => crypto.randomUUID());
   const [draftDecision, setDraftDecision] = useState<"checking" | "choose" | "ready">("checking");
   const [draftReadOnly, setDraftReadOnly] = useState(false);
@@ -547,6 +601,7 @@ export function SystemChangeoutWizard({
       const restored = decodeDraftCapture(changeoutDraft.draft.capture);
       const savedData = restored.data as SystemChangeoutData;
       setData(savedData);
+      setDefectiveHandling(restored.defectiveHandling ?? "");
       setCurrentStep((changeoutDraft.draft.step || restored.step || "canChange") as WizardStep);
       setSelectedWorkflowMode(restored.selectedWorkflowMode ?? null);
       setActualUse(restored.actualUse ?? []);
@@ -595,13 +650,13 @@ export function SystemChangeoutWizard({
     if (!assignmentVersionFrozen.current && draftAssignmentVersion !== assignmentVersion) return;
     const capture = {
       context: { workOrderId, customerWoId, oldSystemId, oldModuleId },
-      data, selectedWorkflowMode, actualUse, removedMeters, fieldSourceId, fieldSourceOverridden, manualSystemIdInput, hidSystemIdInput,
+      data, defectiveHandling, selectedWorkflowMode, actualUse, removedMeters, fieldSourceId, fieldSourceOverridden, manualSystemIdInput, hidSystemIdInput,
       systemIdInputMode, photoType, sessionStartTime: sessionStartTime?.toISOString() ?? null,
       oldSystemReadingConfirmed, oldModuleReadingConfirmed,
     };
     assignmentVersionFrozen.current = true;
     changeoutDraft.persist(currentStep, capture, changeoutSubmissionId);
-  }, [isOpen, draftDecision, draftReadOnly, currentStep, data, selectedWorkflowMode, actualUse, removedMeters,
+  }, [isOpen, draftDecision, draftReadOnly, currentStep, data, defectiveHandling, selectedWorkflowMode, actualUse, removedMeters,
     fieldSourceId, fieldSourceOverridden, manualSystemIdInput, hidSystemIdInput, systemIdInputMode, photoType, sessionStartTime,
     oldSystemReadingConfirmed, oldModuleReadingConfirmed, changeoutSubmissionId, completionConfirmed,
     assignmentVersion, draftAssignmentVersion, changeoutDraft.persist, workOrderId, customerWoId, oldSystemId, oldModuleId]);
@@ -611,6 +666,7 @@ export function SystemChangeoutWizard({
   // Determine the effective display mode based on presence of system/module IDs
   // This is now data-driven instead of scope-driven
   const getDisplayMode = (): "system" | "module" | "both" => {
+    if (replacementVisit) return replacementVisit.equipment;
     const scope = getEffectiveWorkflowMode() === "reading_only" ? workInventory?.workflow?.readingEquipment : workInventory?.workflow?.equipment;
     if (inventoryEnabled && (scope === "system" || scope === "module")) return scope;
     const hasSystem = !!oldSystemId;
@@ -625,6 +681,7 @@ export function SystemChangeoutWizard({
   
   // Dynamic step labels based on what data is present and workflow mode
   const getCanChangeLabel = (): string => {
+    if (replacementVisit) return "Equipment & reason preflight";
     return isReadingOnlyMode ? "Can The Reading Proceed?" : "Can The Changeout Proceed?";
   };
   
@@ -656,7 +713,9 @@ export function SystemChangeoutWizard({
   };
 
   // Build steps dynamically based on config and mode
-  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode, inventoryEnabled, !!reusableOldGps);
+  const successSteps = replacementVisit
+    ? buildReplacementSteps(config, effectiveGpsMode, inventoryEnabled, !!reusableOldGps)
+    : buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode, inventoryEnabled, !!reusableOldGps);
   const currentSteps = data.canChange ? successSteps : troubleSteps;
   const currentStepIndex = currentSteps.indexOf(currentStep);
   const isFirstStep = currentStepIndex === 0;
@@ -664,6 +723,65 @@ export function SystemChangeoutWizard({
   
   // Check if we're in reading-only mode for this session
   const isReadingOnlyMode = effectiveMode === "reading_only";
+  const removedEquipmentForReview = () => [
+    ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ equipment: "system" as const, serial: oldSystemId }] : []),
+    ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ equipment: "module" as const, serial: oldModuleId }] : []),
+  ];
+  const inventoryUseValid = () => {
+    if (!inventoryEnabled) return true;
+    if (!workInventory || workInventoryLoading || workInventoryError ||
+      !actualUseLinesAreValid(wizardActualUse, workInventory.items)) return false;
+    if (!replacementVisit) return true;
+    const usedLines = wizardActualUse.filter(line => Number(line.quantity) > 0);
+    if (!usedLines.length) return true;
+    const source = resolveWizardFieldStock(workInventory)?.source;
+    if (!source) return false;
+    return usedLines.every(line => {
+      if (!line.reserved) return line.warehouseId === source.id;
+      const reservation = (workInventory.allocation?.lines ?? []).find(entry =>
+        entry.itemId === line.itemId && entry.warehouseId === line.warehouseId);
+      if (!reservation || Number(line.quantity) > reservation.quantity) return false;
+      if (reservation.reservationMode === "quantity") return true;
+      const serials = line.serials.split(/[\n,;]/).map(value => value.trim()).filter(Boolean);
+      return serials.every(serial => reservation.serials.includes(serial));
+    });
+  };
+  const inventoryReviewValid = () => {
+    if (!inventoryEnabled) return true;
+    if (!inventoryUseValid() || actualUseConflict || !hasPermission("inventory.assign") || !workInventory) return false;
+    return removedEquipmentForReview().every(asset => {
+      const entry = removedMeters[asset.equipment];
+      if (!entry?.serial.trim() || !entry.disposition) return false;
+      const rule = removalChoices(workInventory, asset.equipment, "field").find(candidate => candidate.id === entry.disposition);
+      return !!rule && (rule.outcome !== "returned" || (!!entry.warehouseId &&
+        accessibleWarehouses(workInventory).some(warehouse => warehouse.id === entry.warehouseId)));
+    });
+  };
+  const replacementRequiredHint: Partial<Record<WizardStep, string>> = {
+    canChange: "Confirm the site and replacement scope before proceeding.",
+    oldReading: "Record the existing equipment reading for each selected asset.",
+    beforePhotos: "Capture the configured required before photo.",
+    physicalChange: "Select the approved replacement stock and quantity; capture the new serial next.",
+    newSystemId: "Capture every required replacement serial using manual, HID, or camera scan.",
+    newReading: "Enter a valid reading for each replacement asset.",
+    afterPhotos: "Capture the configured required installation photo.",
+    gps: "Capture a valid position within the configured accuracy.",
+    signature: "Enter the customer name and confirm the signature.",
+    defectiveHandling: "Describe how the defective equipment was isolated, removed, or retained.",
+    inventoryReview: "Confirm required stock quantities, serials, and removed-equipment disposition.",
+    confirm: "Review the captured evidence before completing the visit.",
+  };
+  const wizardContentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isOpen && replacementVisit) wizardContentRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [isOpen, currentStep, replacementVisit]);
+  const replacementStage = (step: WizardStep): number => {
+    if (step === "canChange") return 0;
+    if (["physicalChange", "newSystemId"].includes(step)) return 1;
+    if (["oldReading", "beforePhotos", "newReading", "afterPhotos", "gps", "notes", "signature"].includes(step)) return 2;
+    if (step === "defectiveHandling") return 3;
+    return 4;
+  };
   
   // GPS capture hook for background capture
   const gpsCapture = useGpsCapture({
@@ -789,6 +907,7 @@ export function SystemChangeoutWizard({
     setOldSystemReadingConfirmed(!existingOldReading);
     setOldModuleReadingConfirmed(!existingOldModuleReading);
     setSessionStartTime(null);
+    setDefectiveHandling("");
     setManualSystemIdInput("");
     setHidSystemIdInput("");
     setSystemIdInputMode(null);
@@ -816,7 +935,7 @@ export function SystemChangeoutWizard({
     data.troublePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.beforePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.afterPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
-  }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps, config.wizardMode, clearCaptureFlags]);
+  }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps, config.wizardMode, clearCaptureFlags, replacementVisit]);
 
   const handleClose = (clearAfterConfirmedCompletion = false) => {
     if (clearAfterConfirmedCompletion) resetWizard();
@@ -895,7 +1014,9 @@ export function SystemChangeoutWizard({
       case "beforePhotos":
         return data.beforePhotos.length >= 1;
       case "physicalChange":
-        return true;
+        return !replacementVisit || !inventoryEnabled || inventoryUseValid();
+      case "defectiveHandling":
+        return !replacementVisit || defectiveHandling.trim().length >= 10;
       case "newSystemId": {
         // Validate based on scope
         const needsNewSystemId = (displayMode === "system" || displayMode === "both");
@@ -904,7 +1025,7 @@ export function SystemChangeoutWizard({
         const systemIdValid = !needsNewSystemId || !!data.newSystemId.trim();
         const moduleIdValid = !needsNewModuleId || !!data.newModuleId.trim();
         
-        return systemIdValid && moduleIdValid;
+        return systemIdValid && moduleIdValid && inventoryUseValid();
       }
       case "newReading": {
         // Validate based on scope
@@ -928,7 +1049,7 @@ export function SystemChangeoutWizard({
         // Just need a name - signature drawing is optional
         return !!data.signatureName.trim();
       case "inventoryReview": {
-        return true;
+        return inventoryReviewValid();
       }
       case "confirm": {
         // Final validation: check all required fields based on path, scope, and mode
@@ -989,7 +1110,9 @@ export function SystemChangeoutWizard({
             beforePhotosValid &&
             afterPhotosValid &&
             gpsValid &&
-            signatureValid
+            signatureValid &&
+            inventoryReviewValid() &&
+            (!replacementVisit || defectiveHandling.trim().length >= 10)
           );
         } else {
           // Trouble path requires: trouble code, trouble photos
@@ -1210,7 +1333,10 @@ export function SystemChangeoutWizard({
           newSystemType: oldSystemType || "", newModuleType: oldModuleType || "",
         };
       }
-      submitData = { ...submitData, changeoutSubmissionId, changeoutAssignmentVersion: draftAssignmentVersion, inventoryUsage };
+      const completionNotes = replacementVisit
+        ? [data.completionNotes.trim(), `Defective equipment handling: ${defectiveHandling.trim()}`].filter(Boolean).join("\n\n")
+        : data.completionNotes;
+      submitData = { ...submitData, completionNotes, changeoutSubmissionId, changeoutAssignmentVersion: draftAssignmentVersion, inventoryUsage };
       await onComplete(submitData);
       setCompletionConfirmed(true);
       await changeoutDraft.confirmComplete();
@@ -1399,6 +1525,7 @@ export function SystemChangeoutWizard({
   
   // Auto-select the only enabled search method when entering newSystemId step
   useEffect(() => {
+    if (replacementVisit) return;
     if (currentStep === "newSystemId" && systemIdInputMode === null) {
       const pendingTarget = getPendingCaptureTarget();
       
@@ -1426,9 +1553,7 @@ export function SystemChangeoutWizard({
         if (method === "hid") {
           setSystemIdInputMode("hid");
           setHidSystemIdInput("");
-          setTimeout(() => {
-            hidSystemIdInputRef.current?.focus();
-          }, 100);
+          if (!replacementVisit) setTimeout(() => hidSystemIdInputRef.current?.focus(), 100);
         } else if (method === "manual") {
           setSystemIdInputMode("manual");
         } else if (method === "barcode" || method === "qr") {
@@ -1440,9 +1565,27 @@ export function SystemChangeoutWizard({
         }
       }
     }
-  }, [currentStep, systemIdInputMode, searchSettings, data.newSystemId, data.newModuleId]);
+  }, [currentStep, systemIdInputMode, searchSettings, data.newSystemId, data.newModuleId, replacementVisit]);
 
   const renderStepIndicator = () => {
+    if (replacementVisit) {
+      const stage = replacementStage(currentStep);
+      const labels = ["Preflight", "Stock + ID", "Readings + evidence", "Defective equipment", "Review"];
+      return (
+        <div className="mb-5 space-y-2" aria-label="Replacement progress" data-testid="replacement-progress">
+          <div className="flex items-center justify-between gap-2">
+            {labels.map((label, index) => (
+              <span key={label} className={`text-[10px] font-semibold uppercase tracking-wider ${index === stage ? "text-primary" : index < stage ? "text-primary/65" : "text-muted-foreground/60"}`}>
+                {label}
+              </span>
+            ))}
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${((stage + 1) / labels.length) * 100}%` }} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center gap-1 mb-4">
         {currentSteps.map((step, index) => (
@@ -1589,6 +1732,13 @@ export function SystemChangeoutWizard({
         
         return (
           <div className="space-y-4">
+            {replacementVisit && (
+              <div className="rounded-lg border border-amber-700/20 bg-amber-50/70 p-4 dark:bg-amber-950/20" data-testid="replacement-preflight">
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-900/75 dark:text-amber-100/75">Defective equipment replacement</p>
+                <p className="mt-1 text-sm font-medium">{replacementVisit.reason}</p>
+                <p className="mt-2 text-xs text-muted-foreground">Scope: {replacementVisit.equipment === "both" ? "system and module" : replacementVisit.equipment}. Confirm the site and equipment before continuing.</p>
+              </div>
+            )}
             <Card>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-start gap-3">
@@ -1981,15 +2131,18 @@ export function SystemChangeoutWizard({
                     missing={workInventory.requirements?.missing ?? []}
                     reservations={workInventory.allocation?.lines ?? []}
                     fieldSourceId={fieldStock?.source?.id ?? ""}
-                    sourceChoices={workInventory.canChangeFieldStock ? accessibleWarehouses(workInventory) :
+                    sourceChoices={replacementVisit?.vehicleId ? fieldStock?.vehicles.filter(warehouse => warehouse.id === replacementVisit.vehicleId) ?? [] :
+                      workInventory.canChangeFieldStock ? accessibleWarehouses(workInventory) :
                       fieldStock?.settings.sourceMode === "assigned_vehicle" ? fieldStock.vehicles : []}
-                    canChangeSource={!!workInventory.canChangeFieldStock || fieldStock?.settings.sourceMode === "assigned_vehicle" && fieldStock.vehicles.length > 1}
+                    canChangeSource={replacementVisit?.vehicleId ? false :
+                      !!workInventory.canChangeFieldStock || fieldStock?.settings.sourceMode === "assigned_vehicle" && fieldStock.vehicles.length > 1}
                     canChangeFulfillment={!!workInventory.canChangeFieldStock}
                     defaultFulfillment={fieldStock?.settings.fulfillment ?? "components"}
                     sourceReason={fieldStock?.reason}
                     onSourceChange={id => {
                       setFieldSourceId(id);
-                      setFieldSourceOverridden(!!workInventory.canChangeFieldStock);
+                      setFieldSourceOverridden(!!workInventory.canChangeFieldStock ||
+                        !!replacementVisit && !!fieldStock?.vehicles.some(warehouse => warehouse.id === id));
                       if (fieldStock?.vehicles.some(w => w.id === id))
                         try { localStorage.setItem(fieldPreferenceKey, id); } catch { /* Optional device preference only. */ }
                     }}
@@ -2024,6 +2177,21 @@ export function SystemChangeoutWizard({
           </div>
         );
       }
+
+      case "defectiveHandling":
+        return (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-700/20 bg-amber-50/70 p-4 dark:bg-amber-950/20">
+              <p className="text-xs font-semibold uppercase tracking-wider text-amber-900/75 dark:text-amber-100/75">Removed equipment</p>
+              <p className="mt-1 text-sm">Record how the defective {replacementVisit?.equipment === "module" ? "module" : replacementVisit?.equipment === "system" ? "system" : "equipment"} was isolated and handled after removal.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="replacement-defective-handling">Handling record <span className="text-destructive">*</span></Label>
+              <Textarea id="replacement-defective-handling" value={defectiveHandling} onChange={event => setDefectiveHandling(event.target.value)} placeholder="Record how the defective unit was isolated, removed, secured, or retained for return." className="min-h-28" data-testid="textarea-replacement-defective-handling" />
+              <p className="text-xs text-muted-foreground">At least 10 characters. This note is saved with the visit completion record.</p>
+            </div>
+          </div>
+        );
 
       case "newSystemId": {
         const showNewSystemId = displayMode === "system" || displayMode === "both";
@@ -2172,7 +2340,7 @@ export function SystemChangeoutWizard({
                         type="text"
                         placeholder={`Type or paste ${capturingSystem ? "system" : "module"} ID...`}
                         className="text-lg"
-                        autoFocus
+                        autoFocus={!replacementVisit}
                         value={manualSystemIdInput}
                         onChange={(e) => setManualSystemIdInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -2323,7 +2491,7 @@ export function SystemChangeoutWizard({
                           variant="outline"
                           onClick={() => {
                             setHidSystemIdInput("");
-                            hidSystemIdInputRef.current?.focus();
+                            if (!replacementVisit) hidSystemIdInputRef.current?.focus();
                           }}
                           data-testid="button-clear-hid-id"
                         >
@@ -2400,9 +2568,7 @@ export function SystemChangeoutWizard({
                         action: () => {
                           setSystemIdInputMode("hid");
                           setHidSystemIdInput("");
-                          setTimeout(() => {
-                            hidSystemIdInputRef.current?.focus();
-                          }, 100);
+                          if (!replacementVisit) setTimeout(() => hidSystemIdInputRef.current?.focus(), 100);
                         },
                       },
                     ].filter(m => m.enabled);
@@ -2981,11 +3147,13 @@ export function SystemChangeoutWizard({
         handleClose();
       }
     }}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent ref={wizardContentRef} className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid={replacementVisit ? "replacement-wizard-content" : undefined}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isReadingOnlyMode ? <Gauge className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
-            {currentStep === "canChange" 
+            {replacementVisit
+              ? ({ canChange: "Replacement preflight", physicalChange: "Replacement stock", newSystemId: "Installed equipment ID", oldReading: "Record existing equipment", beforePhotos: "Before photos", newReading: getNewReadingLabel(), afterPhotos: "Installation evidence", gps: "Capture location", notes: "Completion notes", signature: "Customer sign-off", defectiveHandling: "Defective equipment handling", inventoryReview: "Removed equipment disposition", confirm: "Review & complete" } as Partial<Record<WizardStep, string>>)[currentStep] || stepLabels[currentStep]
+              : currentStep === "canChange"
               ? getCanChangeLabel() 
               : currentStep === "newSystemId" 
                 ? getNewSystemIdLabel() 
@@ -3074,6 +3242,8 @@ export function SystemChangeoutWizard({
           <Button size="sm" variant="outline" onClick={changeoutDraft.resolveConflictUseLocal} data-testid="button-keep-local-draft">Keep my entries</Button>
         </div>}
         {renderStepIndicator()}
+
+        {replacementVisit && replacementRequiredHint[currentStep] && <div className="mb-3 rounded-md border-l-2 border-primary bg-primary/5 px-3 py-2 text-xs text-muted-foreground" data-testid="replacement-required-hint">{replacementRequiredHint[currentStep]}</div>}
 
         <div className="min-h-[300px]">
           {renderStepContent()}

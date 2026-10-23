@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { installReplacementProject } from "./replacementSchema";
 
 export const CHANGEOUT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS public.changeout_drafts(
@@ -47,6 +48,7 @@ export async function installChangeoutProject(client: { query: Function }, schem
     DROP TRIGGER IF EXISTS changeout_assignment_version ON "${schema}".work_orders;
     CREATE TRIGGER changeout_assignment_version BEFORE UPDATE ON "${schema}".work_orders
     FOR EACH ROW EXECUTE FUNCTION public.changeout_assignment_version()`);
+  await installReplacementProject(client, schema);
 }
 export async function migrateChangeoutSchema(pool: Pool) {
   const client = await pool.connect();

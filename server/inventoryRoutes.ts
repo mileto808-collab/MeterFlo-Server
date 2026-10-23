@@ -442,7 +442,7 @@ export function registerInventoryRoutes(app: Express) {
     const id = z.coerce.number().int().positive().parse(req.params.workOrderId);
     if (!c.project.databaseName || !/^[a-z0-9_]+$/.test(c.project.databaseName)) throw new InventoryError("Work-order storage unavailable.");
     const { rows: [wo] } = await pool.query(`SELECT * FROM "${c.project.databaseName}".work_orders WHERE id=$1`, [id]);
-    if (!wo) throw new InventoryError("Work order not found.");
+    if (!wo || wo.replacement_cancelled_at) throw new InventoryError("Active work order not found.");
     const visible = await visibleAssignedOrders(c.user, [{ id: wo.id,
       assignedUserId: wo.assigned_user_id, assignedGroupId: wo.assigned_group_id,
       newSystemType: wo.new_system_type, newModuleType: wo.new_module_type,

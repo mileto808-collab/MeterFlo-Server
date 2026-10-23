@@ -89,6 +89,8 @@ import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-
 import { WorkOrderPlanningFields, WorkOrderPlanningSummary } from "@/components/work-order-routing/work-order-planning-fields";
 import { WorkOrderHistory } from "@/components/work-orders/work-order-history";
 import { usePermissions } from "@/hooks/usePermissions";
+import { DefectiveReplacementPanel } from "@/components/defective-replacement-panel";
+import { replacementVisitDto, type ReplacementVisit } from "@shared/defective-replacement";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -153,6 +155,7 @@ interface WorkOrderDetailProps {
   inventoryEnabled?: boolean;
   inventoryDispatch?: InventoryDispatch;
   onReopened?: (workOrder: any) => void;
+  onOpenWorkOrder?: (workOrderId: number) => void;
 }
 
 export function WorkOrderDetail({
@@ -196,6 +199,7 @@ export function WorkOrderDetail({
   inventoryEnabled = false,
   inventoryDispatch,
   onReopened,
+  onOpenWorkOrder,
 }: WorkOrderDetailProps) {
   const [claimedAssignmentVersion, setClaimedAssignmentVersion] = useState<number | undefined>(
     (workOrder as any).assignmentVersion ?? (workOrder as any).assignment_version
@@ -208,6 +212,9 @@ export function WorkOrderDetail({
   const rawStatus = workOrder.statusCode ?? workOrder.status_code ?? workOrder.status;
   const matchedStatus = workOrderStatuses.find(status => status.code === rawStatus || status.label === rawStatus);
   const isClosed = String(workOrder.statusCode ?? workOrder.status_code ?? matchedStatus?.code ?? rawStatus ?? "").toLowerCase() === "closed";
+  const replacementVisitForWorkOrder = workOrder.replacementVisit ?? workOrder.replacement_visit ?? replacementVisitDto(workOrder);
+  const isCompleted = String(matchedStatus?.label ?? rawStatus ?? "").toLowerCase() === "completed";
+  const showDefectiveReplacementPanel = canSystemChangeout && (isClosed || isCompleted || !!replacementVisitForWorkOrder);
   const dispatchBlocked = !!inventoryDispatch && (
     inventoryDispatch.canStart === false ||
     inventoryDispatch.stage === "awaiting_pickup" ||
@@ -255,6 +262,28 @@ export function WorkOrderDetail({
     onError: (error: Error) => toast({ title: "Unable to reopen work order", description: error.message, variant: "destructive" }),
   });
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
+  const [replacementWorkOrder, setReplacementWorkOrder] = useState<any | null>(null);
+  const [replacementVisit, setReplacementVisit] = useState<ReplacementVisit | null>(null);
+  const [replacementInventoryEnabled, setReplacementInventoryEnabled] = useState(false);
+  const wizardWorkOrder = replacementWorkOrder ?? workOrder;
+  const wizardReplacementVisit = replacementVisit ??
+    (wizardWorkOrder.replacementVisit ?? wizardWorkOrder.replacement_visit ?? replacementVisitDto(wizardWorkOrder));
+  const wizardInventoryEnabled = replacementWorkOrder && replacementVisit
+    ? replacementInventoryEnabled
+    : inventoryEnabled;
+  useEffect(() => {
+    setReplacementWorkOrder(null);
+    setReplacementVisit(null);
+  }, [workOrder.id]);
+  const launchReplacement = useCallback((child: any, visit: ReplacementVisit, hasInventory: boolean) => {
+    setReplacementWorkOrder(child);
+    setReplacementVisit(visit);
+    setReplacementInventoryEnabled(hasInventory);
+    const version = child.assignmentVersion ?? child.assignment_version;
+    if (Number.isFinite(version)) setClaimedAssignmentVersion(version);
+    setChangeoutWizardSession(value => value + 1);
+    setShowSystemChangeoutWizard(true);
+  }, []);
   const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
   const [mobileCustomerEditMode, setMobileCustomerEditMode] = useState(false);
@@ -579,7 +608,7 @@ export function WorkOrderDetail({
               )}
             </div>
           )}
-          {canSystemChangeout && workOrder.status !== 'Completed' && !isClosed && (
+          {canSystemChangeout && !workOrder.replacementVisit?.cancelledAt && !(workOrder as any).replacement_cancelled_at && workOrder.status !== 'Completed' && !isClosed && (
             <Button 
               size="sm" 
               onClick={handleStartSystemChangeout}
@@ -653,6 +682,13 @@ export function WorkOrderDetail({
           {isClosed && canReopen && <Button type="button" size="sm" onClick={() => setReopenDialogOpen(true)} data-testid="button-reopen-work-order">Reopen work order</Button>}
         </div>
       )}
+
+      {showDefectiveReplacementPanel && <DefectiveReplacementPanel
+        projectId={typeof projectId === "string" ? parseInt(projectId) : projectId}
+        workOrder={workOrder}
+        onLaunch={launchReplacement}
+        onOpenWorkOrder={onOpenWorkOrder}
+      />}
 
       {/* Form with Collapsible Sections */}
       <Form {...form}>
@@ -3563,33 +3599,34 @@ export function WorkOrderDetail({
 
       {/* System Changeout Wizard */}
       <SystemChangeoutWizard
-          key={`${workOrder.id}-${changeoutWizardSession}`}
+          key={`${wizardWorkOrder.id}-${changeoutWizardSession}`}
         isOpen={showSystemChangeoutWizard}
-        onClose={() => setShowSystemChangeoutWizard(false)}
-        workOrderId={workOrder.id}
-        customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
-        address={workOrder.address}
-        oldSystemId={workOrder.oldSystemId}
-        oldSystemType={workOrder.oldSystemType}
-        newSystemType={workOrder.newSystemType}
-        oldModuleId={workOrder.oldModuleId}
-        oldModuleType={workOrder.oldModuleType}
-        newModuleType={workOrder.newModuleType}
-        status={workOrder.status}
-        trouble={workOrder.trouble}
-        notes={workOrder.notes}
+        onClose={() => { setShowSystemChangeoutWizard(false); setReplacementWorkOrder(null); setReplacementVisit(null); }}
+        workOrderId={wizardWorkOrder.id}
+        customerWoId={wizardWorkOrder.customerWoId || wizardWorkOrder.customer_wo_id || `WO-${wizardWorkOrder.id}`}
+        address={wizardWorkOrder.address}
+        oldSystemId={wizardWorkOrder.oldSystemId ?? wizardWorkOrder.old_system_id}
+        oldSystemType={wizardWorkOrder.oldSystemType ?? wizardWorkOrder.old_system_type}
+        newSystemType={wizardWorkOrder.newSystemType ?? wizardWorkOrder.new_system_type}
+        oldModuleId={wizardWorkOrder.oldModuleId ?? wizardWorkOrder.old_module_id}
+        oldModuleType={wizardWorkOrder.oldModuleType ?? wizardWorkOrder.old_module_type}
+        newModuleType={wizardWorkOrder.newModuleType ?? wizardWorkOrder.new_module_type}
+        status={wizardWorkOrder.status}
+        trouble={wizardWorkOrder.trouble}
+        notes={wizardWorkOrder.notes}
         projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
-        assignmentVersion={claimedAssignmentVersion}
-        inventoryEnabled={inventoryEnabled}
+        assignmentVersion={Number(wizardWorkOrder.assignmentVersion ?? wizardWorkOrder.assignment_version) || claimedAssignmentVersion}
+        inventoryEnabled={wizardInventoryEnabled}
         troubleCodes={troubleCodes}
-        existingOldReading={workOrder.oldSystemReading != null ? String(workOrder.oldSystemReading) : null}
-        existingNewReading={workOrder.newSystemReading != null ? String(workOrder.newSystemReading) : null}
-        existingOldModuleReading={workOrder.oldModuleRead != null ? String(workOrder.oldModuleRead) : null}
-        existingNewModuleReading={workOrder.newModuleRead != null ? String(workOrder.newModuleRead) : null}
-        existingGps={workOrder.newGps}
-        oldGps={workOrder.oldGps}
+        existingOldReading={(wizardWorkOrder.oldSystemReading ?? wizardWorkOrder.old_system_reading) != null ? String(wizardWorkOrder.oldSystemReading ?? wizardWorkOrder.old_system_reading) : null}
+        existingNewReading={(wizardWorkOrder.newSystemReading ?? wizardWorkOrder.new_system_reading) != null ? String(wizardWorkOrder.newSystemReading ?? wizardWorkOrder.new_system_reading) : null}
+        existingOldModuleReading={(wizardWorkOrder.oldModuleRead ?? wizardWorkOrder.old_module_read ?? wizardWorkOrder.oldModuleReading) != null ? String(wizardWorkOrder.oldModuleRead ?? wizardWorkOrder.old_module_read ?? wizardWorkOrder.oldModuleReading) : null}
+        existingNewModuleReading={(wizardWorkOrder.newModuleRead ?? wizardWorkOrder.new_module_read ?? wizardWorkOrder.newModuleReading) != null ? String(wizardWorkOrder.newModuleRead ?? wizardWorkOrder.new_module_read ?? wizardWorkOrder.newModuleReading) : null}
+        existingGps={wizardWorkOrder.newGps ?? wizardWorkOrder.new_gps}
+        oldGps={wizardWorkOrder.oldGps ?? wizardWorkOrder.old_gps}
         wizardConfig={wizardConfig}
         searchMethodSettings={searchMethodSettings}
+        replacementVisit={wizardReplacementVisit}
         onComplete={async (data) => {
           const formData = new FormData();
           
@@ -3634,14 +3671,14 @@ export function WorkOrderDetail({
             signatureData: data.signatureData,
             signatureName: data.signatureName,
             photoTypes,
-            changeoutScope,
+            changeoutScope: wizardReplacementVisit?.equipment ?? changeoutScope,
             isReadingOnly: data.isReadingOnly,
             changeoutSubmissionId: data.changeoutSubmissionId,
             changeoutAssignmentVersion: data.changeoutAssignmentVersion,
             inventoryUsage: data.inventoryUsage,
           }));
           
-          const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}/system-changeout`, {
+          const response = await fetch(`/api/projects/${projectId}/work-orders/${wizardWorkOrder.id}/system-changeout`, {
             method: "POST",
             body: formData,
             credentials: "include",
@@ -3654,6 +3691,13 @@ export function WorkOrderDetail({
           
           if (onSystemChangeoutComplete) {
             await onSystemChangeoutComplete();
+          }
+          if (wizardReplacementVisit) {
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "work-orders", workOrder.id, "replacement"] }),
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] }),
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/${wizardWorkOrder.id}`] }),
+            ]);
           }
         }}
       />

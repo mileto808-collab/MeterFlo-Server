@@ -5,6 +5,9 @@ import { registerSupportRoutes } from "./supportRequests";
 import { registerRoutingRoutes } from "./routing/routes";
 import { technicianAssignmentScope, visibleAssignedOrders } from "./workOrderVisibility";
 import { registerChangeoutRoutes } from "./changeoutRoutes";
+import { registerReplacementRoutes } from "./replacementRoutes";
+import { canStart as canStartChangeout } from "./changeoutService";
+import { replacementContext } from "./replacementService";
 import { ChangeoutError } from "./changeoutService";
 import { accessLockMiddleware, loginAccessLock, registerAccessLockRoutes, sendAccessLocked } from "./accessLocks";
 import { accessLockContext } from "./accessLockContext";
@@ -259,6 +262,7 @@ export async function registerRoutes(
   registerAuditRoutes(app);
   registerFileTransferRoutes(app, isAuthenticated);
   registerChangeoutRoutes(app, isAuthenticated);
+  registerReplacementRoutes(app, isAuthenticated);
   registerWorkOrderLifecycleRoutes(app);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
@@ -2552,14 +2556,22 @@ export async function registerRoutes(
           newSystemType: workOrder.new_system_type, newModuleType: workOrder.new_module_type,
           assignmentVersion: workOrder.assignment_version, status: workOrder.status,
         }], projectId);
-        if (!visible.length) return res.status(404).json({ message: "Work order not found" });
+        if (!visible.length) {
+          if (!["completed", "closed"].includes(String(workOrder.status).toLowerCase()) &&
+              !workOrder.replacement_cancelled_at || !await canStartChangeout(currentUser))
+            return res.status(404).json({ message: "Work order not found" });
+          try {
+            const rawProject = (await client.query("SELECT * FROM public.projects WHERE id=$1", [projectId])).rows[0];
+            await replacementContext(client, project.databaseName, rawProject, currentUser, workOrderId);
+          } catch { return res.status(404).json({ message: "Work order not found" }); }
+        }
         
         if (currentUser?.role === "customer" && workOrder.status !== "completed") {
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
         }
         
         res.set("Cache-Control", "no-store").json(mobileWorkOrderDto({
-          ...workOrder, inventoryDispatch: (visible[0] as any).inventoryDispatch,
+          ...workOrder, inventoryDispatch: (visible[0] as any)?.inventoryDispatch,
         }));
       } finally {
         client.release();
@@ -2828,6 +2840,7 @@ export async function registerRoutes(
       res.json(workOrder);
     } catch (error) {
       if (error instanceof WorkOrderResetError) return res.status(error.status).json({ message: error.message });
+      if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message, code: error.code });
       console.error("Error resetting work order:", error);
       res.status(500).json({ message: "Failed to reset work order" });
     }
@@ -9197,7 +9210,7 @@ export async function registerRoutes(
           // Apply authorization before LIMIT/OFFSET, not after paging other crews' rows.
           const { rows: candidates } = await client.query(`SELECT id,status,assigned_user_id,assigned_group_id,
             new_system_type,new_module_type,assignment_version FROM "${project.databaseName}".work_orders
-            WHERE lower(status) NOT IN ('completed','closed')`);
+            WHERE lower(status) NOT IN ('completed','closed') AND replacement_cancelled_at IS NULL`);
           const visible = await visibleAssignedOrders(currentUser, candidates.map((row: any) => ({
             id: row.id, status: row.status, assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
             newSystemType: row.new_system_type, newModuleType: row.new_module_type, assignmentVersion: row.assignment_version,
@@ -9235,6 +9248,7 @@ export async function registerRoutes(
         conditions.push(`LOWER(w.status) NOT IN ('completed', 'closed')`);
         
         if (conditions.length > 0) {
+          conditions.push("w.replacement_cancelled_at IS NULL");
           query += ` WHERE ${conditions.join(" AND ")}`;
         }
         

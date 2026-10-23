@@ -15,6 +15,8 @@ import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventorySer
 import { acceptCompletion, acceptMobileTrouble, assertClaimAllowed, canonicalStatus, ChangeoutError, submissionReplay } from "./changeoutService";
 import { mobileSubmissionContext } from "./mobileSubmissionContext";
 import { installChangeoutProject } from "./changeoutSchema";
+import { replacementVisitDto, type ReplacementVisit } from "../shared/defective-replacement";
+import { replacementBackupDto, validateReplacementBackup, restoreReplacementMetadata } from "./replacementBackup";
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { installProjectSubStatuses, listSubStatuses, restoreSubStatusDefinitions } from "./workOrderSubStatuses";
 import { migrateProjectTroubleCodeReferences, exportTroubleCodes, restoreTroubleCodes } from "./projectTroubleCodes";
@@ -124,7 +126,7 @@ export const projectWorkOrders = pgTable("work_orders", {
   scheduledBy: varchar("scheduled_by", { length: 50 }),
 });
 
-export type ProjectWorkOrder = Omit<typeof projectWorkOrders.$inferSelect, "gpsSource" | "gpsAccuracy" | "gpsCapturedAt" | "gpsReceiver"> & { gpsCapture?: GpsFix | null };
+export type ProjectWorkOrder = Omit<typeof projectWorkOrders.$inferSelect, "gpsSource" | "gpsAccuracy" | "gpsCapturedAt" | "gpsReceiver"> & { gpsCapture?: GpsFix | null; replacementVisit?: ReplacementVisit | null };
 export type InsertProjectWorkOrder = typeof projectWorkOrders.$inferInsert & { gpsCapture?: GpsFix | null };
 
 // Sanitize project name for use as schema name
@@ -430,6 +432,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     await installVisitScheduling(client,schemaName);
     await installGpsColumns(client,schemaName);
     await installWorkOrderLifecycle(client,schemaName);
+    await installChangeoutProject(client, schemaName);
     if (auditingEnabled) await installProjectAudit(client,schemaName);
 
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
@@ -587,7 +590,7 @@ export class ProjectWorkOrderStorage {
         LEFT JOIN public.users cb ON w.completed_by = cb.id
         LEFT JOIN public.users au ON w.assigned_user_id = au.id
       `;
-      const conditions: string[] = [];
+      const conditions: string[] = ["w.replacement_cancelled_at IS NULL"];
       const values: any[] = [];
       let paramCount = 1;
 
@@ -1642,11 +1645,18 @@ export class ProjectWorkOrderStorage {
         }
         if (completing && !["completed", "closed"].includes(await canonicalStatus(client, prior?.status))) {
           await acceptCompletion(client, this.schemaName, prior, result.rows[0], updates, project);
+          if (prior.replacement_root_id) result.rows[0].replacement_active = false;
         } else {
           await inventoryWorkOrderChange(client, this.schemaName, prior, result.rows[0], (updates as any).inventoryUsage, (updates as any).inventoryItems, ordinaryImport);
           if (mobile?.kind === "trouble") await acceptMobileTrouble(client, this.schemaName, prior, result.rows[0], project);
           await client.query("INSERT INTO public.changeout_events(project_id,work_order_id,type,actor_id,operation_id) VALUES($1,$2,'workorder_updated',$3,$4) ON CONFLICT DO NOTHING",
             [project.id, id, auditContext.getStore()?.actorId ?? null, auditContext.getStore()?.operationId ?? null]);
+        }
+        if (prior.replacement_root_id && await canonicalStatus(client, result.rows[0].status) === "cancelled") {
+          const posted = await client.query("SELECT 1 FROM public.changeout_completions WHERE project_id=$1 AND work_order_id=$2 LIMIT 1", [project.id, id]);
+          if (posted.rowCount) throw new ChangeoutError("An accepted replacement cannot be cancelled. Preserve its history and record the next physical replacement.");
+          await client.query(`UPDATE "${this.schemaName}".work_orders SET replacement_active=false WHERE id=$1`, [id]);
+          result.rows[0].replacement_active = false;
         }
         await enqueueCustomerDelivery(client, this.schemaName, result.rows[0]);
         await client.query("COMMIT");
@@ -1804,6 +1814,7 @@ export class ProjectWorkOrderStorage {
   
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
     const result: any = {
+      replacementVisit: replacementVisitDto(row),
       ...exactReadingDto(row),
       ...gpsFixDto(row),
       id: row.id,
@@ -1912,6 +1923,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
     );
     
     const workOrders = result.rows.map((row) => ({
+      replacementRecovery: replacementBackupDto(row),
       ...exactReadingDto(row),
       ...gpsFixDto(row),
       id: row.id,
@@ -2023,12 +2035,15 @@ async function restoreProjectDatabaseData(
   if (!transactionClient) await migrateProjectSchema(schemaName);
   const client = transactionClient ?? await pool.connect();
   const errors: string[] = [];
-  const atomic = !!backup.inventory || !!backup.subStatuses || backup.routingConfiguration !== undefined || schedulingDefaults !== undefined || restoredClosing !== undefined;
+  const preserveIdentity = !!backup.inventory || backup.workOrders.some((wo: any) => !!wo.replacementRecovery);
+  const atomic = preserveIdentity || !!backup.subStatuses || backup.routingConfiguration !== undefined || schedulingDefaults !== undefined || restoredClosing !== undefined;
   let restored = 0;
   
   try {
     if (atomic && !transactionClient) await client.query("BEGIN");
-    if (backup.inventory) {
+    validateReplacementBackup(backup.workOrders);
+    if (preserveIdentity) {
+      if (backup.inventory)
       validateInventoryBackup(backup.inventory, backup.workOrders.map((wo: any) => zInventoryId(wo.id)));
       await lockInventoryForSchema(client, schemaName);
       await client.query(`LOCK TABLE "${schemaName}".work_orders IN SHARE ROW EXCLUSIVE MODE`);
@@ -2055,14 +2070,16 @@ async function restoreProjectDatabaseData(
       DO UPDATE SET enabled=false,after_hours=excluded.after_hours,enabled_at=now(),updated_at=now()`,
     [schemaName, restoredClosing.afterHours]);
     
+    validateReplacementBackup(backup.workOrders);
+    const replacementIdMapping = new Map<number, number>();
     for (let i = 0; i < backup.workOrders.length; i++) {
       const wo = withExactReadings(backup.workOrders[i]) as any;
       try {
         const restoredOrder = await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (${backup.inventory ? "id, " : ""}status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text,assignment_version)
-           ${backup.inventory ? "OVERRIDING SYSTEM VALUE" : ""}
-           VALUES (${backup.inventory ? "$46, " : ""}$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44,$45) RETURNING id`,
+           (${preserveIdentity ? "id, " : ""}status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text,assignment_version)
+           ${preserveIdentity ? "OVERRIDING SYSTEM VALUE" : ""}
+           VALUES (${preserveIdentity ? "$46, " : ""}$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44,$45) RETURNING id`,
           [
             wo.status || "Open",
             wo.createdBy || null,
@@ -2106,9 +2123,10 @@ async function restoreProjectDatabaseData(
             wo.scheduledBy || null,
             ...exactReadingFields.map(({key}) => capturedReadingText(wo[key])),
             Number.isInteger(wo.assignmentVersion) && wo.assignmentVersion >= 0 ? wo.assignmentVersion : 0,
-            ...(backup.inventory ? [zInventoryId(wo.id)] : []),
+            ...(preserveIdentity ? [zInventoryId(wo.id)] : []),
           ]
         );
+        replacementIdMapping.set(wo.id, restoredOrder.rows[0].id);
         if (wo.subStatusId) await client.query(`UPDATE "${schemaName}".work_orders SET sub_status_id=$1 WHERE id=$2`,
           [subStatusMapping.get(wo.subStatusId) ?? wo.subStatusId,restoredOrder.rows[0].id]);
         await writeVisitScheduling(client, schemaName, restoredOrder.rows[0].id, wo);
@@ -2122,8 +2140,11 @@ async function restoreProjectDatabaseData(
       }
     }
     
+    await restoreReplacementMetadata(client, schemaName, backup.workOrders, replacementIdMapping);
     if (backup.inventory) {
       await restoreInventory(client, schemaName, backup.inventory);
+    }
+    if (preserveIdentity) {
       await client.query(`SELECT setval(pg_get_serial_sequence('"${schemaName}".work_orders','id'), greatest(1,(SELECT coalesce(max(id),1) FROM "${schemaName}".work_orders)),EXISTS(SELECT 1 FROM "${schemaName}".work_orders))`);
     }
     if (atomic && !transactionClient) await client.query("COMMIT");

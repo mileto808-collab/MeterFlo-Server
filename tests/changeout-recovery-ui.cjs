@@ -47,6 +47,10 @@ const assert = require("node:assert/strict");
     assert.equal(claims.filter(r => r.status() === 409).length, 1);
     const winner = claims.findIndex(r => r.ok()), other = 1 - winner;
     await expect(watchers[other].getByTestId(`row-work-order-${work.id}`)).toHaveCount(0, { timeout: 15000 });
+    // The owned loopback server is HTTP/1.1. Each live page holds SSE sockets;
+    // keeping both observers open can exhaust Chromium's per-origin pool and
+    // indefinitely queue the new recovery page's otherwise successful reads.
+    await Promise.all(watchers.map(page => page.close()));
     const mine = contexts[winner], loser = contexts[other], owner = users[winner], replacement = users[other];
     const claimed = await json("GET", `${root}/work-orders/${work.id}`, undefined, mine);
     assert.equal(claimed.assigned_user_id ?? claimed.assignedUserId, owner.id);

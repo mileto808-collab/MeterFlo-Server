@@ -65,3 +65,15 @@ creating false pagination resets and misleading short-landscape screenshots.
 **How to apply:** Keep authentication intact, dismiss the banner as a visitor
 would, and test the application's actual available viewport. Verify complete
 mixed-height page traversal and rotation, not only a successful Next click.
+
+Close finished live observer tabs before opening additional pages in an owned
+HTTP/1.1 acceptance server.
+
+**Why:** Multiple SSE connections can exhaust Chromium's shared per-origin
+connection pool. A new page may render normally while its recovery fetch waits
+indefinitely, even though a separate API request returns the correct data. This
+can resemble a broken recovery component or stalled local storage.
+
+**How to apply:** Retain observers until their concurrency/live-update assertions
+finish, then close them before testing another page. Diagnose pending browser
+requests and connection use before changing recovery logic or weakening checks.

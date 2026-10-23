@@ -1,5 +1,7 @@
 /** Dispatch is a view of existing custody, not another work-order core status. */
 export type InventoryDispatch = {
+  /** Absent means legacy fulfillment custody; never use an onboard operation as a pick-ticket ID. */
+  source?: "fulfillment" | "replacement_onboard";
   batchId: string;
   batchName: string;
   receiptNumber: string;

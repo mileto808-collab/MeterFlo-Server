@@ -81,5 +81,25 @@ export async function inventoryDispatchScope(
     });
     if (value && !dispatch.has(row.work_order_id)) dispatch.set(row.work_order_id, value);
   }
+  // A replacement visit may use already-onboard material. Its own issuance is
+  // independent of the original completed fulfillment batch and never moves stock.
+  const { rows: [projectSchema] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
+  if (projectSchema?.database_name && /^project_[a-z0-9_]+$/.test(projectSchema.database_name)) {
+    const { rows: onboard } = await client.query(`SELECT w.id,w.assigned_user_id,w.replacement_operation_id,w.customer_wo_id,
+      v.id vehicle_id,v.name vehicle_name FROM "${projectSchema.database_name}".work_orders w
+      JOIN public.inventory_warehouses v ON v.project_id=$1 AND v.id=w.replacement_vehicle_id AND v.active AND v.type='vehicle'
+      WHERE w.id=ANY($2::int[]) AND w.replacement_active
+        AND (v.assigned_user_id=$3 OR EXISTS(SELECT 1 FROM public.inventory_warehouses_values vu
+          WHERE vu.project_id=v.project_id AND vu.parent_id=v._key AND vu.field='userIds' AND vu.value=$3))`,
+    [projectId, ids, userId]);
+    for (const row of onboard) {
+      if (dispatch.has(row.id) || batched.has(row.id)) continue;
+      const canStart = row.assigned_user_id === userId;
+      dispatch.set(row.id, { source: "replacement_onboard", batchId: row.replacement_operation_id, batchName: "Replacement · onboard vehicle stock",
+        receiptNumber: row.customer_wo_id, vehicleId: row.vehicle_id, vehicleName: row.vehicle_name,
+        stage: canStart ? "ready_for_field" : "needs_review", canStart,
+        ...(!canStart ? { reason: "This replacement visit is assigned to another technician." } : {}) });
+    }
+  }
   return { enabled, dispatch, requires, batched };
 }

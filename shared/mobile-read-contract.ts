@@ -2,6 +2,7 @@ import { z } from "zod";
 import { gpsFixDto } from "./gps-capture";
 import { schedulingDto } from "./visitScheduling";
 import { withExactReadings } from "./exact-readings";
+import { replacementVisitDto } from "./defective-replacement";
 
 const integerQuery = (min: number, max: number) => z.string().regex(/^\d+$/)
   .transform(Number).pipe(z.number().int().min(min).max(max));
@@ -48,6 +49,7 @@ export function mobileWorkOrderDto<T extends Record<string, any>>(row: T) {
     assignmentVersion: row.assignmentVersion ?? row.assignment_version ?? 0,
     subStatusId: row.subStatusId ?? row.sub_status_id ?? null,
     inventoryDispatch: row.inventoryDispatch ?? null,
+    replacementVisit: row.replacementVisit ?? replacementVisitDto(row),
     ...schedulingDto({
       service_duration_minutes: row.service_duration_minutes ?? row.serviceDurationMinutes,
       appointment_window_start: row.appointment_window_start ?? row.appointmentWindowStart,

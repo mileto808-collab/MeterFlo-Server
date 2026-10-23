@@ -32,6 +32,23 @@ export async function processNextChangeout() {
           ["new_system_id", "new_module_id"].some(key => String(currentWork[key] ?? "") !== String(evidence.next[key] ?? "")))
         throw new Error("Accepted installation no longer matches the work order. Review restored or corrected records before accounting for this usage.");
       const state = await inventoryState(job.project_id, client);
+      // Preserve field-first acceptance but account for installations in order.
+      // Otherwise an older failed job could reinstall occupancy for an asset
+      // already removed by its successor.
+      if (evidence.prior.replacement_root_id) {
+        const { rowCount } = await client.query(`SELECT 1 FROM public.changeout_completions c
+          JOIN "${job.database_name}".work_orders w ON w.id=c.work_order_id
+          WHERE c.project_id=$1 AND c.status IN ('pending','failed') AND c.work_order_id<>$2
+            AND (w.id=$3 OR w.replacement_root_id=$3) AND w.id<$2 LIMIT 1`,
+        [job.project_id, job.work_order_id, evidence.prior.replacement_root_id]);
+        if (rowCount) {
+          await client.query(`UPDATE public.changeout_completions SET status='pending',
+            error='Waiting for the preceding installation to reconcile.',next_attempt_at=now()+interval '30 seconds'
+            WHERE id=$1`, [job.id]);
+          await client.query("COMMIT");
+          return;
+        }
+      }
       const priorAllocation = state.allocations.find(a => a.workOrderId === job.work_order_id);
       let usage = job.reviewed_usage ?? evidence.usage;
       if (!usage && priorAllocation?.mode) usage = {

@@ -14,6 +14,10 @@ export async function initializeCustomerApi() {
 
 /** The caller's transaction includes both the work-order update and the outbox insert. */
 export async function enqueueCustomerDelivery(client: PoolClient, schemaName: string, row: Record<string, any>, versionKey?: string) {
+  // A follow-up is not another completion of the utility's original order.
+  // Keep its evidence local until the customer's integration explicitly
+  // supports a separately identified replacement-visit delivery contract.
+  if (row.replacement_root_id) return;
   const { rows: [project] } = await client.query(
     `SELECT id, customer_api_enabled, inventory_enabled FROM public.projects WHERE database_name = $1`, [schemaName]);
   if (!project?.customer_api_enabled) return;

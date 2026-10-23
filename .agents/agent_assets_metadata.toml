@@ -210,3 +210,31 @@ mtime_ms = 1792785706687
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/804aa563-d805-40e4-9f00-9656b9b2f8da/86572f33-8fd6-4f90-804b-65ca620019e1"
 storage_version_token = "1792785714009982"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "DsQCfaBYYsNRZ-wu0pOpp"
+uri = "file://review-deliverables/meterflo-mobile/DEFECTIVE_EQUIPMENT_REPLACEMENT_HANDOFF.md"
+type = "text"
+title = "Mobile replacement workflow contract"
+description = "Implemented endpoints, permissions, focused steps, retry rules, inventory handling and native acceptance checklist."
+logical_id = "3c3e5e0b-f6b6-4e79-8182-dfa31c9839d3"
+content_hash = "sha256:8ee7fab7a2ac4d8449ac98f37ee1c8ef6f437c58f0ca4e7e647b5ed8d020e2e5"
+size = 19097
+mtime_ms = 1792789270339
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/3c3e5e0b-f6b6-4e79-8182-dfa31c9839d3/9c6ea74e-f735-4764-8915-f4db2265fabd"
+storage_version_token = "1792789442428940"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "pBqgrIfOqSWOE_lFeNJmX"
+uri = "file://generated-artifacts/mobile-replacement-source/meterflo-mobile-replacement-reference.zip"
+type = "unspecified"
+title = "Mobile-agent replacement handoff ZIP"
+description = "Contract, 84 source reference files, sanitized synthetic HTTP examples and a source manifest. Upload this ZIP to the mobile agent; no credentials or customer records are included."
+logical_id = "f5462d5e-c014-4753-b80e-aaa856eb1a60"
+content_hash = "sha256:d7fc0fe64412c63161d11f62e5b72be8d004cc3481547e02a78bda5ce4255c2e"
+size = 306136
+mtime_ms = 1792789352767
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/f5462d5e-c014-4753-b80e-aaa856eb1a60/86175c35-4c46-4178-8245-a8d285509664"
+storage_version_token = "1792789443245083"
+content_type = "application/octet-stream"

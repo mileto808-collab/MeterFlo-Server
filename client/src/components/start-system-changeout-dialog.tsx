@@ -27,6 +27,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 import type { UserGroup, TroubleCode } from "@shared/schema";
+import { replacementVisitDto } from "@shared/defective-replacement";
 
 export type ChangeoutScope = "system" | "module" | "both";
 
@@ -434,6 +435,10 @@ export function StartSystemChangeoutDialog({
 
   // Determine scope based on work order data (presence of system/module IDs)
   const determineScope = useCallback((workOrder: ProjectWorkOrder): ChangeoutScope => {
+    const replacementVisit = (workOrder as any).replacementVisit ??
+      (workOrder as any).replacement_visit ??
+      replacementVisitDto(workOrder as any);
+    if (replacementVisit?.equipment) return replacementVisit.equipment;
     const hasSystem = !!(workOrder as any).old_system_id || !!workOrder.oldSystemId;
     const hasModule = !!(workOrder as any).old_module_id || !!workOrder.oldModuleId;
     

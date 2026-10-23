@@ -8,6 +8,7 @@ import { insertAuditEvent } from "./auditService";
 import { permissionKeys, type User } from "../shared/schema";
 import { inventoryDispatchScope } from "./inventoryDispatch";
 import { mobileSubmissionContext } from "./mobileSubmissionContext";
+import { validateReplacementCompletion } from "./replacementService";
 
 export async function assertInventoryDispatchAllowed(client: Pick<PoolClient, "query">, projectId: number, row: any, user: User) {
   if (await storage.isAdminUser(user) || !user.subroleId ||
@@ -43,6 +44,7 @@ export async function canStart(user: User) {
     await storage.hasPermission(user, permissionKeys.WORK_ORDERS_METER_CHANGEOUT);
 }
 export async function assertClaimAllowed(client: PoolClient, row: any, userId: string, projectId?: number) {
+  if (row.replacement_cancelled_at) throw new ChangeoutError("This replacement visit was cancelled.", 409, "REPLACEMENT_NOT_ELIGIBLE");
   const user = await storage.getUser(userId);
   if (!user || !await canStart(user)) throw new ChangeoutError("Changeout permission is required.", 403);
   const status = await canonicalStatus(client, row.status);
@@ -89,6 +91,7 @@ export async function acceptCompletion(client: PoolClient, schema: string, prior
   const admin = await storage.isAdminUser(actor);
   if (!admin && prior.assigned_user_id !== actor.id)
     throw new ChangeoutError("Claim this work order before submitting. It may have been reassigned.", 403);
+  await validateReplacementCompletion(client, schema, prior, next, updates, actor, project.id);
   if (!admin) {
     const vehicleWork = await assertInventoryDispatchAllowed(client, project.id, prior, actor);
     if (vehicleWork) {
@@ -140,6 +143,7 @@ export async function acceptCompletion(client: PoolClient, schema: string, prior
     }
   }
   await client.query("DELETE FROM public.changeout_drafts WHERE project_id=$1 AND work_order_id=$2", [project.id, next.id]);
+  if (prior.replacement_root_id) await client.query(`UPDATE "${schema}".work_orders SET replacement_active=false WHERE id=$1`, [next.id]);
   await client.query("INSERT INTO public.changeout_events(project_id,work_order_id,type,actor_id,operation_id) VALUES($1,$2,'workorder_updated',$3,$4) ON CONFLICT DO NOTHING",
     [project.id, next.id, actor.id, context.operationId]);
   await insertAuditEvent(client, { action: "workOrder.completionAccepted", entityType: "work_orders",

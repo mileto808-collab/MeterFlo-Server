@@ -355,6 +355,7 @@ export default function ProjectWorkOrders() {
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const historyPushedRef = useRef(false);
+  const selectionFetchRef = useRef<number | null>(null);
 
   // Define system and module column keys for filtering (used throughout component)
   const systemColumnKeys = ["oldSystemId", "oldSystemReading", "oldSystemType", "newSystemId", "newSystemReading", "newSystemType"];
@@ -731,6 +732,7 @@ export default function ProjectWorkOrders() {
     }
     setEditingWorkOrder(null);
     setCameFromSearch(false);
+    selectionFetchRef.current = null;
   }, [projectId]);
 
   useEffect(() => {
@@ -752,29 +754,51 @@ export default function ProjectWorkOrders() {
     return () => window.removeEventListener("meterflo:navigate", navigate);
   }, [projectId]);
 
-  // Handle ?edit=workOrderId&from=search query parameters OR history.state to auto-open a work order
-  // This handles both deep links from search results AND browser back from Manage Attachments page
+  // Resolve direct work-order selections from either the ordinary list or the authorized detail endpoint.
   useEffect(() => {
-    // Skip if already editing a work order or no work orders loaded yet
-    if (editingWorkOrder || workOrders.length === 0) {
-      return;
-    }
+    if (editingWorkOrder || !projectId || workOrdersLoading) return;
+    const loadHistoricalSelection = async (id: number, fromHistoryState = false) => {
+      if (selectionFetchRef.current === id) return;
+      selectionFetchRef.current = id;
+      try {
+        const response = await fetch(`/api/projects/${projectId}/work-orders/${id}`, { credentials: "include" });
+        if (!response.ok) throw new Error("This work order is not available to your account.");
+        const selected = snakeToCamelCase(await response.json()) as ProjectWorkOrder;
+        if (fromHistoryState) historyPushedRef.current = true;
+        else {
+          historyPushedRef.current = false;
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+        setEditingWorkOrder(selected);
+        setEditingWorkOrderVersion(version => version + 1);
+      } catch (error) {
+        selectionFetchRef.current = null;
+        if (fromHistoryState) {
+          historyPushedRef.current = false;
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+        toast({ title: "Unable to open work order", description: error instanceof Error ? error.message : "Please retry.", variant: "destructive" });
+      }
+    };
 
     // First check query parameters (priority for deep links)
     const searchParams = new URLSearchParams(window.location.search);
     const editId = searchParams.get("edit");
     const fromSearch = searchParams.get("from") === "search";
     if (editId) {
-      const workOrderToEdit = workOrders.find((wo) => wo.id === parseInt(editId));
+      const id = parseInt(editId);
+      const workOrderToEdit = workOrders.find((wo) => wo.id === id);
       if (workOrderToEdit) {
         setEditingWorkOrder(workOrderToEdit);
         if (fromSearch) {
           setCameFromSearch(true);
         }
-        // Clear the query parameter from URL without refreshing
+        historyPushedRef.current = false;
         window.history.replaceState({}, "", window.location.pathname);
-        return;
+      } else if (Number.isInteger(id)) {
+        void loadHistoricalSelection(id);
       }
+      return;
     }
 
     // Then check history.state (for browser back from Manage Attachments)
@@ -786,11 +810,12 @@ export default function ProjectWorkOrders() {
         historyPushedRef.current = true;
         setEditingWorkOrder(workOrderToRestore);
       } else {
-        // Work order not found - clear the stale history state
-        window.history.replaceState({}, "", window.location.pathname);
+        const id = Number(historyState.workOrderId);
+        if (Number.isInteger(id) && id > 0) void loadHistoricalSelection(id, true);
+        else window.history.replaceState({}, "", window.location.pathname);
       }
     }
-  }, [workOrders, editingWorkOrder]);
+  }, [workOrders, editingWorkOrder, projectId, workOrdersLoading, toast]);
 
   // Handle browser back button when work order detail is open
   useEffect(() => {
@@ -811,6 +836,7 @@ export default function ProjectWorkOrders() {
         setEditingWorkOrder(null);
         setCameFromSearch(false);
         setEditingWorkOrderVersion(0);
+        selectionFetchRef.current = null;
       }
     };
 
@@ -837,6 +863,7 @@ export default function ProjectWorkOrders() {
       setEditingWorkOrder(null);
       setCameFromSearch(false);
       setEditingWorkOrderVersion(0);
+      selectionFetchRef.current = null;
     }
     // Reset auto-launch flag when closing
     setAutoLaunchSystemChangeout(false);
@@ -2773,6 +2800,18 @@ export default function ProjectWorkOrders() {
             const updated = snakeToCamelCase(reopened) as ProjectWorkOrder;
             setEditingWorkOrder(updated);
             setEditingWorkOrderVersion(version => version + 1);
+          }}
+          onOpenWorkOrder={async (workOrderId) => {
+            try {
+              const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}`, { credentials: "include" });
+              if (!response.ok) throw new Error("This work order is not available to your account.");
+              const selected = snakeToCamelCase(await response.json()) as ProjectWorkOrder;
+              window.history.replaceState({ ...window.history.state, workOrderDetail: true, workOrderId }, "");
+              setEditingWorkOrder(selected);
+              setEditingWorkOrderVersion(version => version + 1);
+            } catch (error) {
+              toast({ title: "Unable to open replacement work order", description: error instanceof Error ? error.message : "Please retry.", variant: "destructive" });
+            }
           }}
           canSystemChangeout={hasPermission('workOrders.meterChangeout')}
           inventoryDispatch={(editingWorkOrder as any).inventoryDispatch ?? (editingWorkOrder as any).inventory_dispatch}

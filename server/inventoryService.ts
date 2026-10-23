@@ -26,6 +26,7 @@ import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } 
 import { guardPendingInstallationUse } from "./changeoutService";
 import { prepareFulfillment } from "./inventoryFulfillment";
 import { reconcileDispatchRequirements } from "../shared/inventory-dispatch-impact";
+import { assertReplacementChange } from "./replacementService";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -338,6 +339,7 @@ export async function postInventory(projectId: number, command: InventoryCommand
   } finally { client.release(); }
 }
 export async function inventoryWorkOrderChange(client: PoolClient, schema: string, prior: any, next: any, usage?: unknown, importedItems?: unknown, ordinaryImport = false, deferred = false) {
+  await assertReplacementChange(client, schema, prior, next);
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled,wizard_mode,changeout_equipment_type,reading_equipment_type FROM public.projects WHERE database_name=$1", [schema]);
   if (!p?.inventory_enabled) {
     if (!ordinaryImport && importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
