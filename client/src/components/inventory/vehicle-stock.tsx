@@ -189,7 +189,7 @@ export function VehicleStockReview({ projectId }: { projectId?: number }) {
   };
   const resetSearch = () => { setSearch(""); setOffset(0); };
 
-  return <section className="mx-auto flex min-h-0 min-w-0 w-full max-w-5xl flex-1 flex-col overflow-y-auto" data-testid="vehicle-stock-review">
+  return <section className="mx-auto min-w-0 w-full max-w-5xl shrink-0" data-testid="vehicle-stock-review">
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b pb-4 sm:mb-6 sm:pb-6">
       <div className="min-w-0">
         <p className="mb-1 text-xs font-semibold uppercase tracking-[0.15em] text-primary">Read-only · system expected</p>

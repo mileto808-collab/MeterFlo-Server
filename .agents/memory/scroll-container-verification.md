@@ -76,3 +76,14 @@ scrollbar widths as viewport changes can also restart measurement/loading loops.
 **How to apply:** Distinguish real layout geometry changes from scrollbar
 appearance. Verify idle request stability and exact first-page record identities
 after navigating through mixed-height later pages, not just an initial screenshot.
+
+Let one bounded ancestor own scrolling, and keep its record content from
+shrinking to fit.
+
+**Why:** An overflow-hidden card inside a flex-column scroll surface can shrink
+and clip its records without creating any usable scroll range. The same content
+can still print correctly, so printing is not proof of screen accessibility.
+
+**How to apply:** Keep full-height review content in normal flow or explicitly
+non-shrinking. Verify real wheel scrolling, expanded details and bottom controls
+in both page and dialog hosts, including short desktop and touch viewports.

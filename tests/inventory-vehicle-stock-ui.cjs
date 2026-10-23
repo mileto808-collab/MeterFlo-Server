@@ -62,8 +62,34 @@ const { execFileSync } = require("node:child_process");
     const afterReads = await api(admin, "get", `/api/projects/${fixture.projectId}/inventory`);
     assert.equal(afterReads.state.revision, before.state.revision, "reviews and reports must never change inventory");
 
-    const page = await tech.context.newPage();
+    let page = await tech.context.newPage();
     const errors = [];
+    await fs.mkdir("generated-artifacts/vehicle-stock", { recursive: true });
+    const checkScroll = async (label) => {
+      const review = page.getByTestId("vehicle-stock-review");
+      const meterRow = page.getByTestId("vehicle-stock-item-return-meter");
+      const toggle = meterRow.getByRole("button").first();
+      if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+      await expect(review.locator("code").getByText("RETURN-B", { exact: true })).toBeVisible();
+      const scroller = review.locator("xpath=..");
+      assert.ok(await scroller.evaluate(element => element.scrollHeight > element.clientHeight + 1),
+        `${label}: the full stock content must create a scrollable area`);
+      await scroller.evaluate(element => { element.scrollTop = 0; });
+      const bounds = await scroller.boundingBox();
+      await page.mouse.move(bounds.x + bounds.width / 2, Math.max(bounds.y, 0) + Math.min(bounds.height / 2, 100));
+      await page.mouse.wheel(0, 2000);
+      await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+      const footer = review.getByText(/Vehicle stock is the system-expected balance/);
+      await expect(footer).toBeInViewport({ ratio: 1 });
+      assert.ok(await review.getByText(/Showing .* of/).evaluate(element => {
+        const card = element.parentElement.parentElement.parentElement;
+        const rect = element.getBoundingClientRect(), container = card.getBoundingClientRect();
+        return rect.bottom <= container.bottom + 1 && card.scrollHeight <= card.clientHeight + 1;
+      }), `${label}: stock pagination must not be clipped inside the card`);
+      assert.ok(await review.evaluate(element => element.scrollWidth <= element.clientWidth + 1),
+        `${label}: stock content must fit its actual container`);
+      await page.screenshot({ path: `generated-artifacts/vehicle-stock/${label}.jpg`, animations: "disabled" });
+    };
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await page.getByTestId("button-vehicle-stock").click();
@@ -90,7 +116,23 @@ const { execFileSync } = require("node:child_process");
       lines: [{ itemId: "return-part", quantity: 6, serials: [] }],
       reason: "Owned fixture checks live vehicle stock refresh" });
     await expect(page.getByTestId("vehicle-stock-item-return-part")).toContainText("6 each", { timeout: 15000 });
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await checkScroll("desktop-popup");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("button-start-inventory-desktop").click();
+    await page.getByTestId("inventory-task-vehicle-stock").click();
+    await expect(page.getByTestId("vehicle-stock-item-return-meter")).toBeVisible();
+    await checkScroll("desktop-page");
+    const phone = await browser.newContext({ baseURL, storageState: await tech.context.storageState(),
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    page = await phone.newPage();
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto(`/projects/${fixture.projectId}/inventory`);
+    await page.getByRole("button", { name: "Back to inventory tasks", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Inventory", exact: true }).click();
+    await page.getByTestId("button-vehicle-stock").click();
+    await expect(page.getByTestId("vehicle-stock-item-return-meter")).toBeVisible();
+    await checkScroll("phone-popup");
     await expect(page.getByRole("dialog")).toBeInViewport({ ratio: 1 });
     assert.ok(await page.getByTestId("vehicle-stock-review").evaluate(element => element.scrollWidth <= element.clientWidth + 1),
       "phone content must fit its own scroll container, not just the document");
@@ -103,6 +145,9 @@ const { execFileSync } = require("node:child_process");
     await expect(page.getByTestId("vehicle-stock-item-return-meter")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("vehicle-stock-item-return-meter")).toBeVisible();
+    await checkScroll("phone-page");
+    await page.setViewportSize({ width: 844, height: 390 });
+    await checkScroll("phone-landscape-page");
     await expect(page.getByTestId("inventory-task-fulfillment")).toHaveCount(0);
     await command("warehouse", { ...warehouseData, userIds: [] });
     await expect(page.getByText("No accessible vehicles", { exact: true })).toBeVisible();
@@ -110,7 +155,7 @@ const { execFileSync } = require("node:child_process");
     await expect(page.getByTestId("vehicle-stock-item-return-meter")).toHaveCount(0);
     await api(tech.context, "get", `${endpoint}?vehicle=return-van`, undefined, 403);
     assert.deepEqual(errors, []);
-    await tech.context.close(); await manager.context.close();
+    await phone.close(); await tech.context.close(); await manager.context.close();
     console.log("Vehicle stock access, manager reports, serial search, read-only snapshots, live refresh, phone layout and task/refresh recovery passed.");
   } finally { await admin.close(); await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
