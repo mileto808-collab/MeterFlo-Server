@@ -45,11 +45,12 @@ import { registerVehicleReturnRoutes } from "./inventoryVehicleReturns";
 import { workOrderInventoryCapabilities } from "../shared/work-order-inventory-capabilities";
 import { canViewInventoryPricing, inventoryCatalogItems } from "../shared/inventory-catalog-projection";
 import { vehicleTransferOptions } from "./inventoryVehicleTransfer";
+import { registerPlanRecoveryRoutes, planRecoveryCapability } from "./inventoryPlanRecovery";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
   // transfers. Posting still requires the acting warehouse's access grant.
-  return { ...state, operations: {}, fulfillmentDrafts: [], vehicleTransferDrafts: [], vehicleReturnDrafts: [], shipmentDrafts: (state.shipmentDrafts ?? []).filter(draft => {
+  return { ...state, operations: {}, planOperationOutcomes: [], fulfillmentDrafts: [], vehicleTransferDrafts: [], vehicleReturnDrafts: [], shipmentDrafts: (state.shipmentDrafts ?? []).filter(draft => {
     if (!admin && draft.ownerId !== actor) return false;
     if (permissions && !permissions.includes(draft.stage === "dispatch" ? inventoryPermissions.transfer : inventoryPermissions.receive)) return false;
     const warehouse = state.warehouses.find(w => w.id === draftWarehouse(state, draft.orderId, draft.stage));
@@ -62,6 +63,7 @@ export function inventoryVisibleState(state: InventoryState, actor: string, admi
   }) };
 }
 export function registerInventoryRoutes(app: Express) {
+  registerPlanRecoveryRoutes(app);
   registerInventoryVehicleStockRoutes(app);
   registerInventoryPickupRoutes(app);
   const base = "/api/projects/:projectId/inventory";
@@ -481,6 +483,7 @@ export function registerInventoryRoutes(app: Express) {
     const referencedWarehouses = new Set([...(allocation?.lines ?? []), ...(allocation?.used ?? []),
       ...(allocation?.dispositions ?? [])].map(line => line.warehouseId));
     return { enabled: !!c.project.inventoryEnabled, canSelect, canManageInventory: c.canViewInventory, capabilities,
+      planRecovery: planRecoveryCapability,
       allocation, inventoryDispatch: (visible[0] as any).inventoryDispatch,
       editable: workOrderEditable, workOrderStatus: wo.status, timezone: c.project.timezone ?? "UTC",
       plan: s.workPlans?.find(plan => plan.workOrderId === id) ?? { workOrderId: id, revision: 0, lines: [] },

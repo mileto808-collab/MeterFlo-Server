@@ -153,6 +153,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     assert(countPayloadFits(command.data), "Count data exceeds the 8 MiB limit; no changes were posted.");
   const fingerprint = canonicalInventoryJson({ action: command.action,
     data: isShipmentDraftAction(command.action) ? draftFingerprintCommand(command) : command.data, actor });
+  assert(!original.planOperationOutcomes?.some(outcome => outcome.id === command.operationId && outcome.status === "rejected"),
+    "This operation was conclusively fenced without applying it. Review current data and use a new operation identifier.");
   if (original.operations[command.operationId]) {
     const sharedHandover = command.action === "vehicleTransfer" && command.data.draftId
       ? original.vehicleTransferDrafts?.find(draft => draft.id === command.data.draftId && draft.status === "posted")
@@ -774,6 +776,13 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
         outcome: rule.outcome, reason, ruleId: rule.id, ruleRevision: rule.revision, ruleName: rule.name });
       receipt(r.id, r.warehouseId, input, reason);
     }
+  }
+  if (command.action === "plan") {
+    const acceptedPlan = s.workPlans!.find(plan => plan.workOrderId === command.data.workOrderId)!;
+    (s.planOperationOutcomes ??= []).push({ id: command.operationId, actor,
+      workOrderId: acceptedPlan.workOrderId, fingerprint, status: "accepted",
+      acceptedRevision: acceptedPlan.revision,
+      occurredAt: now });
   }
   s.operations[command.operationId] = fingerprint; s.revision++;
   return { state: inventoryCategoryLabels(s), replay: false };

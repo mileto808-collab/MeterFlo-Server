@@ -168,3 +168,17 @@ mtime_ms = 1792767092159
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/fe478a13-be58-4b6e-8842-0ca3664b12e1/6402236d-79cf-497c-bd5f-7e9af70af4ac"
 storage_version_token = "1792767105203359"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "-ZdJ1q8ylzMHMV_tZ1Q26"
+uri = "file://review-deliverables/meterflo-mobile/INVENTORY_PLAN_RECOVERY_CONTRACT.md"
+type = "text"
+title = "Mobile inventory-plan recovery contract"
+description = "Upload this to the mobile agent. Includes implemented endpoints, authorization, exact request/response types, fingerprint fixture, durable acceptance and rejection-fence rules, compatibility, and mobile retry requirements."
+logical_id = "5cfda1f4-fe36-4bfe-bb75-b9a6c436c7f2"
+content_hash = "sha256:5c3feeca09a8ebfeb514d9a5e553d5a6fefd4541b05a46eb0c962831bed6cb31"
+size = 14715
+mtime_ms = 1792769250299
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/5cfda1f4-fe36-4bfe-bb75-b9a6c436c7f2/8dab3cd3-4f8e-4e14-a022-1a113916fd6a"
+storage_version_token = "1792769507163869"
+content_type = "text/markdown"

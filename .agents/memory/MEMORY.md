@@ -79,3 +79,4 @@
 - [Inventory step guidance](inventory-step-guidance.md) — validate before advancing; start steps at top, highlight required inputs without autofocus or mobile keyboard activation.
 - [Staged stock corrections](inventory-staging-corrections.md) — distinguish capture errors, physical exchanges and missing stock; preserve custody and never double-credit returns.
 - [Shared inventory drafts](shared-inventory-drafts.md) — meaningful captures belong to authorized project users; uncertain posting is not an editable draft or permission to move stock twice.
+- [Plan save recovery](inventory-plan-recovery.md) — historical acceptance is separate from edit authority; missing evidence stays unresolved unless transactionally fenced.

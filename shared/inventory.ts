@@ -123,6 +123,8 @@ export type EquipmentReturn = Disposition & { id: string; workOrderId: number; s
   history?: Array<{ operationId: string; actor: string; occurredAt: string; outcome: string; reason: string; ruleId?: string; ruleRevision?: number; ruleName?: string;
     recipient?: string; reference?: string; previousStatus?: string; physicallyPresent?: boolean; handoffId?: string }> };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  planOperationOutcomes?: { id: string; actor: string; workOrderId: number; fingerprint: string;
+    status: "accepted" | "rejected"; acceptedRevision?: number; occurredAt: string }[];
   vehicleReturnDrafts?: import("./inventory-vehicle-returns").SavedVehicleReturnDraft[];
   fulfillmentBatches?: import("./inventory-fulfillment").FulfillmentBatch[];
   customerHandoffs?: import("./inventory-customer-handoffs").CustomerHandoff[];
