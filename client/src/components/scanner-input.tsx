@@ -23,6 +23,8 @@ interface ScannerInputProps {
   placeholder?: string;
   disabled?: boolean;
   openCameraRequest?: number;
+  /** Inventory workflows must not summon the mobile keyboard automatically. */
+  preventAutoFocus?: boolean;
   "data-testid"?: string;
 }
 
@@ -34,6 +36,7 @@ export function ScannerInput({
   placeholder = "Enter ID...",
   disabled = false,
   openCameraRequest,
+  preventAutoFocus = false,
   "data-testid": testId,
 }: ScannerInputProps) {
   const [scanMode, setScanMode] = useState<ScanMode>("manual");
@@ -334,12 +337,12 @@ export function ScannerInput({
         scannerRef.current = null;
       }
     } else {
-      if (inputRef.current) {
+      if (inputRef.current && !preventAutoFocus) {
         inputRef.current.focus();
         inputRef.current.select();
       }
     }
-  }, [isMobile, handleScanResult, checkCameraCapabilities]);
+  }, [isMobile, handleScanResult, checkCameraCapabilities, preventAutoFocus]);
 
   const handleModeSelect = (mode: ScanMode) => {
     setScanMode(mode);
@@ -350,7 +353,7 @@ export function ScannerInput({
     } else if (mode === "barcode") {
       startBarcodeScanning();
     } else if (mode === "manual") {
-      if (inputRef.current) {
+      if (inputRef.current && !preventAutoFocus) {
         inputRef.current.focus();
       }
     }

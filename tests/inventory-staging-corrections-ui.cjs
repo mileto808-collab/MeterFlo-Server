@@ -26,7 +26,7 @@ const assert = require("node:assert/strict");
       return { user, credentials, role };
     };
     const worker = await makeUser("correction", ["workOrders.view", "inventory.view", "inventory.maintain", "inventory.assign",
-      "inventory.transfer", "inventory.receive", "inventory.purchase", "nav.projects"]);
+      "inventory.transfer", "inventory.receive", "inventory.purchase", "inventory.plan", "nav.projects"]);
     const installer = await makeUser("pickupreport", ["workOrders.view", "nav.projects"]);
     await request(warehouse, "POST", "/api/auth/local/login", worker.credentials);
     await request(tech, "POST", "/api/auth/local/login", installer.credentials);
@@ -106,7 +106,9 @@ const assert = require("node:assert/strict");
     await expect.poll(async () => (await notices()).pickups.find(row => row.batchId === id)?.status).toBe("review");
     const page = await warehouse.newPage();
     const launchCorrections = async () => {
-      await page.getByRole("button", { name: "Start Inventory", exact: true }).click();
+      const start = page.getByRole("button", { name: "Start Inventory", exact: true });
+      await expect(start.or(page.getByRole("button", { name: /Fulfill \/ Stage Work Orders/ }))).toBeVisible();
+      if (await start.isVisible()) await start.click();
       await page.getByRole("button", { name: /Fulfill \/ Stage Work Orders/ }).click();
       await page.getByTestId("fulfillment-open-corrections-chooser").click();
     };
@@ -122,7 +124,7 @@ const assert = require("node:assert/strict");
     await serials.type("COR-004");
     await serials.press("Enter");
     assert.equal((await serials.inputValue()).split(/\n/).filter(token => token === "COR-004").length, 1);
-    await page.getByRole("button", { name: "Save & leave", exact: true }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.reload();
     await launchCorrections();
     await expect(serials).toHaveValue("COR-002\nCOR-004\n");
@@ -134,7 +136,7 @@ const assert = require("node:assert/strict");
     await page.getByTestId("staging-correction-ready").check();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    const dialog = page.getByRole("dialog").first();
+    const dialog = page.getByTestId("inventory-fulfillment-page");
     await fs.mkdir("generated-artifacts/inventory-staging-corrections", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/inventory-staging-corrections/review-phone.png" });
     await expect.poll(async () => {

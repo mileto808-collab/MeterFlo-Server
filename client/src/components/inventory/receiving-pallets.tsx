@@ -26,7 +26,7 @@ export function ReceivingPallets({ entry, viewOnly, onPatch, viewPalletId, onVie
     {!viewOnly && <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_100px_auto] sm:items-end">
       <div className="min-w-0 space-y-1"><Label htmlFor={`${prefix}-label`} className="text-xs">New pallet ID / label</Label>
         <Input id={`${prefix}-label`} value={label} maxLength={100} placeholder="Scan pallet barcode or enter label"
-          onChange={event => setLabel(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); document.getElementById(`${prefix}-expected`)?.focus(); } }} /></div>
+          onChange={event => setLabel(event.target.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></div>
       <div className="space-y-1"><Label htmlFor={`${prefix}-expected`} className="text-xs">Expected serials</Label>
         <Input id={`${prefix}-expected`} type="number" min={1} max={10000} step={1} value={expected} onChange={event => setExpected(event.target.value)} /></div>
       <Button type="button" size="sm" variant="outline" onClick={() => {

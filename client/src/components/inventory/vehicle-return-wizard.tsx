@@ -1,5 +1,6 @@
 import { useInventoryHistory } from "@/hooks/use-inventory-history";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useWizardStepFocus } from "@/hooks/useWizardStepFocus";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Loader2, Truck } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -59,6 +60,7 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
   const captureRef = useRef(capture);
   captureRef.current = capture;
   const contentRef = useRef<HTMLElement | null>(null);
+  const pageRef = useRef<HTMLElement | null>(null);
   const frozenCommandRef = useRef<SavedVehicleReturnDraft["command"]>(undefined);
   const restoredForKeyRef = useRef("");
   const localKey = userId ? storageKey(projectId, userId, kind) : "";
@@ -271,8 +273,9 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
     return { itemId, item, quantityText, quantity, serials: uniqueTokens(capture.scans[itemId] ?? "") };
   }), [capture.itemIds, capture.quantities, capture.scans, itemById]);
   const itemIssues = selectedLines.flatMap(line => {
+    if (!line.quantityText.trim()) return [`Enter a physical quantity for ${line.item?.name ?? line.itemId}; enter 0 explicitly if none is present.`];
     if (!line.item) return [`A selected item is no longer available.`];
-    if (!Number.isSafeInteger(line.quantity) || line.quantity < 0 || (kind === "stock" && line.quantity < 1))
+    if (!Number.isSafeInteger(line.quantity) || line.quantity < 0 || line.quantity > 1000000 || (kind === "stock" && line.quantity < 1))
       return [`Enter a whole physical quantity for ${line.item.name}.`];
     if (line.item.tracking === "serialized") {
       if (!/[\r\n,;\t]\s*$/.test(capture.scans[line.itemId] ?? "") && (capture.scans[line.itemId] ?? "").trim())
@@ -322,8 +325,10 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
   const setupValid = !!capture.sourceId && !!sourceVehicle &&
     (kind !== "count" || !!draft && draft.capture.sourceId === capture.sourceId) &&
     (kind === "count" || !!capture.destinationId && destinations.some(value => value.id === capture.destinationId));
-  const selectionValid = kind === "equipment" ? capture.returnIds.length > 0 : capture.itemIds.length > 0;
-  const reasonValid = capture.reason.trim().length >= 10;
+  const selectionValid = kind === "equipment"
+    ? capture.returnIds.length > 0 && selectedEquipment.length === capture.returnIds.length
+    : capture.itemIds.length > 0 && capture.itemIds.every(id => items.some(item => item.id === id));
+  const reasonValid = capture.reason.trim().length >= 10 && capture.reason.trim().length <= 1000;
   const canReview = setupValid && selectionValid && !allIssues.length && reasonValid &&
     !!data && !workflowQuery.isFetching && !workflowQuery.isError && !syncError && !conflictDraft && !syncing &&
     JSON.stringify(capture) === lastSavedSignature.current &&
@@ -529,19 +534,15 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
   ];
   const stepIndex = steps.findIndex(value => value.id === step);
   const pageTitle = kind === "equipment" ? "Return removed equipment" : kind === "count" ? "Verify vehicle inventory" : "Return usable vehicle stock";
-  useLayoutEffect(() => {
-    if (!restoreReadyForKey || step === "receipt") return;
-    const target = contentRef.current?.querySelector<HTMLElement>("[data-return-focus]");
-    if (!target) return;
-    const bounds = target.getBoundingClientRect();
-    const outside = bounds.top < 148 || bounds.bottom > window.innerHeight - 104;
-    if (outside) target.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    if (outside) target.focus({ preventScroll: true });
-  }, [step, restoreReadyForKey]);
+  useWizardStepFocus({
+    open: canUse, ready: restoreReadyForKey, stepKey: `${kind}:${step}`,
+    rootRef: contentRef, bodyRef: pageRef,
+    chooseTarget: root => root.querySelector<HTMLElement>('[data-wizard-needs-input="true"]'),
+  });
 
   if (!canUse) return <div className="mx-auto w-full max-w-4xl p-5"><Alert><AlertTitle>Permission required</AlertTitle><AlertDescription>Your inventory permissions no longer allow this workflow.</AlertDescription></Alert><Button className="mt-4" onClick={onClose}>Back to tasks</Button></div>;
 
-  return <section className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-y-auto" data-testid={`vehicle-return-${kind}`}>
+  return <section ref={pageRef} className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-y-auto" data-testid={`vehicle-return-${kind}`}>
     <header className="sticky top-0 z-20 border-b bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -629,12 +630,20 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
             setPhysicallyConfirmed(false);
             setStep(step === "review" ? "capture" : step === "capture" ? "select" : "setup");
           }} disabled={busy}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
-          {step === "setup" && <Button type="button" onClick={() => setStep("select")} disabled={!setupValid || !data || !!workflowQuery.isFetching}>Continue<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-          {step === "select" && <Button type="button" onClick={() => setStep("capture")} disabled={!selectionValid}>Continue<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-          {step === "capture" && <Button type="button" onClick={() => {
-            if (allIssues.length || !reasonValid) { setMessage([...allIssues, ...(!reasonValid ? ["Enter a reason of at least 10 characters."] : [])].join(" ")); return; }
-            setMessage(""); setStep("review");
-          }} disabled={!selectionValid}>Review operation<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {step === "setup" && <Button type="button" onClick={() => { if (setupValid && data && !workflowQuery.isFetching && !workflowQuery.isError) setStep("select"); }} disabled={!setupValid || !data || workflowQuery.isFetching || workflowQuery.isError || busy}>Continue<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {step === "select" && <Button type="button" onClick={() => { if (setupValid && selectionValid && !workflowQuery.isFetching && !workflowQuery.isError) setStep("capture"); }} disabled={!setupValid || !selectionValid || workflowQuery.isFetching || workflowQuery.isError || busy}>Continue<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {step === "capture" && <Button type="button" onClick={async () => {
+            if (!canReview) return;
+            setBusy(true);
+            const signature = JSON.stringify(capture);
+            try {
+              await freshContext();
+              if (JSON.stringify(captureRef.current) !== signature) return;
+              setMessage(""); setStep("review");
+            } catch (error) {
+              setMessage(error instanceof Error ? error.message : "Refresh and complete the physical checks before continuing.");
+            } finally { setBusy(false); }
+          }} disabled={!canReview || busy}>Review operation<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {step === "review" && (prepared || draft?.status === "submitting" ? <>
             <Button type="button" variant="outline" onClick={() => void unlock()} disabled={busy}>Resolve / unlock</Button>
             <Button type="button" onClick={() => void post()} disabled={busy || !frozenCommandRef.current && !draft?.command}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Retry exact operation</Button>

@@ -75,5 +75,6 @@
 - [Clean project copies](inventory-project-copy.md) — copy inventory setup only: Locations, Items, Categories and Vendors; no stock, operational history or location user assignments.
 - [Receiving pallet scope](receiving-pallet-scope.md) — optional receiving scan groups stay with receipt history; trusted serial-file import does not require pallet setup.
 - [Scanner commit boundary](scanner-commit-boundary.md) — commit on scan delimiters or paste; blur-time rewriting can disrupt visual acceptance and partial tokens need preservation.
+- [Inventory step guidance](inventory-step-guidance.md) — validate before advancing; start steps at top, highlight required inputs without autofocus or mobile keyboard activation.
 - [Staged stock corrections](inventory-staging-corrections.md) — distinguish capture errors, physical exchanges and missing stock; preserve custody and never double-credit returns.
 - [Shared inventory drafts](shared-inventory-drafts.md) — meaningful captures belong to authorized project users; uncertain posting is not an editable draft or permission to move stock twice.

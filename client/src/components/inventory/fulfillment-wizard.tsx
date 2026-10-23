@@ -1,6 +1,7 @@
 import { useInventoryHistory } from "@/hooks/use-inventory-history";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWizardStepFocus } from "@/hooks/useWizardStepFocus";
+import { movementCaptureComplete } from "@/lib/inventory-wizard-validation";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { hasMeaningfulFulfillmentWork, reconcileFulfillmentDraft } from "@/lib/fulfillment-draft-reconciliation";
 import { FulfillmentSavedInputs } from "./fulfillment-saved-inputs";
@@ -1203,14 +1204,14 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const showMoveForm = draft.uiSubstep === "capture" && (draft.step !== "stage" || !stagingComplete || hasUnrecordedMove);
   const hasProposedMovement = batchDemand.some(row => Number(draft.quantities[quantityKey(draft.step, row.itemId)] ?? 0) > 0);
   const canReviewMovement = hasProposedMovement && !batchSetupBlocked && !serialCheckBlocked && batchDemand.every(row => {
-    const quantity = Number(draft.quantities[quantityKey(draft.step, row.itemId)] ?? 0);
-    if (!quantity) return true;
     const remaining = draft.step === "stage" ? stageRemaining(row) : vehicleRemaining(row);
     const source = sourceAvailability.find(balance => balance.itemId === row.itemId);
     const limit = draft.step === "stage" ? Math.min(remaining, source?.available ?? 0) : remaining;
     const serials = splitSerials(draft.serialText[quantityKey(draft.step, row.itemId)] ?? "");
-    return Number.isInteger(quantity) && quantity >= 1 && quantity <= limit &&
-      (row.item?.tracking !== "serialized" || serials.length === quantity && unique(serials));
+    return movementCaptureComplete({
+      quantityText: draft.quantities[quantityKey(draft.step, row.itemId)] ?? "",
+      limit, serialized: row.item?.tracking === "serialized", serials,
+    });
   });
   const selectionConstraintError = draft.mode === "crew"
     ? (selectedOrders.some(order => !order.group) || new Set(selectedOrders.map(order => order.group)).size > 1
@@ -1285,11 +1286,15 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   };
   const canCreate = canPost && !!draft.name.trim() && selectedOrders.length > 0 && selectedOrders.length === draft.selectedIds.length &&
     selectedOrders.every(order => order.eligible && !order.missing.length && order.lines.length > 0) &&
-    !selectionConstraintError && !!draft.sourceId && !!draft.stagingId && !!draft.vehicleId &&
+    !selectionConstraintError && sourceLocations.some(location => location.id === draft.sourceId) &&
+    stagingLocations.some(location => location.id === draft.stagingId) && vehicles.some(location => location.id === draft.vehicleId) &&
     new Set([draft.sourceId, draft.stagingId, draft.vehicleId]).size === 3 && !pendingLock;
   // Navigating to saved setup does not create a batch or reserve stock.
   // Keep stale selections available to inspect without relaxing creation checks.
-  const canContinueOrders = canPost && draft.selectedIds.length > 0 && !pendingLock && !createLock;
+  const canContinueOrders = canPost && draft.selectedIds.length > 0 &&
+    selectedOrders.length === draft.selectedIds.length &&
+    selectedOrders.every(order => order.eligible && !order.missing.length && order.lines.length > 0) &&
+    !selectionConstraintError && !pendingLock && !createLock;
   const unavailableSelectedCount = draft.selectedIds.length -
     selectedOrders.filter(order => order.eligible && !order.missing.length && order.lines.length > 0).length;
 
@@ -1745,7 +1750,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   useWizardStepFocus({
     open,
     ready: storageReady && checkedOnEntry && !inventory.isLoading && !fulfillment.isLoading && !busy && !confirmHandoff,
-    stepKey: `${ticketArrival}:${showCorrections}:${showHistory}:${showBlocked}:${showResumeList}:${showStart ? `start:${hasSavedProgress}:${savedOutcome.kind}` : `${draft.mode}:${draft.step}:${draft.uiSubstep}:${draft.batchId}:${activeBatch?.status ?? ""}:${stagingComplete}:${reassignmentBatchId}`}:${draft.pending?.operationId ?? ""}:${draft.createAttempt?.operationId ?? ""}:${error}`,
+    stepKey: `${ticketArrival}:${showCorrections}:${showHistory}:${showBlocked}:${showResumeList}:${showStart ? "start" : `${draft.mode}:${draft.step}:${draft.uiSubstep}:${draft.batchId}:${activeBatch?.status ?? ""}:${reassignmentBatchId}`}`,
     rootRef: wizardRef,
     bodyRef: stepBodyRef,
     chooseTarget: root => {
@@ -1778,7 +1783,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
         : find("#fulfillment-search");
       if (activeBatch && activeBatch.status !== "active") return find('[data-wizard-complete]');
       if (draft.uiSubstep === "pick" || draft.uiSubstep === "verify") return find('[data-wizard-ticket-identity]', "#fulfillment-staging-complete");
-      if (draft.uiSubstep === "confirm") return find("#fulfillment-reason");
+      if (draft.uiSubstep === "confirm") return find(draft.reason.trim().length < 10 ? "#fulfillment-reason" : !draft.physicallyConfirmed ? "#fulfillment-physical-confirmation" : '[data-wizard-confirm]');
       if (draft.uiSubstep === "movementReview") return find('[data-wizard-movement-review]');
       return find('[data-wizard-needs-input="true"]',
         '[data-wizard-title]');
@@ -1969,13 +1974,13 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             </div>
             {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
             <Dialog open={showTicketScan} onOpenChange={setShowTicketScan}>
-              <DialogContent className="sm:max-w-lg">
+              <DialogContent className="sm:max-w-lg" onOpenAutoFocus={event => event.preventDefault()}>
                 <DialogHeader>
                   <DialogTitle>Scan or open a pick ticket</DialogTitle>
                   <DialogDescription>Open the saved ticket to continue staging or handoff. Scanning never moves stock.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
-                  <ScannerInput value={ticketInput} onChange={value => {
+                  <ScannerInput preventAutoFocus value={ticketInput} onChange={value => {
                     changeTicketInput(value);
                     if (parsePickTicketQr(value, projectId).kind !== "invalid") void lookupPickTicket(value);
                   }} placeholder="Scan a printed pick ticket QR code"
@@ -2156,7 +2161,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
               </AlertDescription>
             </Alert>}
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1"><Label htmlFor="batch-name">Batch name</Label><Input id="batch-name" maxLength={120} value={draft.name} onChange={event => update({ name: event.target.value })} placeholder="Crew / date / route" /></div>
+              <div className="space-y-1"><Label htmlFor="batch-name">Batch name</Label><Input required id="batch-name" maxLength={120} data-wizard-needs-input={!draft.name.trim() ? "true" : undefined} value={draft.name} onChange={event => update({ name: event.target.value })} placeholder="Crew / date / route" /></div>
               <div className="space-y-1"><Label htmlFor="batch-source">Warehouse source</Label><Select value={draft.sourceId} onValueChange={value => update({ sourceId: value })}><SelectTrigger id="batch-source"><SelectValue placeholder="Choose accessible warehouse" /></SelectTrigger><SelectContent>{sourceLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><Label htmlFor="batch-staging">Staging destination</Label><Select value={draft.stagingId} onValueChange={value => update({ stagingId: value })}><SelectTrigger id="batch-staging"><SelectValue placeholder="Choose Staging location" /></SelectTrigger><SelectContent>{stagingLocations.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><Label htmlFor="batch-vehicle">Vehicle</Label><Select value={draft.vehicleId} onValueChange={value => update({ vehicleId: value })}><SelectTrigger id="batch-vehicle"><SelectValue placeholder="Choose one vehicle" /></SelectTrigger><SelectContent>{vehicles.map(location => <SelectItem key={location.id} value={location.id}>{location.code} · {location.name}</SelectItem>)}</SelectContent></Select></div>
@@ -2363,9 +2368,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
               {draft.uiSubstep === "confirm" && <section className="space-y-4 rounded-lg border p-4" data-wizard-confirm>
                 <div><h4 className="font-semibold">{draft.step === "stage" ? "Confirm physical pull" : "Confirm vehicle handoff"}</h4>
                   <p className="text-sm text-muted-foreground">Review the quantities captured in the previous step. Nothing is posted until the final review.</p></div>
-                <div className="space-y-1"><Label htmlFor="fulfillment-reason">Physical move reason</Label><Input id="fulfillment-reason" maxLength={500} disabled={pendingLock || !canPost} value={draft.reason} onChange={event => update({ reason: event.target.value })} placeholder="Describe the physical pull or handoff" /><p className="text-xs text-muted-foreground">At least 10 characters. Do not record a planned or future movement.</p></div>
+                <div className="space-y-1"><Label htmlFor="fulfillment-reason">Physical move reason</Label><Input id="fulfillment-reason" data-wizard-needs-input={draft.reason.trim().length < 10 ? "true" : undefined} maxLength={500} disabled={pendingLock || !canPost} value={draft.reason} onChange={event => update({ reason: event.target.value })} placeholder="Describe the physical pull or handoff" /><p className="text-xs text-muted-foreground">At least 10 characters. Do not record a planned or future movement.</p></div>
                 <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-muted/20 p-3">
-                  <Checkbox id="fulfillment-physical-confirmation" checked={draft.physicallyConfirmed} disabled={pendingLock || !canPost} onCheckedChange={checked => update({ physicallyConfirmed: checked === true })} />
+                  <Checkbox id="fulfillment-physical-confirmation" data-wizard-needs-input={!draft.physicallyConfirmed ? "true" : undefined} checked={draft.physicallyConfirmed} disabled={pendingLock || !canPost} onCheckedChange={checked => update({ physicallyConfirmed: checked === true })} />
                   <span><span className="text-sm font-medium">I confirm the listed stock has physically moved</span><span className="mt-1 block text-xs text-muted-foreground">Only actual quantities in physical custody can be recorded. This does not assign installed serials.</span></span>
                 </label>
               </section>}
@@ -2440,9 +2445,9 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save Draft
           </Button>}
           {draft.step === "orders" && draft.uiSubstep === "orders" && (draft.mode === "crew" || draft.mode === "scheduled") &&
-            <Button type="button" disabled={!canContinueOrders || busy || savingDraft || !storageReady} onClick={() => update({ uiSubstep: "setup" })}>Next: Batch setup<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+            <Button type="button" disabled={!canContinueOrders || busy || savingDraft || !storageReady} onClick={() => { if (canContinueOrders) update({ uiSubstep: "setup" }); }}>Next: Batch setup<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "orders" && draft.uiSubstep === "setup" &&
-            <Button type="button" disabled={!canContinueOrders || busy || savingDraft || !storageReady} onClick={() => update({ uiSubstep: "review" })}>Next: Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+            <Button type="button" disabled={!canCreate || busy || savingDraft || !storageReady} onClick={() => { if (canCreate) update({ uiSubstep: "review" }); }}>Next: Review batch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "orders" && draft.uiSubstep === "review" && <Button type="button" disabled={(!canCreate && !createLock) || busy || savingDraft} onClick={() => void createBatch()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createLock ? <RotateCcw className="mr-2 h-4 w-4" /> : <Check className="mr-2 h-4 w-4" />}{createLock ? "Retry same batch creation" : "Create batch"}</Button>}
           {draft.step === "stage" && draft.uiSubstep === "pick" && stagingComplete && hasStagedStock && <Button data-wizard-handoff type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => moveToVehicle()}>
             <Truck className="mr-2 h-4 w-4" />Continue to vehicle pickup
@@ -2450,8 +2455,11 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           {draft.step === "stage" && draft.uiSubstep === "pick" && !stagingComplete && hasStagedStock && <Button type="button" variant="outline" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => moveToVehicle()}>Partial pickup from Staging<Truck className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "stage" && draft.uiSubstep === "pick" && !stagingComplete && <Button type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => update({ uiSubstep: "capture" })}>Picking complete — enter quantities<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {draft.step === "vehicle" && draft.uiSubstep === "verify" && <Button type="button" disabled={busy || pendingLock || createLock || batchSetupBlocked} onClick={() => update({ uiSubstep: "capture" })}>Next: Capture handoff<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "capture" && <Button type="button" disabled={!activeBatch || !canPost || busy || pendingLock || savingDraft} onClick={() => update({ uiSubstep: "confirm" })}>Next: Confirm<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "confirm" && <Button type="button" disabled={!activeBatch || !canPost || busy || pendingLock || savingDraft} onClick={() => update({ uiSubstep: "movementReview" })}>Next: Review movement<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "capture" && <>
+            {!canReviewMovement && <p role="status" className="max-w-sm text-xs text-muted-foreground">Enter quantities and complete all required serial scans. Current stock must be verified before continuing.</p>}
+            <Button type="button" disabled={!activeBatch || !canPost || !canReviewMovement || movementBlocked || busy || pendingLock || savingDraft} onClick={() => { if (canReviewMovement && !movementBlocked) update({ uiSubstep: "confirm" }); }}>Next: Confirm<ArrowRight className="ml-2 h-4 w-4" /></Button>
+          </>}
+          {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "confirm" && <Button type="button" disabled={!activeBatch || !canPost || !canReviewMovement || movementBlocked || draft.reason.trim().length < 10 || !draft.physicallyConfirmed || busy || pendingLock || savingDraft} onClick={() => { if (canReviewMovement && !movementBlocked && draft.reason.trim().length >= 10 && draft.physicallyConfirmed) update({ uiSubstep: "movementReview" }); }}>Next: Review movement<ArrowRight className="ml-2 h-4 w-4" /></Button>}
           {(draft.step === "stage" || draft.step === "vehicle") && draft.uiSubstep === "movementReview" && batchCanReleaseRemainder && <Button data-wizard-record type="button" disabled={!canReviewMovement || serialCheckBlocked || movementBlocked || !canPost || busy || pendingLock || !draft.reason.trim() || draft.reason.trim().length < 10 || !draft.physicallyConfirmed} onClick={() => void submitMove(draft.step as "stage" | "vehicle")}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : draft.step === "stage" ? <ArrowRight className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
             {draft.step === "stage" ? "Record physical pull" : "Record vehicle handoff"}

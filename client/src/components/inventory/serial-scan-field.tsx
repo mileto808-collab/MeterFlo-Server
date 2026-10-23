@@ -130,7 +130,11 @@ export function SerialScanField({ value, onChange, expected, blockedSerials = []
   };
   return <div className="space-y-2">
     <SerialScanProgress scanned={scanned} expected={expected} verification={verificationState ?? verification} />
-    <Textarea {...props} value={text} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+    <Textarea {...props} autoFocus={false}
+      data-wizard-needs-input={target !== null && target > 0 &&
+        (scanned !== target || pending || new Set(tokens).size !== tokens.length ||
+          (!!(verificationState ?? verification) && (verificationState ?? verification)?.status !== "verified")) ? "true" : undefined}
+      value={text} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
       onChange={event => accept(event.target.value, false)}
       onKeyDown={event => {
         if (event.key === "Enter" || (event.key === "Tab" && text.trim())) {

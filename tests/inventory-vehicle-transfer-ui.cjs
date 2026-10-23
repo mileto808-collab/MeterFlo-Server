@@ -159,7 +159,8 @@ const fs = require("node:fs/promises");
       return !!sharedDraft;
     }).toBe(true);
     await page.reload();
-    await page.getByTestId("button-vehicle-transfers").first().click();
+    // Refresh preserves the wizard; shared captures resume from its draft list.
+    await expect(page.getByTestId("vehicle-transfer-dialog")).toBeVisible();
     await page.locator(`[data-testid="transfer-draft-resume"][data-draft-id="${sharedDraft.id}"]`).click();
     await expect(serials).toHaveValue(/VT-A/);
     await expect(page.getByTestId("transfer-reason")).toHaveValue("Both crews verified the meter and outstanding work");
@@ -201,7 +202,7 @@ const fs = require("node:fs/promises");
     await rejectedRetry;
     await expect(page.getByTestId("transfer-retry")).toBeEnabled();
     await page.reload();
-    await page.getByTestId("button-vehicle-transfers").first().click();
+    await expect(page.getByTestId("vehicle-transfer-dialog")).toBeVisible();
     await page.getByTestId("transfer-retry").click();
     await expect(dialog.getByRole("link", { name: /print.*receipt/i })).toBeVisible();
     await expect(receivingPage.getByText("TAKEOVER-0", { exact: true })).toBeVisible({ timeout: 15000 });

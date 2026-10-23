@@ -68,8 +68,9 @@ export function FulfillmentStagingCorrections({ projectId, userId, storageKey, s
     stepKey: `${saved.batchId}:${saved.step}:${saved.investigation?.issueId ?? ""}`,
     rootRef: focusRoot, bodyRef: focusBody,
     chooseTarget: root => root.querySelector<HTMLElement>(saved.step === "verify"
-      ? 'textarea:not(:disabled)' : saved.step === "review"
-        ? '[data-testid="staging-correction-confirmed"],input[type="checkbox"]'
+      ? saved.reason.trim().length < 10 ? 'textarea:not(:disabled)' : 'input[type="checkbox"]:not(:checked)'
+      : saved.step === "review"
+        ? 'input[type="checkbox"]:not(:checked)'
         : 'textarea:not(:disabled),input[type="number"]:not(:disabled),[role="combobox"]:not(:disabled),h3'),
   });
   const active = batches.find(batch => batch.id === saved.batchId);

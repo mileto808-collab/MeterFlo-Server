@@ -23,7 +23,6 @@ export function CountProductScanner({ items, existingIds, onAdd, disabled, id, v
       setMessage(`Added ${result.item.name}. Enter its actual quantity and any required serials separately.`);
       setCode("");
     } else setMessage(result.error ?? "Product could not be added.");
-    input.current?.focus();
   };
   return <div className="min-w-0 space-y-1" data-testid={id}>
     <Label htmlFor={`${id}-input`}>Search products or scan barcode</Label>

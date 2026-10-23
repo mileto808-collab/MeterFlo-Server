@@ -1,4 +1,5 @@
 import { useInventoryHistory } from "@/hooks/use-inventory-history";
+import { useWizardStepFocus } from "@/hooks/useWizardStepFocus";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -96,6 +97,8 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
   const [resumeRefreshToken, setResumeRefreshToken] = useState(0);
   const [message, setMessage] = useState("");
   const externalTriggerRef = useRef<HTMLElement | null>(null);
+  const guidanceRoot = useRef<HTMLDivElement>(null);
+  const guidanceBody = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!stockPermission) return;
     const launch = (event: Event) => {
@@ -295,11 +298,11 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
       ? !!destination?.members.some(member => member.id === installerId)
       : !installerId || !!destination?.members.some(member => member.id === installerId));
   const selectedOrdersEligible = mode !== "work" || (selectedWorkOrders.length > 0 && selectedWorkOrders.length === selectedOrders.length && selectedWorkOrders.every(orderIsSelectable));
-  const reasonValid = reason.trim().length >= 10;
+  const reasonValid = reason.trim().length >= 10 && reason.trim().length <= 1000;
   const workDestinationBlocked = mode === "work" && !!destinationId &&
     (!destination || destination.members.length === 0);
   const canReview = !!options && (mode === "stock" ? options.canStockTransfer : options.canWorkTransfer) &&
-    sourceId !== "" && destinationId !== "" && sourceId !== destinationId &&
+    !!source && !!destination && sourceId !== destinationId &&
     !workDestinationBlocked && (mode !== "work" || (!!batch && selectedOrdersEligible && installerValid)) &&
     transferLines.length > 0 && enoughStock && quantityErrors.length === 0 && unavailableCaptureIds.length === 0 &&
     serialErrors.length === 0 && serialChecksReady &&
@@ -808,6 +811,11 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
     }
   };
   const retryPending = () => pending && void postCommand(pending.command, pendingStorageKey, pending.draftId);
+  useWizardStepFocus({
+    open, ready: !!options && storageReady, stepKey: `${mode}:${step}`,
+    rootRef: guidanceRoot, bodyRef: guidanceBody,
+    chooseTarget: root => root.querySelector<HTMLElement>('[data-wizard-needs-input="true"]'),
+  });
   const closePanel = () => {
     if (posting) return;
     // Closing must flush the last capture rather than cancelling the debounce and leaving it device-only.
@@ -823,7 +831,8 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
       <ArrowLeftRight className="h-4 w-4" /><span className="hidden sm:inline">Vehicle transfer</span><span className="sm:hidden">Transfer</span>
     </Button>
     <Dialog open={open} onOpenChange={value => { if (value) setOpen(true); else closePanel(); }}>
-      <DialogContent data-testid="vehicle-transfer-dialog"
+      <DialogContent ref={guidanceRoot} data-testid="vehicle-transfer-dialog"
+        onOpenAutoFocus={event => event.preventDefault()}
         onCloseAutoFocus={event => {
           const trigger = externalTriggerRef.current;
           externalTriggerRef.current = null;
@@ -839,7 +848,7 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
             <div><DialogTitle>Vehicle handover</DialogTitle><DialogDescription>Move stock or take over open work with a clear custody record.</DialogDescription></div>
           </div>
         </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
+        <div ref={guidanceBody} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
           {pending && <Alert>
             <AlertTriangle className="h-4 w-4" /><AlertTitle>Transfer outcome needs confirmation</AlertTitle>
             <AlertDescription className="space-y-2">
@@ -937,13 +946,13 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5"><Label htmlFor="transfer-source">Source vehicle</Label>
                 <Select value={sourceId} onValueChange={value => guardedChange(hasCaptures, "Changing source vehicle", () => { setSourceId(value); setBatchId(""); setSelectedOrders([]); setInstallerId(""); })}>
-                  <SelectTrigger id="transfer-source" data-testid="transfer-source"><SelectValue placeholder="Choose source vehicle" /></SelectTrigger>
+                  <SelectTrigger id="transfer-source" data-wizard-needs-input={!sourceId ? "true" : undefined} data-testid="transfer-source"><SelectValue placeholder="Choose source vehicle" /></SelectTrigger>
                   <SelectContent>{vehicles.map(vehicle => <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.code} · {vehicle.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5"><Label htmlFor="transfer-destination">Receiving vehicle</Label>
                 <Select value={destinationId} onValueChange={value => guardedChange(hasCaptures, "Changing receiving vehicle", () => { setDestinationId(value); setInstallerId(""); })}>
-                  <SelectTrigger id="transfer-destination" data-testid="transfer-destination"><SelectValue placeholder="Choose destination vehicle" /></SelectTrigger>
+                  <SelectTrigger id="transfer-destination" data-wizard-needs-input={!destinationId || destinationId === sourceId ? "true" : undefined} data-testid="transfer-destination"><SelectValue placeholder="Choose destination vehicle" /></SelectTrigger>
                   <SelectContent>{vehicles.filter(vehicle => vehicle.id !== sourceId).map(vehicle => <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.code} · {vehicle.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
@@ -1045,7 +1054,7 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
             </section>
             <section className="grid gap-4 border-t pt-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="transfer-reason">Reason for handover</Label>
-                <Textarea id="transfer-reason" data-testid="transfer-reason" rows={2} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}
+                <Textarea id="transfer-reason" data-wizard-needs-input={!reasonValid ? "true" : undefined} data-testid="transfer-reason" rows={2} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}
                   placeholder="For example: vehicle reassignment, route coverage, or stock balancing" />
                 {!!reason.trim() && !reasonValid && <p className="text-xs text-destructive">Enter at least 10 characters for the custody record.</p>}</div>
             </section>
@@ -1058,7 +1067,7 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
               </li>)}</ul>
               <p className="text-sm"><span className="font-medium">Reason:</span> {reason.trim()}</p>
               <label className="flex items-start gap-3 rounded-md border bg-background p-3">
-                <Checkbox data-testid="transfer-physical-confirm" checked={physicallyConfirmed}
+                <Checkbox data-wizard-needs-input={!physicallyConfirmed ? "true" : undefined} data-testid="transfer-physical-confirm" checked={physicallyConfirmed}
                   onCheckedChange={value => setPhysicallyConfirmed(value === true)} />
                 <span className="text-sm"><span className="block font-medium">Both crews are present and the receiving crew physically received these items.</span>
                   <span className="text-xs text-muted-foreground">This records a completed direct custody handover. For stock that is in transit, use the existing transfer-order workflow.</span></span>
@@ -1071,7 +1080,7 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
           <Button type="button" variant="outline" onClick={closePanel} disabled={posting}>Close</Button>
           <div className="flex gap-2">
             {step === "review" && <Button type="button" variant="outline" onClick={() => setStep("details")} disabled={posting}>Back to edit</Button>}
-            {step === "details" ? <Button type="button" data-testid="transfer-review" onClick={() => { setStep("review"); setMessage(""); }}
+            {step === "details" ? <Button type="button" data-testid="transfer-review" onClick={() => { if (canReview && !pending && !posting) { setStep("review"); setMessage(""); } }}
               disabled={!canReview || !!pending || posting}>Review transfer</Button>
               : <Button type="button" data-testid="transfer-post" onClick={() => void beginPost()} disabled={!canSubmit || !!pending || posting || !storageReady}>
                 {posting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Post transfer

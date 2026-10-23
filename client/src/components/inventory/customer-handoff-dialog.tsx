@@ -58,7 +58,7 @@ export function CustomerHandoffDialog({ open, onClose, initialIds, state, timezo
     else if (selectedRecords.filter(record => record.serial.trim() === value).length !== 1)
       setError("Serial does not uniquely match selected equipment. Check the selection and equipment label.");
     else { setScans(current => [...current, value]); setError(""); }
-    setScan(""); scanRef.current?.focus();
+    setScan("");
   };
   const submit = async () => {
     const posting = pending ?? {

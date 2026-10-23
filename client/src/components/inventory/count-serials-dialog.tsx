@@ -41,9 +41,6 @@ export function CountSerialsDialog({
     setNotice([result.rejected.length ? `Duplicate serials rejected: ${result.rejected.join(", ")}.` : "",
       result.excess ? "Scan target reached. Extra scans rejected." : ""].filter(Boolean).join(" "));
     setScanValue("");
-    requestAnimationFrame(() => {
-      scanInputRef.current?.focus();
-    });
   };
 
   return (

@@ -87,12 +87,12 @@ export function VehicleReturnWizardSteps(props: Props) {
         <p className="mt-1 text-sm text-muted-foreground">Choose the vehicle being physically checked. Current context will be refreshed before preparation.</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="space-y-2"><Label>Source vehicle</Label><Select value={capture.sourceId || undefined} onValueChange={onSourceChange}>
-            <SelectTrigger data-return-focus><SelectValue placeholder="Select vehicle" /></SelectTrigger><SelectContent>
+            <SelectTrigger data-wizard-needs-input={!sourceVehicle ? "true" : undefined}><SelectValue placeholder="Select vehicle" /></SelectTrigger><SelectContent>
               {(data?.vehicles ?? []).map(value => <SelectItem key={value.id} value={value.id}>{value.name} · {value.code}</SelectItem>)}
             </SelectContent></Select></div>
           {kind !== "count" && <div className="space-y-2"><Label>{kind === "equipment" ? "Quarantine / return destination" : "Return destination"}</Label>
             <Select value={capture.destinationId || undefined} onValueChange={onDestinationChange}>
-              <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger><SelectContent>
+              <SelectTrigger data-wizard-needs-input={!destinations.some(value => value.id === capture.destinationId) ? "true" : undefined}><SelectValue placeholder="Select destination" /></SelectTrigger><SelectContent>
                 {destinations.map(value => <SelectItem key={value.id} value={value.id}>{value.name} · {value.code}</SelectItem>)}
               </SelectContent></Select></div>}
         </div>
@@ -115,7 +115,7 @@ export function VehicleReturnWizardSteps(props: Props) {
         <p className="mt-1 text-sm text-muted-foreground">Only existing pending returns are selectable. Expected vehicle is a cue, not a restriction; verify each unit physically.</p>
         <div className="mt-4 space-y-2">
           {(data?.equipment ?? []).length ? data!.equipment.map(row => <label key={row.id} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/30">
-            <Checkbox data-return-focus={capture.returnIds.length === 0 ? "" : undefined} checked={capture.returnIds.includes(row.id)} onCheckedChange={checked => updateCapture({ returnIds: checked === true ? [...capture.returnIds, row.id] : capture.returnIds.filter(id => id !== row.id) })} />
+            <Checkbox data-wizard-needs-input={capture.returnIds.length === 0 ? "true" : undefined} checked={capture.returnIds.includes(row.id)} onCheckedChange={checked => updateCapture({ returnIds: checked === true ? [...capture.returnIds, row.id] : capture.returnIds.filter(id => id !== row.id) })} />
             <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2 font-medium">{row.equipment}<Badge variant="outline">{row.serial}</Badge></span>
               <span className="mt-1 block text-xs text-muted-foreground">{row.label} · WO {row.workOrderId} · expected vehicle {row.expectedVehicleId || "not recorded"}</span>
               {row.expectedVehicleId === capture.sourceId ? <span className="mt-1 block text-xs text-primary">Expected on this vehicle</span> : <span className="mt-1 block text-xs text-amber-700 dark:text-amber-400">Different expected vehicle — physically verify before accepting</span>}</span>
@@ -131,7 +131,7 @@ export function VehicleReturnWizardSteps(props: Props) {
         </div>
         {scope === "selected" && <div className="mt-4 space-y-2">
           {items.map(item => <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/30">
-            <Checkbox data-return-focus={capture.itemIds.length === 0 ? "" : undefined} checked={capture.itemIds.includes(item.id)} onCheckedChange={checked => toggleItem(item.id, checked === true)} />
+            <Checkbox data-wizard-needs-input={capture.itemIds.length === 0 ? "true" : undefined} checked={capture.itemIds.includes(item.id)} onCheckedChange={checked => toggleItem(item.id, checked === true)} />
             <span className="min-w-0 flex-1"><span className="font-medium">{item.name}</span><span className="ml-2 text-xs text-muted-foreground">{item.sku || item.id} · {item.unit}</span></span>
             <Badge variant="outline">{item.tracking === "serialized" ? "Serialized" : "Bulk"}</Badge>
           </label>)}
@@ -163,7 +163,7 @@ export function VehicleReturnWizardSteps(props: Props) {
           {!selectedEquipment.length && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Select at least one pending return before scanning.</p>}
         </div>
         <div className="mt-5 space-y-2"><Label htmlFor="equipment-return-reason">Condition and return reason <span className="text-muted-foreground">(required)</span></Label>
-          <Textarea id="equipment-return-reason" value={capture.reason} onChange={event => updateCapture({ reason: event.target.value })} placeholder="Record observed condition and why the equipment was removed." rows={3} /></div>
+          <Textarea id="equipment-return-reason" data-wizard-needs-input={capture.reason.trim().length < 10 ? "true" : undefined} value={capture.reason} onChange={event => updateCapture({ reason: event.target.value })} placeholder="Record observed condition and why the equipment was removed." rows={3} /></div>
       </section> : <section className="space-y-3">
         <div className="rounded-xl border bg-card p-4"><h2 className="font-semibold">{kind === "count" ? "Record actual physical quantities" : "Record usable stock to unload"}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{kind === "count" ? "The baseline comes from the saved server draft. A mismatch opens a cycle count for authorized investigation." : "Only the selected serials currently in this vehicle can be returned. Stock protection is checked by the server."}</p></div>
@@ -174,7 +174,7 @@ export function VehicleReturnWizardSteps(props: Props) {
             <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{item.name}</h3><p className="text-xs text-muted-foreground">{item.sku || item.id} · {item.unit} · {item.tracking}</p></div>
               {kind === "count" && <Badge variant="outline">Expected {baseline?.quantity ?? 0}</Badge>}</div>
             <div className="max-w-xs space-y-2"><Label htmlFor={`quantity-${itemId}`}>{kind === "count" ? "Actual quantity" : "Quantity to return"}</Label>
-              <Input data-return-focus={itemId === capture.itemIds[0] ? "" : undefined} id={`quantity-${itemId}`} type="number" min={kind === "stock" ? "1" : "0"} max={kind === "stock" ? data?.stock.find(row => row.itemId === itemId)?.available ?? 0 : 1000000} step="1" inputMode="numeric" value={quantityText} onChange={event => {
+              <Input required data-wizard-needs-input={!quantityText.trim() || !Number.isSafeInteger(Number(quantityText)) || Number(quantityText) < (kind === "stock" ? 1 : 0) ? "true" : undefined} id={`quantity-${itemId}`} type="number" min={kind === "stock" ? "1" : "0"} max={kind === "stock" ? data?.stock.find(row => row.itemId === itemId)?.available ?? 0 : 1000000} step="1" inputMode="numeric" value={quantityText} onChange={event => {
                 const value = event.target.value;
                 const limit = kind === "stock" ? data?.stock.find(row => row.itemId === itemId)?.available ?? 0 : 1000000;
                 if (value !== "" && (!/^\d+$/.test(value) || Number(value) > limit)) return;
@@ -192,7 +192,7 @@ export function VehicleReturnWizardSteps(props: Props) {
         })}
       </section>}
       {kind !== "equipment" && <div className="space-y-2 rounded-xl border bg-card p-4"><Label htmlFor="return-reason">Count / return reason <span className="text-muted-foreground">(10 characters minimum)</span></Label>
-        <Textarea id="return-reason" value={capture.reason} onChange={event => updateCapture({ reason: event.target.value })} placeholder={kind === "count" ? "Note the count context or discrepancy observations." : "Why is this usable stock returning from the vehicle?"} rows={3} /></div>}
+        <Textarea id="return-reason" data-wizard-needs-input={capture.reason.trim().length < 10 ? "true" : undefined} value={capture.reason} onChange={event => updateCapture({ reason: event.target.value })} placeholder={kind === "count" ? "Note the count context or discrepancy observations." : "Why is this usable stock returning from the vehicle?"} rows={3} /></div>}
     </div>}
     {restoreReady && step === "review" && <div className="space-y-4">
       <Alert><ShieldCheck className="h-4 w-4" /><AlertTitle>Physical review before preparation</AlertTitle>
@@ -216,7 +216,7 @@ export function VehicleReturnWizardSteps(props: Props) {
             </div>;
           })}</div></section>}
       <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4">
-        <Checkbox data-return-focus checked={physicallyConfirmed} onCheckedChange={value => onPhysicallyConfirm(value === true)} />
+        <Checkbox data-wizard-needs-input={!physicallyConfirmed ? "true" : undefined} checked={physicallyConfirmed} onCheckedChange={value => onPhysicallyConfirm(value === true)} />
         <span className="text-sm"><strong>I physically verified the selected vehicle, units, quantities, and destination.</strong><span className="mt-1 block text-muted-foreground">This confirmation is fresh for this review. Resuming an editable draft requires confirming again.</span></span>
       </label>
       {prepared && <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Exact operation awaiting outcome</AlertTitle>

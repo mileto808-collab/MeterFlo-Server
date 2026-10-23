@@ -1,82 +1,86 @@
 import { useEffect, useRef, type RefObject } from "react";
 
-/** Focus only on navigation/outcome changes, never on each edit or live refresh. */
+/**
+ * Inventory step guidance is visual, never keyboard focus. Navigation starts at
+ * the top; editing/scrolling only updates the next incomplete-field indicator.
+ * The historical hook name is retained for existing callers.
+ */
 export function useWizardStepFocus({
   open, ready, stepKey, rootRef, bodyRef, chooseTarget,
 }: {
   open: boolean;
   ready: boolean;
   stepKey: string;
-  rootRef: RefObject<HTMLDivElement>;
-  bodyRef: RefObject<HTMLDivElement>;
-  chooseTarget: (root: HTMLDivElement) => HTMLElement | null;
+  rootRef: RefObject<HTMLElement>;
+  bodyRef: RefObject<HTMLElement>;
+  chooseTarget: (root: HTMLElement) => HTMLElement | null;
 }) {
   const choose = useRef(chooseTarget);
   const lastStep = useRef<string | null>(null);
   const highlighted = useRef<HTMLElement | null>(null);
-  useEffect(() => { choose.current = chooseTarget; });
+  const refresh = useRef<() => void>(() => undefined);
+  useEffect(() => { choose.current = chooseTarget; refresh.current(); });
 
   useEffect(() => {
-    if (!open || !ready) {
+    if (!open) {
       lastStep.current = null;
       highlighted.current?.removeAttribute("data-wizard-focus-target");
       return;
     }
-    if (lastStep.current === stepKey) return;
+    if (!ready) return;
     const root = rootRef.current;
     const body = bodyRef.current;
     if (!root || !body) return;
-    let resizeFrame = 0;
-    let observer: ResizeObserver | undefined;
-    let target: HTMLElement | null = null;
-    const align = () => {
-      if (!target?.isConnected) return;
-      if (body.contains(target)) {
-        const bodyRect = body.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const margin = Math.max(8, Math.min(24, body.clientHeight / 10));
-        const targetTop = body.scrollTop + targetRect.top - bodyRect.top;
-        // Keep the step heading in view when the first field fits near the top.
-        // A previous step may have left this same scroll container partway down.
-        if (targetTop >= 0 && targetTop + targetRect.height + margin <= body.clientHeight) {
-          if (body.scrollTop) body.scrollTo({ top: 0, behavior: "instant" });
-        } else if (targetRect.top < bodyRect.top + margin) {
-          body.scrollTo({ top: Math.max(0, targetTop - margin), behavior: "instant" });
-        } else if (targetRect.bottom > bodyRect.bottom - margin) {
-          body.scrollTo({
-            top: body.scrollTop + targetRect.bottom - bodyRect.bottom + margin,
-            behavior: "instant",
-          });
-        }
-      } else body.scrollTo({ top: 0, behavior: "instant" });
-    };
-    const clearHighlight = (event: FocusEvent) => {
-      if (event.target !== target) highlighted.current?.removeAttribute("data-wizard-focus-target");
-    };
-    const frame = requestAnimationFrame(() => {
-      target = choose.current(root);
-      if (!target) return;
+    let frame = 0;
+    const visible = (element: HTMLElement) =>
+      !element.matches(":disabled, [aria-disabled=true]") && element.getClientRects().length > 0;
+    const updateHighlight = () => {
+      // Prefer explicit validation state; don't guess that a nonempty serial
+      // field is valid or mark optional search/filter inputs as required.
+      const candidates = [...root.querySelectorAll<HTMLElement>(
+        '[data-wizard-needs-input="true"],[aria-invalid="true"],:required:invalid',
+      )].filter(visible);
+      const bounds = body.getBoundingClientRect();
+      const target = candidates.find(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.bottom > bounds.top && rect.top < bounds.bottom;
+      }) ?? candidates[0] ?? choose.current(root);
+      if (target === highlighted.current) return;
       highlighted.current?.removeAttribute("data-wizard-focus-target");
       highlighted.current = target;
-      target.setAttribute("data-wizard-focus-target", "true");
+      target?.setAttribute("data-wizard-focus-target", "true");
+    };
+    const scheduleHighlight = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(updateHighlight);
+    };
+    refresh.current = scheduleHighlight;
+    if (lastStep.current !== stepKey) {
       lastStep.current = stepKey;
-      align();
-      target.focus({ preventScroll: true });
-      document.addEventListener("focusin", clearHighlight);
-      observer = new ResizeObserver(() => {
-        cancelAnimationFrame(resizeFrame);
-        resizeFrame = requestAnimationFrame(() => {
-          if (document.activeElement === target) align();
-        });
-      });
-      observer.observe(body);
+      // Dismiss a keyboard from the previous step, but never open one.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && root.contains(active) &&
+          active.matches('input,textarea,[contenteditable="true"]')) active.blur();
+      body.scrollTo({ top: 0, behavior: "instant" });
+    }
+    scheduleHighlight();
+    body.addEventListener("scroll", scheduleHighlight, { passive: true });
+    root.addEventListener("input", scheduleHighlight);
+    root.addEventListener("change", scheduleHighlight);
+    const observer = new MutationObserver(scheduleHighlight);
+    observer.observe(root, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ["data-wizard-needs-input", "aria-invalid", "aria-checked", "disabled"],
     });
     return () => {
       cancelAnimationFrame(frame);
-      cancelAnimationFrame(resizeFrame);
-      observer?.disconnect();
-      document.removeEventListener("focusin", clearHighlight);
+      observer.disconnect();
+      body.removeEventListener("scroll", scheduleHighlight);
+      root.removeEventListener("input", scheduleHighlight);
+      root.removeEventListener("change", scheduleHighlight);
+      refresh.current = () => undefined;
       highlighted.current?.removeAttribute("data-wizard-focus-target");
+      highlighted.current = null;
     };
   }, [open, ready, stepKey, rootRef, bodyRef]);
 }

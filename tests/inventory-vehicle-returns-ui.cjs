@@ -57,9 +57,15 @@ const { execFileSync } = require("node:child_process");
     await expect(page.locator("#serials-return-meter")).toHaveValue("RETURN-A\n");
     await page.reload();
     await expect(page.getByTestId("vehicle-return-stock")).toBeVisible();
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    // Browser refresh retains the active capture step as well as the draft.
     await expect(page.locator("#serials-return-meter")).toHaveValue("RETURN-A\n");
+    await expect.poll(() => page.getByTestId("vehicle-return-stock").evaluate(element => element.scrollTop)).toBe(0);
+    assert.equal(await page.evaluate(() => document.activeElement.matches("input,textarea")), false);
+    await page.locator("#serials-return-meter").fill("");
+    await expect(page.getByRole("button", { name: "Review operation", exact: true })).toBeDisabled();
+    await page.locator("#return-reason").fill("short");
+    await expect(page.getByRole("button", { name: "Review operation", exact: true })).toBeDisabled();
+    await page.locator("#return-reason").fill("Warehouse crew physically verified the return");
     // Current source checks reject wrong serials and do not count them as accepted scans.
     await page.locator("#serials-return-meter").fill("");
     await page.locator("#serials-return-meter").fill("WRONG");
