@@ -17,6 +17,12 @@ Start Inventory is not fulfillment-only: users must also be able to launch Vehic
 
 **How to apply:** Filter tasks by their own permissions; stock-transfer access must not require or grant work-order fulfillment access.
 
+Returning vehicles need three separate focused wizards: return removed equipment, verify vehicle inventory and record discrepancies, and return usable vehicle stock to staging or the main warehouse.
+
+**Why:** The user says vehicles regularly return removed equipment and wants valuable inventory removed from vehicles when returning to the warehouse.
+
+**How to apply:** These wizards should streamline the physical process with focused steps and the same saved drafts, checks, receipts and recovery features as fulfillment/staging and vehicle transfer. Keep removed-equipment custody distinct from usable stock transfers.
+
 On the fulfillment entry screen, workflow selector cards sit directly below “Choose a fulfillment workflow.” QR scanning is a button above that heading opening a scan modal; pickup-problem review must be prominent.
 
 **Why:** The user requested a simpler entry screen without the expanded scanner form separating the heading from its choices.
