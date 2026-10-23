@@ -18,7 +18,7 @@ export async function inventoryPickTicket(batch: FulfillmentBatch, state: Invent
   const crew = users.filter(user => assigned.has(user.id)).map(user => user.username || "Assigned technician");
   const ticket = fulfillmentTicketNumber(batch.createdAt, (state.fulfillmentBatches ?? []).findIndex(row => row.id === batch.id));
   const link = `${origin}/projects/${project.id}/work-orders?pickup=${encodeURIComponent(batch.id)}`;
-  const qr = await QRCode.toDataURL(link, { width: 160, margin: 1 });
+  const qr = await QRCode.toDataURL(link, { width: 384, margin: 4, errorCorrectionLevel: "M" });
   const items = new Map<string, { planned: number; staged: number; loaded: number; serials: string[] }>();
   for (const line of batch.lines) {
     const item = items.get(line.itemId) ?? { planned: 0, staged: 0, loaded: 0, serials: [] };

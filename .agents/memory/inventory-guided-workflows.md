@@ -93,6 +93,18 @@ An explicit pick-ticket scan is an exception to the normal chooser-first entry: 
 
 **How to apply:** Keep HID scanning ready across Inventory, Start Inventory's task page, fulfillment and the pick-ticket scan modal. Offer USB/Bluetooth HID separately from camera scanning on desktop and mobile, without requiring input focus or opening the keyboard. Keep manual task entry predictable. Resolve scanned batch identity against current local permissions and state, not the printed status or scanned host. Waiting staged stock leads to handoff; unpicked work leads to staging; review and completed states must not expose an unsafe movement. Opening a scan never posts stock.
 
+Scanners may uppercase the entire pick-ticket URL, including its route and query parameter name.
+
+**Why:** A real warehouse scan contained an uppercase route and `PICKUP`; the generated QR was valid, but case-sensitive route/query matching rejected the transformed payload.
+
+**How to apply:** Recognize only the known ticket route and pickup parameter case-insensitively, canonicalize UUID identity, and still reject mixed-case duplicate pickup parameters, unsafe URLs and wrong-project access. Do not broadly lowercase arbitrary URL data or relax identity validation.
+
+Verify ticket readability by decoding actual generated QR pixels, not only by validating a constructed URL.
+
+**Why:** QR density and mask vary with the full link. A small, tightly bordered printed image decoded for one batch but failed for another.
+
+**How to apply:** Round-trip printed and pickup-notice images through a decoder with varying batch IDs and domain lengths. Preserve image resolution and a sufficient white quiet zone independently of the CSS print size.
+
 Ticket switching must preserve captured work and unresolved command identities, including separately saved correction work.
 
 **Why:** A technician pickup can arrive while the warehouse worker has another workflow open, and an uncertain correction must not be bypassed by scanning a different ticket.

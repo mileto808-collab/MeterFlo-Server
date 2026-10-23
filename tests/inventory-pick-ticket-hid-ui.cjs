@@ -113,7 +113,9 @@ const { randomUUID } = require("node:crypto");
         assert.equal(await page.evaluate(() => document.activeElement.matches("input,textarea")), false);
         await expect(page.getByRole("dialog", { name: "Scan QR Code", exact: true })).toHaveCount(0);
       }
-      await page.keyboard.type(ticket, { delay: mobile ? 100 : 1 });
+      // Keyboard wedges can uppercase the full URL, not only the UUID.
+      const scanPayload = entry === "inventory" || entry.startsWith("modal") ? ticket.toUpperCase() : ticket;
+      await page.keyboard.type(scanPayload, { delay: mobile ? 100 : 1 });
       await page.keyboard.press(mobile ? "Tab" : "Enter");
       await expect(page.getByTestId("fulfillment-batch-identity")).toContainText("HID batch - PICK-");
       await expect(page.getByTestId("fulfillment-batch-identity")).toBeInViewport();
