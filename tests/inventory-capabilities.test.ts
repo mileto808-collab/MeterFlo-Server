@@ -9,7 +9,8 @@ test("field view and assign grant stock lookup, not warehouse areas or fulfillme
     const result = access(permissions);
     assert.deepEqual(Object.entries(result.tabs).filter(([, enabled]) => enabled).map(([key]) => key), ["stock"]);
     assert.equal(result.fulfillment, false);
-    assert.equal(result.startInventory, false);
+    assert.equal(result.startInventory, true, "read-only vehicle stock is now a meaningful Start Inventory task");
+    assert.equal(result.vehicleStock, true);
     assert.equal(result.vehicleTransfer, false);
     assert.equal(result.stats, false);
   }

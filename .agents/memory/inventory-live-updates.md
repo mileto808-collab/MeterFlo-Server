@@ -15,6 +15,12 @@ Do not inherit Work Orders' suppression of events from the current user. Other t
 
 **How to apply:** Broadcast permission-checked invalidation metadata to every authorized subscribed session. Keep business-command deduplication separate from live-event delivery.
 
+When access is revoked during a query, clear sensitive results without synchronously removing that actively fetching query from its own error handler.
+
+**Why:** Removing the active query prevented its error from settling and left Refresh permanently disabled after a vehicle-access rejection.
+
+**How to apply:** Empty protected payloads, refresh authorized choices, let the request settle, and remove inactive cache entries. Verify recovery after revocation, not only successful reads.
+
 Publish invalidations at the database transaction's actual commit, not just from inventory HTTP handlers.
 
 **Why:** Work-order transitions and restores also change inventory, sometimes inside transactions owned by another subsystem. A handler-only notification misses those changes or announces a write that later rolls back.

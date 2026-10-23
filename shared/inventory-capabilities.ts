@@ -21,7 +21,8 @@ export function inventoryCapabilities(can: (permission: string) => boolean) {
   const returnEquipment = ["inventory.view", "inventory.receive"].every(can);
   const verifyVehicle = ["inventory.view", "inventory.count"].every(can);
   const returnStock = ["inventory.view", "inventory.receive", "inventory.transfer"].every(can);
+  const vehicleStock = can("inventory.view");
   return { tabs, warehouse, stats: warehouse,
-    fulfillment, vehicleTransfer, returnEquipment, verifyVehicle, returnStock,
-    startInventory: fulfillment || vehicleTransfer || returnEquipment || verifyVehicle || returnStock };
+    fulfillment, vehicleTransfer, returnEquipment, verifyVehicle, returnStock, vehicleStock,
+    startInventory: fulfillment || vehicleTransfer || returnEquipment || verifyVehicle || returnStock || vehicleStock };
 }

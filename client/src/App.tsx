@@ -20,6 +20,7 @@ import { RouteSessionCleanup } from "@/components/work-order-routing/route-sessi
 import { AccessLockGate } from "@/components/access-locks/access-lock-gate";
 import { SystemRestoreBoundary } from "@/components/system-restore-boundary";
 import { PickupInboxButton } from "@/components/inventory/pickup-notices";
+import { VehicleStockButton } from "@/components/inventory/vehicle-stock";
 
 import Landing from "@/pages/landing";
 import LoginPage from "@/pages/login";
@@ -267,6 +268,7 @@ function AuthenticatedLayout() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <PickupInboxButton />
+                <VehicleStockButton />
                 <UpdateNotification />
                 <ThemeToggle />
               </div>

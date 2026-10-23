@@ -161,7 +161,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const { user } = useAuth();
   const fulfillmentSessionKey = `meterflo:fulfillment-workspace:${encodeURIComponent(String(user?.id ?? "pending"))}:${projectId}`;
-  type InventoryWorkspaceScreen = "inventory" | "tasks" | "fulfillment" | VehicleReturnScreen;
+  type InventoryWorkspaceScreen = "inventory" | "tasks" | "fulfillment" | "vehicle-stock" | VehicleReturnScreen;
   const [inventoryWorkspace, setInventoryWorkspaceState] = useState<InventoryWorkspaceScreen>("inventory");
   const [fulfillmentSessionReadyKey, setFulfillmentSessionReadyKey] = useState("");
   const restoredFulfillmentKey = useRef("");
@@ -173,7 +173,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       const saved = window.localStorage.getItem(fulfillmentSessionKey);
       const session = saved ? JSON.parse(saved) as { workspace?: unknown; open?: unknown } : null;
       const workspace = session?.workspace;
-      setInventoryWorkspaceState(workspace === "inventory" || workspace === "tasks" || workspace === "fulfillment" ||
+      setInventoryWorkspaceState(workspace === "inventory" || workspace === "tasks" || workspace === "fulfillment" || workspace === "vehicle-stock" ||
         workspace === "return-equipment" || workspace === "vehicle-count" || workspace === "return-stock"
         ? workspace
         : session?.open === true ? "fulfillment" : "inventory");
@@ -257,11 +257,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (permissionsLoading) return;
     const lostAccess = inventoryWorkspace === "fulfillment" && !capabilities.fulfillment ||
+      inventoryWorkspace === "vehicle-stock" && !capabilities.vehicleStock ||
       inventoryWorkspace === "return-equipment" && !capabilities.returnEquipment ||
       inventoryWorkspace === "vehicle-count" && !capabilities.verifyVehicle ||
       inventoryWorkspace === "return-stock" && !capabilities.returnStock;
     if (lostAccess) setInventoryWorkspace("tasks");
-  }, [inventoryWorkspace, permissionsLoading, capabilities.fulfillment, capabilities.returnEquipment, capabilities.verifyVehicle, capabilities.returnStock, setInventoryWorkspace]);
+  }, [inventoryWorkspace, permissionsLoading, capabilities.fulfillment, capabilities.vehicleStock, capabilities.returnEquipment, capabilities.verifyVehicle, capabilities.returnStock, setInventoryWorkspace]);
   const allowedTabs = projectInventoryTabs.filter(tab => capabilities.tabs[tab.value as keyof typeof capabilities.tabs]);
   const { isLoading, isError } = inventoryTab === "stock" && !resource && !vendorKitOpen ? stockContext : snapshotQuery;
   const refetch = () => inventoryTab === "stock" && !resource && !vendorKitOpen ? stockContext.refetch() : snapshotQuery.refetch();
@@ -1379,6 +1380,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   return <main ref={inventoryMainRef} className={`inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7 ${["locations", "returns"].includes(inventoryTab) ? "[@media(max-height:500px)]:pb-2" : ""}`} data-testid="inventory-workspace">
     {(capabilities.startInventory || inventoryWorkspace !== "inventory") && <InventoryWorkflowLauncher projectId={Number(projectId)} permissions={latestPermissionSnapshot?.permissions}
       screen={inventoryWorkspace === "fulfillment" && !capabilities.fulfillment ||
+        inventoryWorkspace === "vehicle-stock" && !capabilities.vehicleStock ||
         inventoryWorkspace === "return-equipment" && !capabilities.returnEquipment ||
         inventoryWorkspace === "vehicle-count" && !capabilities.verifyVehicle ||
         inventoryWorkspace === "return-stock" && !capabilities.returnStock ? "tasks" : inventoryWorkspace}

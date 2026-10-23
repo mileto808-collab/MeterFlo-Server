@@ -8,9 +8,10 @@ import { inventoryCapabilities } from "@shared/inventory-capabilities";
 import { parsePickTicketQr } from "@shared/inventory-pick-ticket";
 import { openVehicleTransfer } from "@/components/inventory/vehicle-transfer-panel";
 import { VehicleReturnWizard, type VehicleReturnScreen } from "@/components/inventory/vehicle-return-wizard";
+import { VehicleStockReview } from "@/components/inventory/vehicle-stock";
 
 const launcherEvent = "meterflo:open-inventory-fulfillment";
-type InventoryWorkspaceScreen = "inventory" | "tasks" | "fulfillment" | VehicleReturnScreen;
+type InventoryWorkspaceScreen = "inventory" | "tasks" | "fulfillment" | "vehicle-stock" | VehicleReturnScreen;
 
 export function StartInventoryButton({ mobile = false, projectId, permissions }: { mobile?: boolean; projectId: number; permissions?: string[] }) {
   const { hasPermission, isLoading } = usePermissions();
@@ -43,14 +44,15 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
   const capabilities = inventoryCapabilities(can);
   const allowed = capabilities.startInventory;
   const fulfillmentAllowed = capabilities.fulfillment;
+  const vehicleStockAllowed = capabilities.vehicleStock;
   const returnScreenAllowed = (value: VehicleReturnScreen) =>
     value === "return-equipment" ? capabilities.returnEquipment
       : value === "vehicle-count" ? capabilities.verifyVehicle : capabilities.returnStock;
 
   useEffect(() => {
     if (!isLoading && permissions !== undefined && screen !== "inventory" && screen !== "tasks" &&
-      screen !== "fulfillment" && !returnScreenAllowed(screen)) onScreenChange("tasks");
-  }, [isLoading, permissions, screen, capabilities.returnEquipment, capabilities.verifyVehicle, capabilities.returnStock, onScreenChange]);
+      screen !== "fulfillment" && screen !== "vehicle-stock" && !returnScreenAllowed(screen)) onScreenChange("tasks");
+  }, [isLoading, permissions, screen, capabilities.vehicleStock, capabilities.returnEquipment, capabilities.verifyVehicle, capabilities.returnStock, onScreenChange]);
 
   useEffect(() => {
     if (!allowed || (isLoading && permissions === undefined)) return;
@@ -103,7 +105,7 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
         <div className="max-w-2xl">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary">Start Inventory</p>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Choose an inventory task</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground sm:text-base">Choose a guided workflow for moving and staging physical inventory.</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground sm:text-base">Choose an inventory workflow. Vehicle Stock is view-only; operational tasks require their own permissions.</p>
         </div>
       </div>
       <div className="grid grid-cols-1 gap-3 py-5 sm:grid-cols-2 sm:gap-4 sm:py-7 lg:grid-cols-3">
@@ -147,6 +149,14 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
             <span className="mt-1 block text-sm text-muted-foreground">Unload usable stock from a vehicle to staging or the main warehouse.</span></span>
           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </button>}
+        {vehicleStockAllowed && <button type="button" data-testid="inventory-task-vehicle-stock"
+          onClick={() => onScreenChange("vehicle-stock")}
+          className="group flex min-h-24 w-full items-center gap-3 rounded-xl border border-primary/20 bg-primary/[0.035] p-4 text-left transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-primary/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Truck className="h-5 w-5" /></span>
+          <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2 font-semibold">Vehicle Stock<Badge variant="outline">Read-only</Badge></span>
+            <span className="mt-1 block text-sm text-muted-foreground">Review system-expected stock and serials on accessible vehicles. No count or stock changes.</span></span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </button>}
         {!allowed && <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground sm:col-span-2 lg:col-span-3">
           Your inventory permissions changed. No guided tasks are currently available. Return to Inventory or ask an administrator to review your access.
         </div>}
@@ -155,6 +165,12 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
     {fulfillmentAllowed && <FulfillmentWizard projectId={projectId} open={screen === "fulfillment"}
       onOpenChange={open => onScreenChange(open ? "fulfillment" : "tasks")} permissions={permissions}
       pickTicketQr={ticketQr} onPickTicketQrConsumed={() => setTicketQr("")} />}
+    {vehicleStockAllowed && screen === "vehicle-stock" && <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <Button type="button" variant="ghost" className="mx-auto mb-2 w-full max-w-5xl shrink-0 justify-start px-0 text-muted-foreground" onClick={() => onScreenChange("tasks")}>
+        <ArrowLeft className="mr-2 h-4 w-4" />Back to inventory tasks
+      </Button>
+      <VehicleStockReview projectId={projectId} />
+    </div>}
     {(screen === "return-equipment" || screen === "vehicle-count" || screen === "return-stock") &&
       returnScreenAllowed(screen) && <VehicleReturnWizard projectId={projectId} kind={screen === "return-equipment" ? "equipment" : screen === "vehicle-count" ? "count" : "stock"}
         onClose={() => onScreenChange("tasks")} permissions={permissions} />}

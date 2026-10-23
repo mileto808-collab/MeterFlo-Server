@@ -38,6 +38,7 @@
 - [Kit custody](inventory-kit-custody.md) — recover original assembled contents, never today's recipe; current custody governs reuse and ambiguous legacy lineage must not be invented.
 - [Readable audit identities](audit-display-identity.md) — readable labels must not rewrite audit evidence or invent unavailable historical identities.
 - [Inventory live updates](inventory-live-updates.md) — include same-user sessions and external transaction owners; refresh views without replacing local captures.
+- [Vehicle stock review](vehicle-stock-review.md) — quick read-only onboard stock, authorized vehicle scope, fleet reporting and no staging-as-onboard assumptions.
 - [Location assignments](inventory-location-access.md) — user assignments are intended for mobile locations such as vehicles, not brick-and-mortar warehouses.
 - [Equipment removal policy](equipment-removal-policy.md) — project-approved field choices and required returns are separate from warehouse final-decision authority.
 - [Work-order status hierarchy](work-order-status-hierarchy.md) — shared core statuses/sub-statuses, project-owned custom sub-statuses, and inherited parent rules.

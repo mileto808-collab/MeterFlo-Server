@@ -37,6 +37,7 @@ import { checkFulfillmentSerials } from "../shared/inventory-fulfillment-scans";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 import { readRelationalInventory } from "./inventoryRelational";
 import { registerInventoryPickupRoutes } from "./inventoryPickups";
+import { registerInventoryVehicleStockRoutes } from "./inventoryVehicleStock";
 import { inventoryPickTicket } from "./inventoryPickTicket";
 import { registerFulfillmentDraftRoutes } from "./inventoryFulfillmentDrafts";
 import { registerVehicleTransferDraftRoutes } from "./inventoryVehicleTransferDrafts";
@@ -60,6 +61,7 @@ export function inventoryVisibleState(state: InventoryState, actor: string, admi
   }) };
 }
 export function registerInventoryRoutes(app: Express) {
+  registerInventoryVehicleStockRoutes(app);
   registerInventoryPickupRoutes(app);
   const base = "/api/projects/:projectId/inventory";
   const auth = (workOrderRead = false) => async (req: any, res: any, next: any) => {
