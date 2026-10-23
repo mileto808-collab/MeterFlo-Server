@@ -433,7 +433,7 @@ function addWebAppFilesToArchive(
   }
 }
 
-export type BackupType = "database" | "clean" | "files" | "project";
+export type BackupType = "recovery" | "database" | "clean" | "files" | "project";
 
 // Tables to EXPORT in clean backup (configuration to keep)
 const CLEAN_BACKUP_TABLES = [
@@ -746,6 +746,8 @@ export async function createPgBackupArchive(res:any,backupType:BackupType="datab
   return auditedOperation("systemBackup",backupType,()=>createPgBackupArchiveData(res,backupType));
 }
 async function createPgBackupArchiveData(res: any, backupType: BackupType = "database", strict = false): Promise<void> {
+  // Complete recovery must never advertise success after omitting unreadable files.
+  strict = strict || backupType === "recovery";
   console.log(`[Backup] Starting backup (type: ${backupType})...`);
   
   // Backup types:
@@ -753,11 +755,12 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   // - "clean": Clean database (roles, permissions, settings, statuses only - no users/projects)
   // - "files": Web app source files only (excluding project files directory)
   // - "project": Project files only (uploads, attachments, work order files)
+  // - "recovery": Database + uploaded project/FTP files, with restore instructions
   
-  const includeDatabase = backupType === "database";
+  const includeDatabase = backupType === "database" || backupType === "recovery";
   const includeCleanDatabase = backupType === "clean";
   const includeWebAppFiles = backupType === "files";
-  const includeProjectFiles = backupType === "project";
+  const includeProjectFiles = backupType === "project" || backupType === "recovery";
   
   let backupResult: PgBackupResult | null = null;
   try {
@@ -827,7 +830,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
     }
   });
   
-  const filenamePrefix = backupType === "database" ? "full_db_backup" : 
+  const filenamePrefix = backupType === "recovery" ? "complete_recovery_backup" : backupType === "database" ? "full_db_backup" :
                          backupType === "clean" ? "clean_db_backup" :
                          backupType === "files" ? "webapp_backup" : "project_backup";
   
@@ -844,6 +847,10 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   
   // Add database backup
   if ((includeDatabase || includeCleanDatabase) && backupResult) {
+    if (!fs.existsSync(backupResult.backupFile) || fs.statSync(backupResult.backupFile).size === 0) {
+      archive.abort();
+      throw new Error("Database SQL is missing or empty. No successful backup was created.");
+    }
     archive.file(backupResult.backupFile, { name: "database_backup.sql" });
     console.log("[Backup] Added database_backup.sql to archive");
   }
@@ -908,7 +915,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   // Add metadata
   const metadata = {
     version: "2.2",
-    format: backupType === "database" ? "pg_dump_full" : 
+    format: includeDatabase ? "pg_dump_full" :
             backupType === "clean" ? "pg_dump_clean" :
             backupType === "files" ? "webapp_files_only" : "project_files_only",
     backupType,
@@ -923,6 +930,30 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
     includesCleanDatabase: includeCleanDatabase,
   };
   archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
+  if (backupType === "recovery") {
+    archive.append([
+      "MeterFlo complete recovery backup",
+      "",
+      "Contents: database_backup.sql, project_files/ and ftp_files/ when present, and backup_metadata.json.",
+      "An installation with no uploaded files may have no project_files/ or ftp_files/ entries.",
+      "",
+      "MeterFlo: use the existing System database restore and enable restoration of project files.",
+      "Back up the destination first. A restore changes destination data; use a fresh isolated instance for testing.",
+      "Local audit history is protected by MeterFlo. Imported backup schedules require destination review and explicit re-enablement.",
+      "",
+      "PostgreSQL / pgAdmin: extract the ZIP. database_backup.sql is a plain SQL pg_dump, not a custom-format archive.",
+      "Restore into a fresh disposable database using pgAdmin's PSQL Tool or PostgreSQL psql:",
+      "  psql -X -v ON_ERROR_STOP=1 -h HOST -U USER -d EMPTY_DATABASE -f database_backup.sql",
+      "Do not use pgAdmin's custom-format Restore dialog for this plain SQL file.",
+      "Use compatible PostgreSQL client/server versions and required extensions.",
+      "PostgreSQL restores database rows only. Project documents/attachments must be restored separately through MeterFlo.",
+      "",
+      "Scope: business database and uploaded project/FTP files; not web application source, PostgreSQL server roles,",
+      "external secrets, or a replacement for an OS/server configuration backup. Local audit history is not in this dump.",
+      "Database dump consistency does not make changing filesystem uploads atomic; quiesce uploads for coordinated disaster recovery.",
+      "",
+    ].join("\r\n"), { name: "RESTORE_INSTRUCTIONS.txt" });
+  }
   
   console.log("[Backup] Finalizing archive...");
   if (transportFailure) await Promise.race([archive.finalize(), transportFailure]);
@@ -971,7 +1002,7 @@ async function getPostgresVersion(): Promise<string> {
 export interface BackupMetadata {
   version: string;
   format: string;
-  backupType?: "database" | "clean" | "files" | "project";
+  backupType?: BackupType;
   backupDate: string;
   schemas?: string[];
   tablesIncluded?: string[];

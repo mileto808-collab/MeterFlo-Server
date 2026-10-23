@@ -4,7 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { auditedOperation } from "../auditService";
-import { backupTypeLabels } from "../../shared/backup-schedules";
+import { backupTypeLabels, backupTypes } from "../../shared/backup-schedules";
 import { backupFiles, BackupError } from "./files";
 import * as backups from "./service";
 
@@ -18,7 +18,7 @@ export async function runQuery(query: Record<string, any>, exportAll = false) {
   const add = (sql: string, value: unknown) => { values.push(value); where.push(sql.replaceAll("?", `$${values.length}`)); };
   if (query.search) add("(schedule_name ILIKE ? OR id::text ILIKE ? OR COALESCE(error,'') ILIKE ?)", `%${text(query.search).slice(0, 200)}%`);
   if (query.status) add("status=?", z.enum(["queued", "running", "succeeded", "failed", "interrupted", "cancelled", "expired"]).parse(query.status));
-  if (query.backupType) add("backup_type=?", z.enum(["database", "clean", "files", "project"]).parse(query.backupType));
+  if (query.backupType) add("backup_type=?", z.enum(backupTypes).parse(query.backupType));
   if (query.scheduleId) add("schedule_id=?", uuid.parse(query.scheduleId));
   for (const [key, comparator] of [["from", ">="], ["to", "<"]] as const) {
     if (!query[key]) continue;

@@ -4,13 +4,23 @@ import { backupDestinationSchema, backupScheduleSchema } from "../shared/backup-
 import { nextBackupTime, expiredBackups } from "../server/backups/service";
 import { cloudKey, backupFiles, probeDestination } from "../server/backups/files";
 import { pool } from "../server/db";
+import { withBackupExclusive, withExistingBackupLock } from "../server/backups/lock";
 test.after(() => pool.end());
 const input = { name: "Nightly", backupType: "database", cron: "0 2 * * *", timezone: "America/New_York", enabled: true, retentionDays: 30, minimumCopies: 2 };
 test("backup policy validates types, timezone and deletion safety minimums", () => {
   assert.equal(backupScheduleSchema.parse(input).minimumCopies, 2);
+  assert.equal(backupScheduleSchema.parse({ ...input, backupType: "recovery" }).backupType, "recovery");
   for (const invalid of [{ retentionDays: 0 }, { minimumCopies: 0 }, { backupType: "unknown" }, { timezone: "bad/timezone" }])
     assert.equal(backupScheduleSchema.safeParse({ ...input, ...invalid }).success, false);
   assert.equal(backupDestinationSchema.safeParse({ kind: "app_storage", path: "backups", bucketId: "" }).success, false);
+});
+test("scheduled exporters inherit the already-held backup lock instead of waiting on another session", async t => {
+  t.mock.method(pool, "connect", async () => { throw new Error("Nested backup tried to acquire another connection"); });
+  const value = await withExistingBackupLock(async () => {
+    await Promise.resolve();
+    return withBackupExclusive(() => withBackupExclusive(async () => "exported"));
+  });
+  assert.equal(value, "exported");
 });
 test("cron is timezone aware, validates five fields, and returns a future time", () => {
   const next = nextBackupTime("0 2 * * *", "America/New_York");

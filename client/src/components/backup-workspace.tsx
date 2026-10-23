@@ -98,7 +98,7 @@ function ScheduleEditor({
   saving: boolean;
 }) {
   const [name, setName] = useState("");
-  const [backupType, setBackupType] = useState<BackupScheduleInput["backupType"]>("database");
+  const [backupType, setBackupType] = useState<BackupScheduleInput["backupType"]>("recovery");
   const [cronPreset, setCronPreset] = useState("daily");
   const [cron, setCron] = useState(presetCrons.daily);
   const [scheduleTimezone, setScheduleTimezone] = useState(timezone || "UTC");
@@ -110,7 +110,7 @@ function ScheduleEditor({
   useEffect(() => {
     if (!open) return;
     setName(initial?.name || "");
-    setBackupType(initial?.backupType || "database");
+    setBackupType(initial?.backupType || "recovery");
     const knownPreset = Object.entries(presetCrons).find(([, value]) => value === initial?.cron)?.[0];
     setCronPreset(knownPreset || "custom");
     setCron(initial?.cron || presetCrons.daily);
@@ -157,6 +157,14 @@ function ScheduleEditor({
               <select id="backup-type" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={backupType} onChange={event => setBackupType(event.target.value as BackupScheduleInput["backupType"])}>
                 {backupTypes.map(type => <option key={type} value={type}>{backupTypeLabels[type]}</option>)}
               </select>
+              {backupType === "recovery" && <p className="text-xs text-muted-foreground">
+                One ZIP with database_backup.sql and uploaded project/FTP files when present.
+                Restore in MeterFlo with project files enabled, or extract the SQL for pgAdmin&apos;s PSQL Tool.
+                Includes restore instructions; not application source or external secrets.
+              </p>}
+              {(backupType === "project" || backupType === "files") && <p className="text-xs text-muted-foreground">
+                Files only — no database SQL. Choose Complete recovery for database and project files together.
+              </p>}
               {backupType === "clean" && <p className="text-xs text-muted-foreground">
                 For fresh installations. Includes base configuration and a fresh default admin, not project data, files, logs or audit history.
                 Creating a backup does not delete source data.

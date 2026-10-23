@@ -10,7 +10,7 @@ import { withAuditContext, serviceAuditContext } from "../auditContext";
 import { auditedOperation } from "../auditService";
 import { backupDestinationSchema, backupScheduleSchema, type BackupDestination, type BackupRun, type BackupSchedule } from "../../shared/backup-schedules";
 import { backupFiles, BackupError, localBackupsAllowed, probeDestination } from "./files";
-import { backupLock } from "./lock";
+import { backupLock, withExistingBackupLock } from "./lock";
 
 export function nextBackupTime(expression: string, timezone: string) {
   if (expression.split(/\s+/).length !== 5 || !cron.validate(expression))
@@ -165,14 +165,14 @@ export async function backupTick() {
       const run = runDto(row);
       const temp = await fs.mkdtemp(path.join(os.tmpdir(), "meterflo-scheduled-backup-"));
       try {
-        await withAuditContext(serviceAuditContext("backup-scheduler"), () => auditedOperation("scheduledBackup", run.id, async () => {
+        await withExistingBackupLock(() => withAuditContext(serviceAuditContext("backup-scheduler"), () => auditedOperation("scheduledBackup", run.id, async () => {
           const filename = path.join(temp, "backup.zip");
           await createPgBackupFile(filename, run.backupType);
           const bytes = (await fs.stat(filename)).size;
           await backupFiles.put(run.destination, run.id, filename);
           if (!await backupFiles.exists(run.destination, run.id)) throw new BackupError("The backup upload could not be verified.");
           await client.query("UPDATE public.backup_runs SET status='succeeded',bytes=$2,completed_at=now(),error=null WHERE id=$1", [run.id, bytes]);
-        }));
+        })));
       } catch (error) {
         const message = error instanceof BackupError ? error.message : "Backup failed. Check PostgreSQL backup tools, source-file access and destination permissions.";
         await client.query("UPDATE public.backup_runs SET status='failed',completed_at=now(),error=$2 WHERE id=$1", [run.id, message]);

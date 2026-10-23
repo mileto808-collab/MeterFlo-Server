@@ -36,7 +36,7 @@ const { randomUUID } = require("node:crypto");
     assert.equal(saved.path, folder);
     await json("PUT", base + "/destination", { kind: "local", path: path.join(process.cwd(), "dist/public"), bucketId: "" }, 400);
     const created = [];
-    for (const type of ["database", "clean", "project"]) {
+    for (const type of ["database", "clean", "project", "recovery"]) {
       const schedule = await json("POST", base + "/schedules", {
         name: `Backup ${type}`, backupType: type, cron: "0 2 * * *", timezone: "America/New_York",
         enabled: false, retentionDays: 7, minimumCopies: 2,
@@ -60,9 +60,20 @@ const { randomUUID } = require("node:crypto");
       const archive = await unzipper.Open.buffer(contents);
       const metadata = JSON.parse((await archive.files.find(file => file.path === "backup_metadata.json").buffer()).toString());
       assert.equal(metadata.backupType, type);
-      if (type === "database") {
+      if (type === "database" || type === "recovery") {
         const sql = (await archive.files.find(file => file.path === "database_backup.sql").buffer()).toString();
         assert.ok(sql.includes("backup_schedules"));
+      }
+      if (type === "recovery") {
+        assert.equal(metadata.includesDatabase, true);
+        assert.equal(metadata.includesProjectFiles, true);
+        assert.equal(metadata.format, "pg_dump_full");
+        const document = archive.files.find(file => file.path === "project_files/backup-fixture.txt");
+        assert.ok(document, "Complete recovery includes uploaded project documents");
+        assert.equal((await document.buffer()).toString(), "Owned project document backup fixture");
+        assert.ok(archive.files.some(file => file.path === "RESTORE_INSTRUCTIONS.txt"));
+        const filtered = await json("GET", base + "/runs?backupType=recovery");
+        assert.ok(filtered.rows.some(row => row.id === run.id));
       }
       console.log(`Saved scheduled ${type} backup is downloadable and restorable-format metadata is valid.`);
     }
@@ -113,6 +124,11 @@ const { randomUUID } = require("node:crypto");
     await page.getByTestId("backup-workspace").waitFor();
     assert.ok(await page.getByRole("searchbox", { name: "Search schedules" }).evaluate(element => element.getBoundingClientRect().width > 180));
     await fs.mkdir("generated-artifacts/backups", { recursive: true });
+    await page.getByRole("button", { name: "New schedule", exact: true }).click();
+    assert.equal(await page.getByLabel("Backup type", { exact: true }).inputValue(), "recovery");
+    assert.equal(await page.getByText(/One ZIP with database_backup.sql/).isVisible(), true);
+    await page.screenshot({ path: "generated-artifacts/backups/complete-recovery.png" });
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.screenshot({ path: "generated-artifacts/backups/desktop.png" });
     assert.equal(errors.length, 0, errors.join("\n"));
     await context.close();

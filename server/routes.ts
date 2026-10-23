@@ -8256,8 +8256,8 @@ export async function registerRoutes(
       
       // Get backup type from query parameter, default to 'database' for full database backup
       const backupType = (req.query.type as BackupType) || "database";
-      if (!["database", "clean", "files", "project"].includes(backupType)) {
-        return res.status(400).json({ message: "Invalid backup type. Must be 'database', 'clean', 'files', or 'project'" });
+      if (!["recovery", "database", "clean", "files", "project"].includes(backupType)) {
+        return res.status(400).json({ message: "Invalid backup type. Must be 'recovery', 'database', 'clean', 'files', or 'project'" });
       }
       
       await createPgBackupArchive(res, backupType);

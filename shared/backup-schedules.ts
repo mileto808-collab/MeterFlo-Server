@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-export const backupTypes = ["database", "clean", "files", "project"] as const;
+export const backupTypes = ["recovery", "database", "clean", "files", "project"] as const;
 export const backupTypeLabels = {
+  recovery: "Complete recovery — database + project files",
   database: "Database + all project databases",
   clean: "Clean configuration database",
   files: "Web application source files",

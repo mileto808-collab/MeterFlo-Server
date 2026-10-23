@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.backup_destination (
   path text NOT NULL, bucket_id text NOT NULL DEFAULT '', updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS public.backup_schedules (
-  id uuid PRIMARY KEY, name text NOT NULL, backup_type text NOT NULL CHECK(backup_type IN ('database','clean','files','project')),
+  id uuid PRIMARY KEY, name text NOT NULL, backup_type text NOT NULL CHECK(backup_type IN ('recovery','database','clean','files','project')),
   cron text NOT NULL, timezone text NOT NULL, enabled boolean NOT NULL DEFAULT false,
   retention_days integer NOT NULL CHECK(retention_days BETWEEN 1 AND 3650),
   minimum_copies integer NOT NULL CHECK(minimum_copies BETWEEN 1 AND 100),
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.backup_schedules (
 );
 CREATE TABLE IF NOT EXISTS public.backup_runs (
   id uuid PRIMARY KEY, schedule_id uuid NOT NULL CONSTRAINT backup_runs_schedule_id_backup_schedules_id_fk REFERENCES public.backup_schedules(id),
-  schedule_name text NOT NULL, backup_type text NOT NULL CHECK(backup_type IN ('database','clean','files','project')),
+  schedule_name text NOT NULL, backup_type text NOT NULL CHECK(backup_type IN ('recovery','database','clean','files','project')),
   trigger text NOT NULL CHECK(trigger IN ('scheduled','manual')),
   status text NOT NULL CHECK(status IN ('queued','running','succeeded','failed','interrupted','cancelled','expired')),
   destination_kind text NOT NULL CHECK(destination_kind IN ('local','app_storage')),
@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS public.backup_runs (
   created_at timestamptz NOT NULL DEFAULT now(), started_at timestamptz, completed_at timestamptz,
   bytes bigint, error text, cleanup_error text
 );
+ALTER TABLE public.backup_schedules DROP CONSTRAINT IF EXISTS backup_schedules_backup_type_check;
+ALTER TABLE public.backup_schedules ADD CONSTRAINT backup_schedules_backup_type_check CHECK(backup_type IN ('recovery','database','clean','files','project'));
+ALTER TABLE public.backup_runs DROP CONSTRAINT IF EXISTS backup_runs_backup_type_check;
+ALTER TABLE public.backup_runs ADD CONSTRAINT backup_runs_backup_type_check CHECK(backup_type IN ('recovery','database','clean','files','project'));
 CREATE INDEX IF NOT EXISTS backup_schedules_due ON public.backup_schedules(next_run_at) WHERE enabled AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS backup_runs_history ON public.backup_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS backup_runs_schedule ON public.backup_runs(schedule_id,completed_at DESC);
