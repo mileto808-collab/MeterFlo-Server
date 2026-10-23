@@ -60,6 +60,7 @@ const { execFileSync } = require("node:child_process");
     // Browser refresh retains the active capture step as well as the draft.
     await expect(page.locator("#serials-return-meter")).toHaveValue("RETURN-A\n");
     await expect.poll(() => page.getByTestId("vehicle-return-stock").evaluate(element => element.scrollTop)).toBe(0);
+    await expect.poll(() => page.getByTestId("vehicle-return-content").evaluate(element => element.scrollTop)).toBe(0);
     assert.equal(await page.evaluate(() => document.activeElement.matches("input,textarea")), false);
     await page.locator("#serials-return-meter").fill("");
     await expect(page.getByRole("button", { name: "Review operation", exact: true })).toBeDisabled();

@@ -9,8 +9,8 @@ For portrait-to-landscape acceptance, wait for resize rendering to settle, asser
 
 **How to apply:** Use a touch-enabled browser context and verify the visible control after rotation and capture. Reserve full-page images for scrolling/content checks rather than proof of landscape behavior.
 
-Wait for animated dialog geometry to settle before diagnosing horizontal clipping after a viewport change.
+Wait for animated or measured workspace geometry to settle before diagnosing clipping after a viewport change.
 
-**Why:** An immediate bounding-box check reported an oversized dialog while the subsequent viewport screenshot showed the correctly fitted layout. Two animation frames were not sufficient to finish the transition.
+**Why:** Immediate bounding-box checks have reported oversized dialogs and a footer below the viewport while a subsequent settled capture showed the correctly fitted layout. Animations and available-height measurements can finish after the resize event; two animation frames were not sufficient in one case.
 
-**How to apply:** Poll the dialog's viewport bounds after resizing, then inspect the viewport screenshot and nested scroll-container widths. Do not infer a permanent CSS defect from an intermediate animated width.
+**How to apply:** Poll viewport bounds after resizing, then inspect the viewport screenshot and nested scroll-container widths. For persistent wizard controls, include the footer's bottom edge and a positive content-pane height. Do not infer a permanent CSS defect from an intermediate size.

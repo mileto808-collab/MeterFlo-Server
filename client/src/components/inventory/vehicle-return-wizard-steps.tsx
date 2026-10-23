@@ -103,7 +103,11 @@ export function VehicleReturnWizardSteps(props: Props) {
         <p className="mt-1 text-sm text-muted-foreground">Existing authorized drafts are restored automatically. Preparation and final posting remain separate steps.</p>
         {data?.drafts.filter(value => value.capture.kind === kind && value.status !== "deleted").length ? <div className="mt-3 space-y-2">
           {data.drafts.filter(value => value.capture.kind === kind && value.status !== "deleted").map(value => <div key={value.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3 text-sm">
-            <span><strong>{value.capture.sourceId || "Vehicle not selected"}</strong> · {new Date(value.savedAt).toLocaleString()} · {value.status}</span>
+            <span className="min-w-0 break-words"><strong>
+              {kind === "equipment" ? "Equipment return" : kind === "count" ? "Vehicle count" : "Stock return"}
+              {" — "}{data.vehicles.find(vehicle => vehicle.id === value.capture.sourceId)?.name ||
+                (value.capture.sourceId ? "Vehicle unavailable" : "Vehicle not selected")}
+            </strong> · {new Date(value.savedAt).toLocaleString()} · {value.status}</span>
             <Button size="sm" variant="outline" onClick={() => onOpenDraft(value)} disabled={!canOpenSharedDraft}>Open draft</Button>
           </div>)}
         </div> : <p className="mt-3 text-sm text-muted-foreground">No saved workflow draft for this task.</p>}

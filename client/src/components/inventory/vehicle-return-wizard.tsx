@@ -60,7 +60,6 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
   const captureRef = useRef(capture);
   captureRef.current = capture;
   const contentRef = useRef<HTMLElement | null>(null);
-  const pageRef = useRef<HTMLElement | null>(null);
   const frozenCommandRef = useRef<SavedVehicleReturnDraft["command"]>(undefined);
   const restoredForKeyRef = useRef("");
   const localKey = userId ? storageKey(projectId, userId, kind) : "";
@@ -536,14 +535,14 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
   const pageTitle = kind === "equipment" ? "Return removed equipment" : kind === "count" ? "Verify vehicle inventory" : "Return usable vehicle stock";
   useWizardStepFocus({
     open: canUse, ready: restoreReadyForKey, stepKey: `${kind}:${step}`,
-    rootRef: contentRef, bodyRef: pageRef,
+    rootRef: contentRef, bodyRef: contentRef,
     chooseTarget: root => root.querySelector<HTMLElement>('[data-wizard-needs-input="true"]'),
   });
 
   if (!canUse) return <div className="mx-auto w-full max-w-4xl p-5"><Alert><AlertTitle>Permission required</AlertTitle><AlertDescription>Your inventory permissions no longer allow this workflow.</AlertDescription></Alert><Button className="mt-4" onClick={onClose}>Back to tasks</Button></div>;
 
-  return <section ref={pageRef} className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-y-auto" data-testid={`vehicle-return-${kind}`}>
-    <header className="sticky top-0 z-20 border-b bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+  return <section className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-hidden" data-testid={`vehicle-return-${kind}`}>
+    <header className="shrink-0 border-b bg-background px-4 py-3 sm:px-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <Button type="button" variant="ghost" className="-ml-3 mb-1 h-8 px-3 text-muted-foreground" onClick={onClose}>
@@ -566,7 +565,8 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
       </nav>}
     </header>
 
-    <main ref={contentRef} className="min-h-0 flex-1 space-y-5 p-4 pb-28 sm:p-6 sm:pb-28">
+    <main ref={contentRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-4 sm:p-6"
+      data-testid="vehicle-return-content" role="region" aria-label={`${pageTitle} content`} tabIndex={0}>
       <VehicleReturnWizardSteps kind={kind} step={step} restoreReady={restoreReadyForKey} capture={capture} draft={draft} data={data}
         sourceVehicle={sourceVehicle} destinations={destinations} items={items} selectedEquipment={selectedEquipment}
         equipmentGroups={equipmentGroups} selectedLines={selectedLines} vehicleStockItemIds={vehicleStockItemIds}
@@ -619,7 +619,7 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
         onClose={onClose} />
     </main>
 
-    {restoreReadyForKey && step !== "receipt" && <footer className="sticky bottom-0 z-10 mt-auto border-t bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+    {restoreReadyForKey && step !== "receipt" && <footer className="shrink-0 border-t bg-background px-4 py-3 sm:px-6" data-testid="vehicle-return-footer">
       <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{syncing ? "Saving shared draft…" : draft ? `Shared draft · rev ${draft.revision}` : meaningfulVehicleReturn(capture) ? "Saving shared draft…" : "No draft until you enter meaningful details"}</span>
