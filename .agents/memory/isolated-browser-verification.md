@@ -25,6 +25,17 @@ HTTP proxy could not finish reading the application's continuous event stream.
 **How to apply:** Treat event transport and teardown as part of the test harness,
 not evidence of a failed screen or permission check.
 
+Wait for workspace hydration before deciding which navigation action to take;
+closing a task and reloading a task need not return to the same entry screen.
+
+**Why:** A visibility check made before hydration mistook a restored open
+workflow for the Inventory list, then waited for a launcher that was correctly
+absent. Closing the workflow instead returned to the task chooser.
+
+**How to apply:** Await an actionable workspace surface first, then navigate
+from the restored page, task chooser, or Inventory list as appropriate. Do not
+replace persisted-screen behavior or add timing sleeps to accommodate tests.
+
 For nested animated modal tests, wait for the child layer to detach and click
 the live parent overlay through a locator, not a raw coordinate mouse event.
 

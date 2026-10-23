@@ -19,6 +19,17 @@ That can be mistaken for a missing-record or responsive-layout failure.
 normal role management, then separately verify create/edit/delete remain denied.
 An API read alone does not establish that the account can enter the page.
 
+Keep privileged fixture preparation separate from the account whose access is
+being tested.
+
+**Why:** Planning work-order demand and physically fulfilling that demand have
+separate authority. Expanding a warehouse test user's role just to seed planned
+work would conceal that boundary.
+
+**How to apply:** Prepare prerequisites through the existing authorized
+administrator flow, then exercise warehouse and technician actions with their
+original restricted roles. Revoke and restore grants through role management.
+
 Hide Inventory tabs, buttons and workflow entry points when the user lacks the applicable permissions; do not merely leave unusable actions visible.
 
 **Why:** The user explicitly said field technicians with View Inventory and Assign Inventory should not see warehouse-only areas or enter Start Inventory simply because they can view work orders.
