@@ -40,6 +40,8 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
   const [ticketQr, setTicketQr] = useState("");
   const sequenceRef = useRef("");
   const sequenceTimeRef = useRef(0);
+  const onScreenChangeRef = useRef(onScreenChange);
+  onScreenChangeRef.current = onScreenChange;
   const can = (permission: string) => permissions ? permissions.includes(permission) : hasPermission(permission);
   const capabilities = inventoryCapabilities(can);
   const allowed = capabilities.startInventory;
@@ -58,9 +60,13 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
     if (!allowed || (isLoading && permissions === undefined)) return;
     const onOpen = (event: Event) => {
       const targetProject = (event as CustomEvent<{ projectId?: number }>).detail?.projectId;
-      if (targetProject === undefined || targetProject === projectId) onScreenChange("tasks");
+      if (targetProject === undefined || targetProject === projectId) onScreenChangeRef.current("tasks");
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.repeat || event.ctrlKey || event.metaKey || event.altKey) {
+        sequenceRef.current = "";
+        return;
+      }
       const target = event.target as HTMLElement | null;
       const dialog = target?.closest('[role="dialog"]');
       if (!fulfillmentAllowed || (dialog && !dialog.hasAttribute("data-inventory-fulfillment-dialog")) ||
@@ -70,7 +76,8 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
         return;
       }
       const now = performance.now();
-      if (now - sequenceTimeRef.current > 85) sequenceRef.current = "";
+      // Bluetooth keyboard wedges can pause briefly between QR characters.
+      if (now - sequenceTimeRef.current > 250) sequenceRef.current = "";
       sequenceTimeRef.current = now;
       if (event.key === "Enter" || event.key === "Tab") {
         const value = sequenceRef.current;
@@ -78,22 +85,29 @@ export function InventoryWorkflowLauncher({ projectId, permissions, screen, onSc
         const parsed = parsePickTicketQr(value, projectId);
         if (parsed.kind === "ticket" || parsed.kind === "wrong_project") {
           event.preventDefault();
+          event.stopImmediatePropagation();
           setTicketQr(value);
-          onScreenChange("fulfillment");
+          onScreenChangeRef.current("fulfillment");
         }
         return;
       }
       if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        sequenceRef.current = `${sequenceRef.current}${event.key}`.slice(-512);
+        sequenceRef.current = `${sequenceRef.current}${event.key}`.slice(-4097);
       } else if (!["Shift", "Control", "Alt", "Meta"].includes(event.key)) sequenceRef.current = "";
     };
     window.addEventListener(launcherEvent, onOpen);
     window.addEventListener("keydown", onKeyDown, true);
+    const resetSequence = () => { sequenceRef.current = ""; sequenceTimeRef.current = 0; };
+    window.addEventListener("blur", resetSequence);
+    document.addEventListener("visibilitychange", resetSequence);
     return () => {
+      resetSequence();
       window.removeEventListener(launcherEvent, onOpen);
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("blur", resetSequence);
+      document.removeEventListener("visibilitychange", resetSequence);
     };
-  }, [allowed, fulfillmentAllowed, isLoading, permissions === undefined, projectId, onScreenChange]);
+  }, [allowed, fulfillmentAllowed, isLoading, permissions === undefined, projectId]);
 
   if (!allowed && !isLoading && screen !== "tasks") return null;
   return <>

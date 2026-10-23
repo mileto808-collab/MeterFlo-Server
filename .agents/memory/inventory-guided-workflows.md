@@ -91,7 +91,7 @@ An explicit pick-ticket scan is an exception to the normal chooser-first entry: 
 
 **Why:** The user needs warehouse staff to retrieve a staged order quickly when a crew arrives later, using an HID scanner anywhere in Inventory or the fulfillment camera. The technician's pickup notice/report must also show a QR that the warehouse can scan.
 
-**How to apply:** Keep manual task entry predictable. Resolve scanned batch identity against current local permissions and state, not the printed status or scanned host. Waiting staged stock leads to handoff; unpicked work leads to staging; review and completed states must not expose an unsafe movement. Opening a scan never posts stock.
+**How to apply:** Keep HID scanning ready across Inventory, Start Inventory's task page, fulfillment and the pick-ticket scan modal. Offer USB/Bluetooth HID separately from camera scanning on desktop and mobile, without requiring input focus or opening the keyboard. Keep manual task entry predictable. Resolve scanned batch identity against current local permissions and state, not the printed status or scanned host. Waiting staged stock leads to handoff; unpicked work leads to staging; review and completed states must not expose an unsafe movement. Opening a scan never posts stock.
 
 Ticket switching must preserve captured work and unresolved command identities, including separately saved correction work.
 
@@ -105,14 +105,14 @@ External scans must wait for stored captures and the opening refresh before chec
 
 **How to apply:** Keep the scan pending through initialization, including entry through the task chooser. Preserve genuine edit/unknown-outcome protection after initialization instead of weakening that protection to allow scans.
 
-Each fulfillment wizard step must bring the next required control into view, focus it, and clearly highlight it; completion must bring its confirmation into view.
+Follow [Inventory step guidance](inventory-step-guidance.md) for navigation and highlighting: start at the top without automatic input focus, keyboard activation or scrolling to a field.
 
-**Why:** Retaining the previous step's scroll position left phone users looking at the release-remainder section instead of the vehicle-handoff inputs.
+**Why:** The user explicitly replaced the earlier focus-and-scroll rules.
 
-**How to apply:** Apply this on forward/back navigation, resumed steps and movement outcomes, not on ordinary typing or background refreshes. Keep focus within the active dialog and account for the device keyboard without replacing saved captures. If the next field is already visible near the top, retain the section heading rather than scrolling it away; only scroll enough to reveal a distant field.
+**How to apply:** Keep scan arrival and ordinary navigation consistent with that newer policy. Background refreshes must not move the current view or interrupt a partial HID sequence.
 
-Explicit pick-ticket arrivals first focus and show the batch name plus its matching printed ticket number, rather than a quantity or scan input.
+Explicit pick-ticket arrivals show the batch name plus its matching printed ticket number, rather than focusing a quantity or scan input.
 
 **Why:** The user needs to match the physical ticket immediately after scanning, including when returning to the staging step.
 
-**How to apply:** Show the readable printed identifier beside the batch name. Realign to that heading even for a repeated scan of the same batch/step; ordinary step navigation still focuses the next required control.
+**How to apply:** Show the readable printed identifier beside the batch name. Realign to that heading even for a repeated scan of the same batch/step, without focusing an input.

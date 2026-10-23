@@ -1974,17 +1974,20 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             </div>
             {finishedNotice && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{finishedNotice}</p>}
             <Dialog open={showTicketScan} onOpenChange={setShowTicketScan}>
-              <DialogContent className="sm:max-w-lg" onOpenAutoFocus={event => event.preventDefault()}>
+              <DialogContent data-inventory-fulfillment-dialog className="sm:max-w-lg" onOpenAutoFocus={event => event.preventDefault()}>
                 <DialogHeader>
                   <DialogTitle>Scan or open a pick ticket</DialogTitle>
-                  <DialogDescription>Open the saved ticket to continue staging or handoff. Scanning never moves stock.</DialogDescription>
+                  <DialogDescription>Use a USB / Bluetooth HID scanner, camera, or ticket link to open the saved batch. Scanning never moves stock.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
-                  <ScannerInput preventAutoFocus value={ticketInput} onChange={value => {
+                  <ScannerInput preventAutoFocus enableHid value={ticketInput} onChange={value => {
                     changeTicketInput(value);
                     if (parsePickTicketQr(value, projectId).kind !== "invalid") void lookupPickTicket(value);
                   }} placeholder="Scan a printed pick ticket QR code"
                     data-testid="inventory-pick-ticket-scanner" />
+                  <p role="status" data-testid="inventory-pick-ticket-hid-ready" className="text-sm text-muted-foreground">
+                    HID scanning is ready here and throughout Inventory, including Start Inventory. Scan the pick-ticket QR code and finish with Enter or Tab; no scan field needs focus. Tap an input only for manual entry.
+                  </p>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Input aria-label="Paste pick ticket QR link" data-testid="inventory-pick-ticket-paste"
                       value={ticketInput} onChange={event => changeTicketInput(event.target.value)}

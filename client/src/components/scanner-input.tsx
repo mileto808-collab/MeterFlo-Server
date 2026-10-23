@@ -25,10 +25,12 @@ interface ScannerInputProps {
   openCameraRequest?: number;
   /** Inventory workflows must not summon the mobile keyboard automatically. */
   preventAutoFocus?: boolean;
+  /** Offer a physical keyboard-wedge scanner separately from mobile cameras. */
+  enableHid?: boolean;
   "data-testid"?: string;
 }
 
-type ScanMode = "manual" | "barcode" | "qrcode";
+type ScanMode = "manual" | "barcode" | "qrcode" | "hid";
 
 export function ScannerInput({
   value,
@@ -37,6 +39,7 @@ export function ScannerInput({
   disabled = false,
   openCameraRequest,
   preventAutoFocus = false,
+  enableHid = false,
   "data-testid": testId,
 }: ScannerInputProps) {
   const [scanMode, setScanMode] = useState<ScanMode>("manual");
@@ -375,6 +378,8 @@ export function ScannerInput({
         return <Scan className="h-4 w-4" />;
       case "qrcode":
         return <QrCode className="h-4 w-4" />;
+      case "hid":
+        return <Scan className="h-4 w-4" />;
       default:
         return <Keyboard className="h-4 w-4" />;
     }
@@ -386,6 +391,8 @@ export function ScannerInput({
         return isMobile ? "Scan Barcode" : "HID Barcode";
       case "qrcode":
         return "Scan QR";
+      case "hid":
+        return "HID Scanner";
       default:
         return "Manual";
     }
@@ -397,7 +404,7 @@ export function ScannerInput({
         ref={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={scanMode === "barcode" && !isMobile ? "Scan with HID device..." : placeholder}
+        placeholder={scanMode === "hid" || scanMode === "barcode" && !isMobile ? "Scan with USB / Bluetooth HID scanner..." : placeholder}
         disabled={disabled}
         data-testid={testId}
         className="flex-1"
@@ -419,6 +426,10 @@ export function ScannerInput({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {enableHid && <DropdownMenuItem onClick={() => handleModeSelect("hid")} data-testid={`${testId}-mode-hid`}>
+            <Scan className="h-4 w-4 mr-2" />
+            HID Scanner (USB / Bluetooth)
+          </DropdownMenuItem>}
           <DropdownMenuItem onClick={() => handleModeSelect("manual")} data-testid={`${testId}-mode-manual`}>
             <Keyboard className="h-4 w-4 mr-2" />
             Manual Entry
