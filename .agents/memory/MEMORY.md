@@ -70,6 +70,7 @@
 - [Operational log cleanup](log-maintenance-scope.md) — failed imports are manual-only; protect retry/replay state; new retention categories require explicit opt-in.
 - [Field changeout priorities](field-changeout-priorities.md) — field-first completion, backend inventory reconciliation, shared Open-order claiming and interruption-safe wizard captures.
 - [Mobile replay boundary](mobile-replay-boundary.md) — opt-in immutable attempts; recover before media effects, and distinguish field acceptance from inventory accounting.
+- [Mobile read snapshots](mobile-read-snapshots.md) — consistent sync inventory reads must not acquire write locks; verify full/delta downloads with real PostgreSQL.
 - [Inventory dispatch policy](inventory-dispatch-policy.md) — preserve non-inventory group lists; inventory dispatch should follow staged vehicle batches and authorized multi-vehicle crews.
 - [Inventory planning intent](inventory-planning-fulfillment.md) — manual additions stay planned; future crew fulfillment must allow onsite selection of installed serials.
 - [Clean project copies](inventory-project-copy.md) — copy inventory setup only: Locations, Items, Categories and Vendors; no stock, operational history or location user assignments.

@@ -49,7 +49,7 @@ import { auditedOperation } from "./auditService";
 import { coreUpdatePreview, gitReader } from "./coreUpdatePreview";
 import { runtimeCustomerRelease } from "./customerExtensions";
 import { registerInventoryRoutes } from "./inventoryRoutes";
-import { inventoryState } from "./inventoryService";
+import { readRelationalInventory } from "./inventoryRelational";
 import { removalConfig } from "../shared/inventory-removal-policy";
 import { getProjectEquipmentVisibility } from "../shared/project-equipment-scope";
 import { InventoryError } from "../shared/inventory-engine";
@@ -9350,7 +9350,8 @@ export async function registerRoutes(
           await client.query("ROLLBACK");
           return res.status(403).json({ message: "You are not assigned to this inventory project." });
         }
-        const inv = inventoryEnabled ? await inventoryState(projectId, client) : null;
+        // This snapshot must never acquire write locks or initiate inventory migration.
+        const inv = inventoryEnabled ? await readRelationalInventory(client, projectId, { readOnly: true }) : null;
         const pricing = inventoryEnabled && canViewInventoryPricing(
           await storage.getUserEffectivePermissions(currentUser), inventoryAdmin);
         

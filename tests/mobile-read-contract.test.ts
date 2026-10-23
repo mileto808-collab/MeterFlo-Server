@@ -144,8 +144,10 @@ function fixture(options: { enabled?: boolean; view?: boolean; manager?: boolean
         vehicleId: "van", receiptNumber: "PICK-2026-000001",
       } } : {}) })) : [];
     },
-    inventoryState: async (_id: number, connection: any) => {
+    readRelationalInventory: async (connection: any, _id: number, options: { readOnly?: boolean }) => {
       assert.equal(connection, client);
+      assert.equal(options?.readOnly, true, "sync must not lock inventory or initiate migrations");
+      assert.deepEqual(Object.keys(options), ["readOnly"]);
       state.inventoryRead = true;
       return { items: [itemSchema.parse({ id: "meter", name: "Meter", sku: "M", tracking: "serialized",
         cost: 99, vendorId: "vendor" })], warehouses: [], allocations: [], locationTypes: [] };
@@ -254,7 +256,7 @@ test("actual download never returns a snapshot on unauthenticated, unassigned or
   unassigned.deps.storage.isUserAssignedToProject = async () => false;
   assert.equal((await unassigned.invoke(download)).status, 403);
   const failed = fixture();
-  failed.deps.inventoryState = async () => { throw new Error("Synthetic read failure"); };
+  failed.deps.readRelationalInventory = async () => { throw new Error("Synthetic read failure"); };
   const result = await failed.invoke(download);
   assert.equal(result.status, 500);
   assert.equal(result.body.meta, undefined);
