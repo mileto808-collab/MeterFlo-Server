@@ -4,6 +4,7 @@ import { workPlanInputSchema } from "../shared/inventory-planning";
 import { fulfillmentBatchSchema } from "../shared/inventory-fulfillment";
 import { savedFulfillmentDraftSchema } from "../shared/inventory-fulfillment-drafts";
 import { savedVehicleTransferDraftSchema } from "../shared/inventory-vehicle-transfer-drafts";
+import { savedVehicleReturnDraftSchema } from "../shared/inventory-vehicle-returns";
 import { z } from "zod";
 import { validateCustomerHandoffs } from "../shared/inventory-customer-handoffs";
 import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
@@ -73,6 +74,26 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Saved shipment draft references an unrelated receipt.");
   }
   const s = backup.state;
+  const returnDrafts = z.array(savedVehicleReturnDraftSchema).parse(s.vehicleReturnDrafts ?? []);
+  if (new Set(returnDrafts.map(draft => draft.id)).size !== returnDrafts.length)
+    throw new Error("Duplicate saved vehicle return draft identities.");
+  for (const draft of returnDrafts) {
+    const pending = ["submitting", "posted"].includes(draft.status);
+    if (pending !== !!draft.command || draft.command && (draft.command.data.draftId !== draft.id ||
+        draft.command.data.draftRevision !== (draft.status === "posted" ? draft.revision - 1 : draft.revision)))
+      throw new Error("Invalid frozen vehicle return draft.");
+    if (draft.capture.sourceId && !s.warehouses.some(location => location.id === draft.capture.sourceId) ||
+        draft.capture.destinationId && !s.warehouses.some(location => location.id === draft.capture.destinationId) ||
+        draft.capture.itemIds.some(id => !s.items.some(item => item.id === id)) ||
+        draft.capture.returnIds.some(id => !s.returns.some(record => record.id === id)) ||
+        draft.baseline.some(row => row.warehouseId !== draft.capture.sourceId || !s.items.some(item => item.id === row.itemId)) ||
+        new Set(draft.baseline.map(row => row.itemId)).size !== draft.baseline.length)
+      throw new Error("Saved vehicle return draft has invalid inventory references.");
+    if (draft.status === "posted" && (draft.receiptId !== draft.command?.operationId ||
+        !s.receipts.some(receipt => receipt.id === draft.receiptId && receipt.vehicleReturn?.kind === draft.capture.kind)))
+      throw new Error("Saved vehicle return draft is missing its posted receipt.");
+  }
+  s.vehicleReturnDrafts = returnDrafts;
   const handoverDrafts = z.array(savedVehicleTransferDraftSchema).parse(s.vehicleTransferDrafts ?? []);
   if (new Set(handoverDrafts.map(draft => draft.id)).size !== handoverDrafts.length)
     throw new Error("Duplicate saved vehicle handover draft identities.");
@@ -151,7 +172,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
     dispositionSchema.parse(d); historical(d);
   }
   const returnSchema = dispositionSchema.extend({
-    id: z.string().min(1), workOrderId: z.number().int().positive(),
+    id: z.string().min(1), workOrderId: z.number().int().positive(), fieldWarehouseId: z.string().min(1).optional(),
     status: z.enum(["pending", "quarantine", "released", "scrapped", "left_onsite", "customer_pending", "customer_returned"]),
     customerRecipient: z.string().trim().min(1).max(200).optional(), customerReference: z.string().max(200).optional(),
     customerHandoffAt: z.string().datetime().optional(), customerHandoffBy: z.string().min(1).optional(), customerHandoffId: z.string().uuid().optional(),
@@ -177,6 +198,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
     }
     if (!workOrderIds.includes(returned.workOrderId) ||
         returned.warehouseId && !s.warehouses.some(w => w.id === returned.warehouseId) ||
+        returned.fieldWarehouseId && !s.warehouses.some(w => w.id === returned.fieldWarehouseId) ||
         returned.itemId && !s.items.some(i => i.id === returned.itemId) ||
         ["quarantine", "released"].includes(returned.status) && (!returned.warehouseId || returned.disposition !== "returned"))
       throw new Error("Inventory backup has invalid removed-equipment custody.");

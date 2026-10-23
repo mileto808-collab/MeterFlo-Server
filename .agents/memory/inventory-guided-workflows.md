@@ -23,6 +23,12 @@ Returning vehicles need three separate focused wizards: return removed equipment
 
 **How to apply:** These wizards should streamline the physical process with focused steps and the same saved drafts, checks, receipts and recovery features as fulfillment/staging and vehicle transfer. Keep removed-equipment custody distinct from usable stock transfers.
 
+Vehicle verification must retain missing and unexpected serials as count evidence, rather than treating every unexpected serial as an invalid transfer scan. Discrepancies require explicit review; recording observations is not permission to silently adjust stock.
+
+**Why:** The approved return-to-warehouse workflow distinguishes finding discrepancies from moving usable stock. An unexpected serial may still belong to another location, so accepting count evidence must not duplicate physical custody.
+
+**How to apply:** Reject duplicate scans, but keep unexpected count observations for investigation. Ordinary stock returns still require eligible source stock and must protect inventory committed to outstanding dispatched work.
+
 On the fulfillment entry screen, workflow selector cards sit directly below “Choose a fulfillment workflow.” QR scanning is a button above that heading opening a scan modal; pickup-problem review must be prominent.
 
 **Why:** The user requested a simpler entry screen without the expanded scanner form separating the heading from its choices.

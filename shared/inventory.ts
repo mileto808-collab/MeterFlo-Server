@@ -79,7 +79,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 });
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
-    "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
+    "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft", "vehicleReturn",
     "fulfillmentCreate", "fulfillmentMove", "fulfillmentClose", "fulfillmentReady", "fulfillmentReassign", "fulfillmentIssue", "fulfillmentCorrect", "fulfillmentInvestigate", "plan", "stageWorkOrder", "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink", "resolveStockDiscrepancy", "vehicleTransfer"]),
   data: z.record(z.unknown()),
@@ -112,15 +112,18 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
   labor?: import("./inventory-pricing").LaborCharge[];
   sourceId?: string;
+  vehicleReturn?: import("./inventory-vehicle-returns").VehicleReturnEvidence;
   workOrderIds?: number[];
   damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[]; sourceReceiptId?: string;
   holdDisposition?: HoldDisposition; kitHoldId?: string; kitInspection?: StockLine;
   kitConversion?: { assemblyId: string; recovered: Array<import("./inventory-kits").KitRecovery> } };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released" | "scrapped" | "left_onsite" | "customer_pending" | "customer_returned"; itemId?: string;
+  fieldWarehouseId?: string;
   customerRecipient?: string; customerReference?: string; customerHandoffAt?: string; customerHandoffBy?: string; customerHandoffId?: string;
   history?: Array<{ operationId: string; actor: string; occurredAt: string; outcome: string; reason: string; ruleId?: string; ruleRevision?: number; ruleName?: string;
     recipient?: string; reference?: string; previousStatus?: string; physicallyPresent?: boolean; handoffId?: string }> };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  vehicleReturnDrafts?: import("./inventory-vehicle-returns").SavedVehicleReturnDraft[];
   fulfillmentBatches?: import("./inventory-fulfillment").FulfillmentBatch[];
   customerHandoffs?: import("./inventory-customer-handoffs").CustomerHandoff[];
   fieldSettings?: FieldStockSettings[];

@@ -18,6 +18,10 @@ export function inventoryCapabilities(can: (permission: string) => boolean) {
   };
   const vehicleTransfer = ["inventory.view", "inventory.transfer", "inventory.receive"].every(can);
   const fulfillment = ["inventory.view", "workOrders.view", "inventory.assign", "inventory.receive", "inventory.transfer"].every(can);
+  const returnEquipment = ["inventory.view", "inventory.receive"].every(can);
+  const verifyVehicle = ["inventory.view", "inventory.count"].every(can);
+  const returnStock = ["inventory.view", "inventory.receive", "inventory.transfer"].every(can);
   return { tabs, warehouse, stats: warehouse,
-    fulfillment, vehicleTransfer, startInventory: fulfillment || vehicleTransfer };
+    fulfillment, vehicleTransfer, returnEquipment, verifyVehicle, returnStock,
+    startInventory: fulfillment || vehicleTransfer || returnEquipment || verifyVehicle || returnStock };
 }

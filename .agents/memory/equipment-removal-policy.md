@@ -46,6 +46,12 @@ recorded; a handoff scan is verification, not a replacement equipment identity.
 selected custody records, and reject duplicate/unexpected/incomplete scans.
 Reprinting must preserve the handoff's captured serial evidence.
 
+An actual warehouse receipt may change where removed equipment is held without changing the location originally captured in the field disposition.
+
+**Why:** Actual return custody and the technician's historical disposition are different evidence. Receiving at another warehouse must not make a later work-order reopen look like a rewrite of the original removal.
+
+**How to apply:** Preserve the original field location when recording a different receiving location, and use the original evidence when checking unchanged historical dispositions.
+
 Independently saved removal controls that share a policy revision must serialize saves through completion of the refreshed snapshot.
 
 **Why:** Saving technician selections and immediately toggling mandatory returns can otherwise submit an earlier revision even after the database has accepted the first save.

@@ -19,6 +19,7 @@ import { applyStagingCorrection, pickupNeedsReview } from "./inventory-staging-c
 import { updateWorkPlan, effectivePlannedLines } from "./inventory-planning";
 import { applyFulfillmentMove, fulfillmentBatchSchema, fulfillmentReserved, fulfillmentReadySchema } from "./inventory-fulfillment";
 import { applyVehicleTransfer } from "./inventory-vehicle-transfer";
+import { applyVehicleWarehouseReturn, assertVehicleReturnDraft } from "./inventory-vehicle-returns";
 import { assertVehicleTransferDraftCommand, completeVehicleTransferDraft } from "./inventory-vehicle-transfer-drafts";
 import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
 import { fieldUseSplit, resolveStockDiscrepancySchema } from "./inventory-stock-discrepancies";
@@ -155,8 +156,12 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   if (original.operations[command.operationId]) {
     const sharedHandover = command.action === "vehicleTransfer" && command.data.draftId
       ? original.vehicleTransferDrafts?.find(draft => draft.id === command.data.draftId && draft.status === "posted")
-      : undefined;
-    if (sharedHandover) assertVehicleTransferDraftCommand(original, command, canonicalInventoryJson);
+      : command.action === "vehicleReturn"
+        ? original.vehicleReturnDrafts?.find(draft => draft.id === command.data.draftId && draft.status === "posted") : undefined;
+    if (sharedHandover) {
+      if (command.action === "vehicleReturn") assertVehicleReturnDraft(original, command, canonicalInventoryJson);
+      else assertVehicleTransferDraftCommand(original, command, canonicalInventoryJson);
+    }
     const originalHandoverFingerprint = sharedHandover && canonicalInventoryJson({
       action: command.action, data: command.data, actor: sharedHandover.updatedBy,
     });
@@ -464,6 +469,12 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       move: (warehouseId, input, sign, transitId) => move(s, warehouseId, input, sign, undefined,
         sign < 0 ? { to: { kind: "transit", id: transitId } } : { from: { kind: "transit", id: transitId } }),
       receipt,
+    });
+  } else if (a === "vehicleReturn") {
+    applyVehicleWarehouseReturn(s, command, actor, now, {
+      canonical: canonicalInventoryJson, access,
+      move: (id, lines, sign) => move(s, id, lines, sign, undefined,
+        sign < 0 ? { to: { kind: "transit", id: command.operationId } } : { from: { kind: "transit", id: command.operationId } }),
     });
   } else if (a === "vehicleTransfer") {
     assertVehicleTransferDraftCommand(s, command, canonicalInventoryJson);
@@ -811,7 +822,7 @@ export function completeInventoryWorkOrder(original: InventoryState, workOrderId
     for (const r of a.dispositions) {
       const prior = s.returns.find(value => value.workOrderId === workOrderId && value.equipment === r.equipment && value.serial === r.serial);
       if (prior) {
-        assert(prior.disposition === r.disposition && prior.warehouseId === r.warehouseId,
+        assert(prior.disposition === r.disposition && (prior.fieldWarehouseId ?? prior.warehouseId) === r.warehouseId,
           "Previously recorded removal custody cannot be rewritten by reopening a work order.");
         continue; // A data correction does not physically remove the same equipment twice.
       }

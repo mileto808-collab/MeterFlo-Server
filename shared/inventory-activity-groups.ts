@@ -13,6 +13,7 @@ export type InventoryActivityGroup = {
 export function inventoryActivityActionLabel(action: string): string {
   const labels: Record<string, string> = {
     complete: "Work order completed", returnAccept: "Accepted into quarantine",
+    vehicleReturn: "Vehicle warehouse workflow",
     returnDecide: "Warehouse decision", returnCustomerBatch: "Customer handoff",
     returnCorrectDecision: "Warehouse decision corrected",
     fieldUseShortage: "Field usage · stock discrepancy",

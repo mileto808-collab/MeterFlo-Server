@@ -16,6 +16,8 @@ import { actualEquipmentLines } from "../shared/inventory-requirements";
 import { workPlanInputSchema, samePlanOverrides } from "../shared/inventory-planning";
 import { visibleAssignedOrders } from "./workOrderVisibility";
 import { prepareVehicleTransfer, finishVehicleTransferAssignments, vehicleTransferPermissions, canReadVehicleTransferCapture } from "./inventoryVehicleTransfer";
+import { prepareVehicleReturn, authorizeVehicleReturn } from "./inventoryVehicleReturns";
+import { assertVehicleReturnDraft } from "../shared/inventory-vehicle-returns";
 import { assertVehicleTransferDraftCommand } from "../shared/inventory-vehicle-transfer-drafts";
 import type { VehicleTransfer } from "../shared/inventory-vehicle-transfer";
 import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inventory-field-stock";
@@ -87,7 +89,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "fulfillmentDrafts", "vehicleTransferDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies", "fulfillmentBatches"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "fulfillmentDrafts", "vehicleTransferDrafts", "vehicleReturnDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements", "workPlans", "stockDiscrepancies", "fulfillmentBatches"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -96,7 +98,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft | undefined) : prior || null,
         after: kind === "shipmentDrafts" ? shipmentDraftAudit(value as SavedShipmentDraft) : value }];
     });
-    if (["shipmentDrafts", "fulfillmentDrafts", "vehicleTransferDrafts", "fulfillmentBatches", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
+    if (["shipmentDrafts", "fulfillmentDrafts", "vehicleTransferDrafts", "vehicleReturnDrafts", "fulfillmentBatches", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
       if (!(after[kind] ?? []).some(d => ((d as any).id ?? (d as any).workOrderId) === id))
         updates.push({ field: `${kind}/${id}`, before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft) : prior, after: null as any });
     }
@@ -129,6 +131,15 @@ export async function postInventory(projectId: number, command: InventoryCommand
     if (!p?.inventory_enabled) throw new InventoryError("Inventory is disabled for this project.");
     if (p.is_active === false) throw new InventoryError("Reactivate this project before posting inventory.");
     const before = await lockInventory(client, projectId);
+    if (command.action === "vehicleReturn") {
+      const draft = assertVehicleReturnDraft(before, command, canonicalInventoryJson);
+      const user = await storage.getUser(actor);
+      if (!user || !admin && !await storage.isUserAssignedToProject(actor, projectId))
+        throw Object.assign(new InventoryError("Active project access is required."), { status: 403 });
+      await authorizeVehicleReturn(before, draft.capture, user, admin);
+      if (!before.operations[command.operationId])
+        await prepareVehicleReturn(client, projectId, before, command, user, admin);
+    }
     let vehicleTransfer: VehicleTransfer | undefined;
     if (command.action === "vehicleTransfer") {
       assertVehicleTransferDraftCommand(before, command, canonicalInventoryJson);

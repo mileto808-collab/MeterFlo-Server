@@ -20,7 +20,12 @@ test("stock transfer workers can start inventory without work-order fulfillment 
   assert.equal(access(permissions).vehicleTransfer, true);
   assert.equal(access(permissions).fulfillment, false);
   for (const removed of permissions)
-    assert.equal(access(permissions.filter(key => key !== removed)).startInventory, false, removed);
+    assert.equal(access(permissions.filter(key => key !== removed)).vehicleTransfer, false, removed);
+  assert.equal(access(["inventory.view", "inventory.receive"]).returnEquipment, true);
+  assert.equal(access(["inventory.view", "inventory.receive"]).startInventory, true);
+  assert.equal(access(["inventory.view", "inventory.count"]).verifyVehicle, true);
+  assert.equal(access(["inventory.view", "inventory.count"]).startInventory, true);
+  assert.equal(access(["inventory.view", "inventory.count"]).returnStock, false);
 });
 test("fulfillment requires every prerequisite, not work-order viewing alone", () => {
   const permissions = ["inventory.view", "inventory.assign", "inventory.receive", "inventory.transfer", "workOrders.view"];

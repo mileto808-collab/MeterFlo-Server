@@ -69,7 +69,7 @@ export const relationalEntities: EntityModel[] = [
     columns: { workOrderId: "integer", ...text("mode", "status"), revision: "integer", assignmentVersion: "integer" }, json: ["dispositions"],
     children: [{ name: "inventory_allocation_lines", paths: ["lines", "used"], columns: { ...line, warehouseId: "text", reservationMode: "text" }, arrays: ["serials"] }] },
   { name: "inventory_receipts", field: "receipts", columns: text("id", "action", "reference", "warehouseId", "sourceId", "actor", "occurredAt", "reason", "holdId", "resolution", "externalReference", "kitHoldId", "sourceReceiptId"),
-    json: ["holdDisposition", "kitConversion", "kitInspection", "stagingCorrection", "fulfillmentDeletion", "workOrderIds"],
+    json: ["holdDisposition", "kitConversion", "kitInspection", "stagingCorrection", "fulfillmentDeletion", "workOrderIds", "vehicleReturn"],
     children: [{ name: "inventory_receipt_lines", paths: ["lines", "components", "damaged", "closedShort"], columns: { ...line, warehouseId: "text", unidentifiedQuantity: "integer", reason: "text" }, arrays: ["serials", "expectedSerials"] },
       { name: "inventory_receipt_pallets", paths: ["pallets"], columns: { ...text("id", "itemId", "label", "exceptionReason"), expectedQuantity: "integer" }, arrays: ["serials"] },
       { name: "inventory_receipt_labor", paths: ["labor"], columns: { ...text("itemId", "sku", "name", "unit"), quantity: "numeric", cost: "numeric", billingRate: "numeric" } }] },
@@ -77,7 +77,7 @@ export const relationalEntities: EntityModel[] = [
     columns: text("id", "warehouseId", "recipient", "reference", "reason", "verification", "actor", "occurredAt"),
     children: [{ name: "inventory_customer_handoff_lines", paths: ["lines"],
       columns: { ...text("returnId", "equipment", "serial", "verifiedSerial", "expectedOperationId"), workOrderId: "integer" } }] },
-  { name: "inventory_returns", field: "returns", columns: { ...text("id", "equipment", "serial", "disposition", "warehouseId", "status", "itemId", "ruleName"),
+  { name: "inventory_returns", field: "returns", columns: { ...text("id", "equipment", "serial", "disposition", "warehouseId", "fieldWarehouseId", "status", "itemId", "ruleName"),
     ...text("customerRecipient", "customerReference", "customerHandoffAt", "customerHandoffBy", "customerHandoffId"),
     ruleId: "uuid", ruleRevision: "integer", policyRevision: "integer", workOrderId: "integer" }, json: ["history"] },
   { name: "inventory_shipment_holds", field: "shipmentHolds", columns: { ...text("id", "itemId", "orderId", "receiptId", "warehouseId", "actor", "occurredAt", "status", "reason"), quantity: "integer", unidentifiedQuantity: "integer" },
@@ -94,6 +94,9 @@ export const relationalEntities: EntityModel[] = [
   { name: "inventory_vehicle_transfer_drafts", field: "vehicleTransferDrafts",
     columns: { ...text("id", "status", "createdBy", "updatedBy", "savedAt", "saveId", "receiptId"), revision: "integer" },
     json: ["capture", "command"] },
+  { name: "inventory_vehicle_return_drafts", field: "vehicleReturnDrafts",
+    columns: { ...text("id", "status", "createdBy", "updatedBy", "savedAt", "saveId", "receiptId"), revision: "integer" },
+    json: ["capture", "baseline", "command"] },
 ];
 export const columnName = (field: string) => field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 export const arrayTable = (name: string) => `${name}_values`;
