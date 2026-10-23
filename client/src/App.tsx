@@ -5,7 +5,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import CustomerExtension from "@/pages/customer-extension";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -14,7 +13,7 @@ import { PageHeaderProvider, usePageHeader } from "@/contexts/page-header-contex
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle } from "lucide-react";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { HttpLoginRecoveryAlert } from "@/components/http-login-recovery-alert";
 import { RouteSessionCleanup } from "@/components/work-order-routing/route-session-cleanup";
 import { AccessLockGate } from "@/components/access-locks/access-lock-gate";
@@ -22,31 +21,34 @@ import { SystemRestoreBoundary } from "@/components/system-restore-boundary";
 import { PickupInboxButton } from "@/components/inventory/pickup-notices";
 import { VehicleStockButton } from "@/components/inventory/vehicle-stock";
 
-import Landing from "@/pages/landing";
-import LoginPage from "@/pages/login";
-import TurnstilePage from "@/pages/turnstile";
-import MeterFloServerFeatures from "@/pages/features/meterflo-server";
-import MeterFloMobileFeatures from "@/pages/features/meterflo-mobile";
-import Dashboard from "@/pages/dashboard";
-import WorkOrders from "@/pages/work-orders";
-import WorkOrderDetail from "@/pages/work-order-detail";
-import Projects from "@/pages/projects";
-import ProjectForm from "@/pages/project-form";
-import ProjectWorkOrders from "@/pages/project-work-orders";
-import ProjectInventory from "@/pages/project-inventory";
-import ProjectImport from "@/pages/project-import";
-import ProjectDbImport from "@/pages/project-db-import";
-import ProjectApiImport from "@/pages/project-api-import";
-import ProjectCustomerApi from "@/pages/project-customer-api";
-import ProjectFtpFiles from "@/pages/project-ftp-files";
-import ProjectFiles from "@/pages/project-files";
-import WorkOrderFiles from "@/pages/work-order-files";
-import SearchReports from "@/pages/search-reports";
-import Users from "@/pages/users";
-import Settings from "@/pages/settings";
-import Documentation from "@/pages/documentation";
-import NotFound from "@/pages/not-found";
-import GpsSetup from "@/pages/gps-setup";
+// Keep unrelated screens (and their large wizard dependencies) off the refresh path.
+// Declare these outside render so navigating does not recreate component identities.
+const CustomerExtension = lazy(() => import("@/pages/customer-extension"));
+const Landing = lazy(() => import("@/pages/landing"));
+const LoginPage = lazy(() => import("@/pages/login"));
+const TurnstilePage = lazy(() => import("@/pages/turnstile"));
+const MeterFloServerFeatures = lazy(() => import("@/pages/features/meterflo-server"));
+const MeterFloMobileFeatures = lazy(() => import("@/pages/features/meterflo-mobile"));
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const WorkOrders = lazy(() => import("@/pages/work-orders"));
+const WorkOrderDetail = lazy(() => import("@/pages/work-order-detail"));
+const Projects = lazy(() => import("@/pages/projects"));
+const ProjectForm = lazy(() => import("@/pages/project-form"));
+const ProjectWorkOrders = lazy(() => import("@/pages/project-work-orders"));
+const ProjectInventory = lazy(() => import("@/pages/project-inventory"));
+const ProjectImport = lazy(() => import("@/pages/project-import"));
+const ProjectDbImport = lazy(() => import("@/pages/project-db-import"));
+const ProjectApiImport = lazy(() => import("@/pages/project-api-import"));
+const ProjectCustomerApi = lazy(() => import("@/pages/project-customer-api"));
+const ProjectFtpFiles = lazy(() => import("@/pages/project-ftp-files"));
+const ProjectFiles = lazy(() => import("@/pages/project-files"));
+const WorkOrderFiles = lazy(() => import("@/pages/work-order-files"));
+const SearchReports = lazy(() => import("@/pages/search-reports"));
+const Users = lazy(() => import("@/pages/users"));
+const Settings = lazy(() => import("@/pages/settings"));
+const Documentation = lazy(() => import("@/pages/documentation"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const GpsSetup = lazy(() => import("@/pages/gps-setup"));
 
 function LoadingScreen() {
   return (
@@ -276,7 +278,9 @@ function AuthenticatedLayout() {
             <HttpLoginRecoveryAlert />
             <main className="flex-1 overflow-auto">
               <AccessLockGate>
-                <AuthenticatedRouter />
+                <Suspense fallback={<div role="status" className="p-6"><Skeleton className="h-8 w-48" /><span className="sr-only">Loading page</span></div>}>
+                  <AuthenticatedRouter />
+                </Suspense>
               </AccessLockGate>
             </main>
           </div>
@@ -327,7 +331,9 @@ function App() {
       <SystemRestoreBoundary>
       <RouteSessionCleanup />
       <TooltipProvider>
-        <Router />
+        <Suspense fallback={<LoadingScreen />}>
+          <Router />
+        </Suspense>
         <Toaster />
       </TooltipProvider>
       </SystemRestoreBoundary>
