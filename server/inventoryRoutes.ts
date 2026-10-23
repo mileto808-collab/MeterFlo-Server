@@ -43,6 +43,7 @@ import { registerFulfillmentDraftRoutes } from "./inventoryFulfillmentDrafts";
 import { registerVehicleTransferDraftRoutes } from "./inventoryVehicleTransferDrafts";
 import { registerVehicleReturnRoutes } from "./inventoryVehicleReturns";
 import { workOrderInventoryCapabilities } from "../shared/work-order-inventory-capabilities";
+import { canViewInventoryPricing, inventoryCatalogItems } from "../shared/inventory-catalog-projection";
 import { vehicleTransferOptions } from "./inventoryVehicleTransfer";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
@@ -462,8 +463,7 @@ export function registerInventoryRoutes(app: Express) {
       stockEditable: !wo.assigned_user_id || wo.assigned_user_id === c.user.id || c.admin ||
         c.permissions.some((permission: string) => [inventoryPermissions.maintain, inventoryPermissions.configure].includes(permission)),
     });
-    const canViewPricing = c.admin || c.permissions.some((permission: string) =>
-      [inventoryPermissions.maintain, inventoryPermissions.configure, inventoryPermissions.purchase].includes(permission));
+    const canViewPricing = canViewInventoryPricing(c.permissions, c.admin);
     const componentTrace = workKitComponentTrace(s, id);
     const referencedItems = new Set([
       ...(requirements?.lines ?? []), ...(allocation?.lines ?? []), ...(allocation?.used ?? []),
@@ -488,8 +488,8 @@ export function registerInventoryRoutes(app: Express) {
       reservationNeedsReview: allocation?.status === "reserved" && allocation.assignmentVersion !== undefined &&
         allocation.assignmentVersion !== wo.assignment_version,
       requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
-      items: s.items.filter(item => c.canViewInventory || capabilities.canPlan && item.active || referencedItems.has(item.id))
-        .map(item => { if (canViewPricing) return item; const { cost, billingRate, vendorId, ...visible } = item; return visible; }),
+      items: inventoryCatalogItems(s.items.filter(item =>
+        c.canViewInventory || capabilities.canPlan && item.active || referencedItems.has(item.id)), canViewPricing),
       warehouses: c.canViewInventory ? s.warehouses : s.warehouses.filter(w => referencedWarehouses.has(w.id))
         .map(({ id, code, name, type, locationTypeId, active }) => ({ id, code, name, type, locationTypeId, active })),
       locationTypes: s.locationTypes, fieldSettings: c.canViewInventory ? s.fieldSettings : undefined, revision: s.revision,

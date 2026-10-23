@@ -112,3 +112,17 @@ mtime_ms = 1792724509527
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/86e3f5ec-b88b-4bd6-9e3f-50595474d50f/30d14c0e-03e2-4283-afcd-93917939df82"
 storage_version_token = "1792724555287961"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "W-k8AFuRCgI19v9tZZ2zu"
+uri = "file://review-deliverables/meterflo-mobile/MOBILE_READ_CONTRACT.md"
+type = "text"
+title = "Implemented Server Read Contract — Mobile Agent Handoff"
+description = "Exact implemented snapshot metadata, refresh guidance, dispatch/permission-safe DTOs, compatibility rules, verification results and remaining completion/replay scope."
+logical_id = "8d66b662-b53d-4470-8f35-1b156f363405"
+content_hash = "sha256:f428730e3dc18301ab55c4d872fa83dced48df24d3bf371e24bcbdd5565e6d68"
+size = 8219
+mtime_ms = 1792725278762
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/8d66b662-b53d-4470-8f35-1b156f363405/dd7ea55d-782f-4760-95cc-674d7771c4e4"
+storage_version_token = "1792725330675301"
+content_type = "text/markdown"

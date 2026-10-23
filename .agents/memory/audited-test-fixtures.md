@@ -9,6 +9,12 @@ CLI-created project fixtures must initialize audit metadata consistently with th
 
 **How to apply:** Use the application's audited schema-creation path when preparing isolated projects, not only its database connection and inventory tables. Do not disable application auditing to make fixture requests pass.
 
+Synthetic business-service projects need their normal public project-catalog identity as well as a project schema.
+
+**Why:** Older schema-only fixtures can fail after services begin resolving project ownership for changeout/authorization handling, before reaching the regression assertions they were meant to exercise.
+
+**How to apply:** Repair disposable fixtures to match real project registration and clean up their owned records. Do not weaken production ownership checks to accommodate an unregistered test schema.
+
 Keep catalog fixture identities independent of customer-restored identity sequences.
 
 **Why:** Shared type-catalog sequences can lag existing rows after restores; otherwise unrelated fixture creation can fail with duplicate primary keys.

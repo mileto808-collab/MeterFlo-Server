@@ -54,6 +54,8 @@ import { removalConfig } from "../shared/inventory-removal-policy";
 import { getProjectEquipmentVisibility } from "../shared/project-equipment-scope";
 import { InventoryError } from "../shared/inventory-engine";
 import { warehouseAccessible } from "../shared/inventory-location-types";
+import { canViewInventoryPricing, inventoryCatalogItems } from "../shared/inventory-catalog-projection";
+import { mobileDownloadQuerySchema, mobileVisibilitySnapshot, mobileWorkOrderDto } from "../shared/mobile-read-contract";
 
 function mobileInventoryUsage(req: any): unknown {
   try {
@@ -2529,8 +2531,14 @@ export async function registerRoutes(
           }
         }
         
-        // Return array format for mobile app compatibility (expects .map() on response)
-        res.json(workOrders);
+        // Lookup must obey the same crew/assignment boundary as detail/download.
+        // Keep the legacy array envelope used by offline matching.
+        const visible = await visibleAssignedOrders(currentUser, workOrders.map((row: any) => ({
+          ...row, assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
+          newSystemType: row.new_system_type, newModuleType: row.new_module_type,
+          assignmentVersion: row.assignment_version,
+        })), projectId, client);
+        res.set("Cache-Control", "no-store").json(visible.map(mobileWorkOrderDto));
       } finally {
         client.release();
       }
@@ -2599,8 +2607,9 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
         }
         
-        res.json({ ...workOrder, inventoryDispatch: (visible[0] as any).inventoryDispatch,
-          assignmentVersion: workOrder.assignment_version, ...schedulingDto(workOrder), ...gpsFixDto(workOrder) });
+        res.set("Cache-Control", "no-store").json(mobileWorkOrderDto({
+          ...workOrder, inventoryDispatch: (visible[0] as any).inventoryDispatch,
+        }));
       } finally {
         client.release();
       }
@@ -2742,7 +2751,10 @@ export async function registerRoutes(
       // Emit SSE event to notify other users
       emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
       
-      res.json({ message: "Work order assigned to you", workOrder: claimedWorkOrder, claimed: true });
+      const visible = await visibleAssignedOrders(currentUser, [claimedWorkOrder], projectId);
+      res.set("Cache-Control", "no-store").json({ message: "Work order assigned to you",
+        workOrder: mobileWorkOrderDto({ ...claimedWorkOrder,
+          inventoryDispatch: (visible[0] as any)?.inventoryDispatch }), claimed: true });
     } catch (error) {
       console.error("Error claiming work order:", error);
       if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message, claimed: false });
@@ -9176,6 +9188,10 @@ export async function registerRoutes(
       
       // Parse query parameters for filtering
       // Note: includeCompleted is intentionally NOT supported - mobile users must NEVER receive Closed or Completed work orders
+      const parsedQuery = mobileDownloadQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) return res.status(400).json({
+        code: "MOBILE_QUERY", message: "Invalid mobile download filters or pagination.",
+      });
       const {
         lastSyncTimestamp,
         assignedUserId,
@@ -9183,11 +9199,24 @@ export async function registerRoutes(
         status,
         limit,
         offset
-      } = req.query;
+      } = parsedQuery.data;
       
       // Build query with filters
       const client = await pool.connect();
       try {
+        const serverTimestamp = new Date().toISOString();
+        await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        const { rows: [inventoryPolicy] } = await client.query(
+          "SELECT inventory_enabled,wizard_mode,changeout_equipment_type,reading_equipment_type FROM public.projects WHERE id=$1",
+          [projectId]);
+        if (!inventoryPolicy) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ message: "Project not found" });
+        }
+        const inventoryEnabled = !!inventoryPolicy.inventory_enabled;
+        const snapshotId = randomUUID();
+        // Do not move the legacy watermark to the end of response assembly.
+        // Timestamp deltas still require periodic full visibility reconciliation.
         let query = `
           SELECT w.*, 
                  sb.username as scheduled_by_username,
@@ -9204,13 +9233,13 @@ export async function registerRoutes(
         let paramCount = 1;
         
         // Personal/group scope is independent of status; active-only policy is applied below.
-        if (isFieldTechnician && !project.inventoryEnabled) {
+        if (isFieldTechnician && !inventoryEnabled) {
           const scope = await technicianAssignmentScope(currentUser);
           conditions.push(`(w.assigned_user_id = $${paramCount++} OR w.assigned_group_id = ANY($${paramCount++}::text[]))`);
           values.push(currentUser.id);
           values.push(scope?.groupNames ?? []);
         }
-        if (isFieldTechnician && project.inventoryEnabled) {
+        if (isFieldTechnician && inventoryEnabled) {
           // Apply authorization before LIMIT/OFFSET, not after paging other crews' rows.
           const { rows: candidates } = await client.query(`SELECT id,status,assigned_user_id,assigned_group_id,
             new_system_type,new_module_type,assignment_version FROM "${project.databaseName}".work_orders
@@ -9218,7 +9247,7 @@ export async function registerRoutes(
           const visible = await visibleAssignedOrders(currentUser, candidates.map((row: any) => ({
             id: row.id, status: row.status, assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
             newSystemType: row.new_system_type, newModuleType: row.new_module_type, assignmentVersion: row.assignment_version,
-          })), projectId);
+          })), projectId, client);
           conditions.push(`w.id=ANY($${paramCount++}::int[])`);
           values.push(visible.map(work => work.id));
         }
@@ -9226,7 +9255,7 @@ export async function registerRoutes(
         // Filter by last sync timestamp (incremental sync)
         if (lastSyncTimestamp) {
           conditions.push(`w.updated_at > $${paramCount++}`);
-          values.push(new Date(lastSyncTimestamp as string));
+          values.push(new Date(lastSyncTimestamp));
         }
         
         // Filter by assigned user (only applies if not overridden by field tech filter)
@@ -9255,16 +9284,16 @@ export async function registerRoutes(
           query += ` WHERE ${conditions.join(" AND ")}`;
         }
         
-        query += " ORDER BY w.updated_at DESC";
+        query += " ORDER BY w.updated_at DESC, w.id DESC";
         
         // Apply pagination
         if (limit) {
           query += ` LIMIT $${paramCount++}`;
-          values.push(parseInt(limit as string));
+          values.push(limit);
         }
         if (offset) {
           query += ` OFFSET $${paramCount++}`;
-          values.push(parseInt(offset as string));
+          values.push(offset);
         }
         
         const result = await client.query(query, values);
@@ -9274,10 +9303,7 @@ export async function registerRoutes(
           ...row, assignedUserId: row.assigned_user_id, assignedGroupId: row.assigned_group_id,
           newSystemType: row.new_system_type, newModuleType: row.new_module_type,
           assignmentVersion: row.assignment_version,
-        })), projectId);
-        
-        // Get server timestamp for client to use in next sync
-        const serverTimestamp = new Date().toISOString();
+        })), projectId, client);
         
         // Get reference data for offline use (including assignees)
         const [workOrderStatuses, troubleCodes, systemTypes, moduleTypes, serviceTypes, projectUsers, allGroupsWithProjects] = await Promise.all([
@@ -9310,26 +9336,32 @@ export async function registerRoutes(
           label: group.name,
           key: group.name,
         }));
-        if (project.inventoryEnabled && !await storage.hasPermission(currentUser, "inventory.view"))
+        if (inventoryEnabled && !await storage.hasPermission(currentUser, "inventory.view")) {
+          await client.query("ROLLBACK");
           return res.status(403).json({ message: "Inventory view permission is required to sync inventory-enabled projects." });
-        const inventoryAdmin = project.inventoryEnabled && await storage.isAdminUser(currentUser);
-        if (project.inventoryEnabled && !inventoryAdmin && !await storage.isUserAssignedToProject(currentUser.id, projectId))
+        }
+        const inventoryAdmin = inventoryEnabled && await storage.isAdminUser(currentUser);
+        if (inventoryEnabled && !inventoryAdmin && !await storage.isUserAssignedToProject(currentUser.id, projectId)) {
+          await client.query("ROLLBACK");
           return res.status(403).json({ message: "You are not assigned to this inventory project." });
-        const inv = project.inventoryEnabled ? await inventoryState(projectId) : null;
+        }
+        const inv = inventoryEnabled ? await inventoryState(projectId, client) : null;
+        const pricing = inventoryEnabled && canViewInventoryPricing(
+          await storage.getUserEffectivePermissions(currentUser), inventoryAdmin);
         
-        res.json({
+        const response = {
           success: true,
           serverTimestamp,
-          workOrders: withExactReadings(scopedRows).map((wo: any) => ({ ...wo,
-            ...gpsFixDto(wo),
-            ...schedulingDto(wo),
-            subStatusId: wo.sub_status_id ?? null,
+          workOrders: scopedRows.map((wo: any) => ({ ...mobileWorkOrderDto(wo),
             ...(inv ? { inventoryAllocation: inv.allocations.find(a => a.workOrderId === wo.id) || null } : {}) })),
-          inventory: { contractVersion: 1, enabled: !!inv, items: inv?.items || [],
+          inventory: { contractVersion: 1, catalogProjectionVersion: 1, enabled: !!inv,
+            items: inventoryCatalogItems(inv?.items || [], pricing),
             locationTypes: inv?.locationTypes || [],
             ...(inv ? { removalContractVersion: 1, removalRules: removalConfig(inv).rules,
               removalPolicies: [removalConfig(inv).policy],
-              workflow: { wizardMode: project.wizardMode ?? "changeout", equipment: project.changeoutEquipmentType ?? "both", readingEquipment: project.readingEquipmentType ?? "both" } } : {}),
+              workflow: { wizardMode: inventoryPolicy.wizard_mode ?? "changeout",
+                equipment: inventoryPolicy.changeout_equipment_type ?? "both",
+                readingEquipment: inventoryPolicy.reading_equipment_type ?? "both" } } : {}),
             warehouses: inv?.warehouses.filter(w => warehouseAccessible(inv, w, currentUser.id, inventoryAdmin)) || [] },
           referenceData: {
             workOrderStatuses,
@@ -9341,6 +9373,16 @@ export async function registerRoutes(
             assignees: { users, groups }
           },
           meta: {
+            mobileReadContractVersion: 1,
+            visibility: mobileVisibilitySnapshot(parsedQuery.data, {
+              projectId, userId: currentUser.id, fieldTechnician: isFieldTechnician,
+            }, snapshotId, serverTimestamp),
+            reconciliation: {
+              strategy: "full_on_invalidation",
+              foreground: true, reconnect: true, openAppPollSeconds: 30,
+              inventoryEvents: inventoryEnabled ? `/api/projects/${projectId}/inventory/events` : null,
+              pickupEvents: inventoryEnabled ? "/api/inventory/pickups/events" : null,
+            },
             count: scopedRows.length,
             projectId,
             projectName: project.name,
@@ -9353,7 +9395,12 @@ export async function registerRoutes(
             defaultServiceMinutes: project.defaultServiceMinutes ?? null,
             defaultAppointmentToleranceMinutes: project.defaultAppointmentToleranceMinutes ?? null
           }
-        });
+        };
+        await client.query("COMMIT");
+        res.set("Cache-Control", "no-store").json(response);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
       } finally {
         client.release();
       }

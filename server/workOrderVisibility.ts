@@ -2,6 +2,7 @@ import { storage } from "./storage";
 import { assignedToTechnician } from "../shared/work-order-assignment";
 import type { User } from "../shared/schema";
 import { inventoryDispatchScope } from "./inventoryDispatch";
+import type { PoolClient } from "pg";
 
 export async function technicianAssignmentScope(user: User) {
   if (!user.subroleId || await storage.isAdminUser(user) ||
@@ -10,12 +11,12 @@ export async function technicianAssignmentScope(user: User) {
   return { userId: user.id, groupNames: groups.map(group => group.name) };
 }
 export async function visibleAssignedOrders<T extends { id?: number; assignedUserId?: string | null; assignedGroupId?: string | number | null; status?: string }>(
-  user: User, orders: T[], projectId?: number,
+  user: User, orders: T[], projectId?: number, client?: Pick<PoolClient, "query">,
 ) {
   const scope = await technicianAssignmentScope(user);
   if (!scope) return orders;
   if (!projectId) return orders.filter(order => assignedToTechnician(order, scope.userId, scope.groupNames));
-  const inventory = await inventoryDispatchScope(projectId, user.id, orders);
+  const inventory = await inventoryDispatchScope(projectId, user.id, orders, client);
   if (!inventory.enabled) return orders.filter(order => assignedToTechnician(order, scope.userId, scope.groupNames));
   return orders.flatMap(order => {
     if (["completed", "closed", "cancelled"].includes(order.status?.toLowerCase() ?? "")) return [];

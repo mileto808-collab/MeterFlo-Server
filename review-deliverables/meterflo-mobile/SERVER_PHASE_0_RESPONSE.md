@@ -1,5 +1,7 @@
 # MeterFlo — server verification of the mobile Phase 0 handoff
 
+**Implementation update:** Server read Package A has now been implemented. See `MOBILE_READ_CONTRACT.md` for the current wire contract and verification results. The findings below describe the pre-implementation verification; completion/replay Package B remains outstanding.
+
 ## Status and scope
 
 Reviewed the uploaded Phase 0 findings and server handoff against the current host source. This is a **source-verified contract response and implementation scope**, not a declaration that Phase 0 integration acceptance has passed.
