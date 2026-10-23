@@ -99,6 +99,12 @@ Field technicians go to the job with the systems/modules, parts and other requir
 
 **How to apply:** Distinguish recording actual installed/used equipment from checking warehouse availability to issue equipment. This assumption alone does not authorize invented stock, duplicate serial consumption or ignoring accounting discrepancies.
 
+The existing native mobile app works as intended with Inventory disabled. The requested native upgrade is for Inventory-enabled projects, including vehicle-fulfillment work visibility, planned additions, route plans/maps, pickups, vehicle stock and offline data.
+
+**Why:** The user explicitly reiterated this compatibility boundary when requesting the mobile upgrade review.
+
+**How to apply:** Preserve the existing non-inventory native workflow and offline captures. Coordinate server-owned settings, exact reading precision, effective vehicle dispatch and replay-safe inventory completion rather than replacing the working baseline.
+
 The user approved completing field work when recorded stock quantities are short, with an inventory discrepancy flagged for review. They also asked for a review/reconciliation process with clear instructions and documentation.
 
 **Why:** Technicians physically have the required equipment at the job; a missing bookkeeping transaction should not prevent recording completed field work.

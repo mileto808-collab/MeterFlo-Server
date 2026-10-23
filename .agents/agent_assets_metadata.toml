@@ -56,3 +56,45 @@ mtime_ms = 1792606927758
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/90a04e37-5d0b-469f-b6d7-b71dd7466b45/9fa2da5f-a000-41f3-906a-1f9e51f6c976"
 storage_version_token = "1792606943778445"
 content_type = "application/pdf"
+
+[[outputs]]
+id = "lcGp5xtjhgi_GfFWaJpHL"
+uri = "file://review-deliverables/meterflo-mobile/REVIEW_FINDINGS.md"
+type = "text"
+title = "MeterFlo Mobile — Review Findings"
+description = "Evidence-backed assessment of the mobile package and current host contracts, prioritized risks, compatibility gaps and actual test results."
+logical_id = "c8b5dc14-2374-4388-a97e-609d4f297e14"
+content_hash = "sha256:ff449d8971be5ac2616c39dc8bd4a4398f5ec9ca037731633bdd39a7cc508a81"
+size = 26737
+mtime_ms = 1792723102711
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/c8b5dc14-2374-4388-a97e-609d4f297e14/cf49df50-b588-40e2-98f8-c4d7e05fc500"
+storage_version_token = "1792723221426939"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "o7Uf6f16iUv2lRGqknlKU"
+uri = "file://review-deliverables/meterflo-mobile/UPGRADE_PLAN.md"
+type = "text"
+title = "MeterFlo Mobile — Upgrade Plan & Agent Guide"
+description = "Comprehensive implementation handoff: settings, decimal precision, fulfillment-based dispatch, API contracts, pickups, vehicle stock, planned inventory, routes/maps, offline storage and phased acceptance criteria."
+logical_id = "40434fe9-a99e-4a77-b787-f0d164a0a4a2"
+content_hash = "sha256:ddaafb8d202e916ff8b08eceec44909e2603b650b8967a2beb6cfb33faa5a738"
+size = 52724
+mtime_ms = 1792723194206
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/40434fe9-a99e-4a77-b787-f0d164a0a4a2/797780cd-a274-45c5-91e1-5f19d4a0f32b"
+storage_version_token = "1792723222089235"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "FVWzA4k_2egThLe7w8E35"
+uri = "file://review-deliverables/meterflo-mobile/OPEN_QUESTIONS.md"
+type = "text"
+title = "MeterFlo Mobile — Open Questions & Release Gates"
+description = "Already-settled requirements, remaining server/mobile contract decisions, offline policy questions and native-device/signing prerequisites."
+logical_id = "62c4f4d8-1066-4c3e-8d15-87a6bee7bd81"
+content_hash = "sha256:d33fd010651f8e437b9bce4d85044b581d0b4794725557d257effc45af580d16"
+size = 10280
+mtime_ms = 1792723132503
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/62c4f4d8-1066-4c3e-8d15-87a6bee7bd81/0b248d4c-ae80-4ebc-9eb8-61e56afd4a8f"
+storage_version_token = "1792723222787565"
+content_type = "text/markdown"
