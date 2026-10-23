@@ -251,6 +251,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   const warehouses = state?.warehouses ?? [];
   const receipts: Receipt[] = (state?.receipts ?? []) as Receipt[];
   const activeBatch = fulfillment.data?.batches.find(batch => batch.id === draft.batchId) as (FulfillmentBatch & { pickupReady?: boolean }) | undefined;
+  const batchFinished = !!activeBatch && activeBatch.status !== "active";
   const activeBatchPosition = state?.fulfillmentBatches?.findIndex(batch => batch.id === activeBatch?.id) ?? -1;
   const activeTicketNumber = activeBatch && activeBatchPosition >= 0
     ? fulfillmentTicketNumber(activeBatch.createdAt, activeBatchPosition) : null;
@@ -2419,7 +2420,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           </>}
         </>)}
       </div>
-      <div className="flex min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
+      <div data-testid="fulfillment-sticky-footer" className="flex min-w-0 shrink-0 flex-row flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:px-6">
         {showResumeList && <Button type="button" variant="outline" onClick={() => { setShowResumeList(false); setShowStart(true); }}>
           <ArrowLeft className="mr-2 h-4 w-4" />Back to workflow choices
         </Button>}
@@ -2434,7 +2435,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           <Button type="button" variant="outline" disabled={busy || savingDraft || savingBatchSetup || batchSetupDirty}
             onClick={() => { setShowStart(true); setShowHistory(false); setShowBlocked(false); }}
             data-testid="fulfillment-back-to-workflows"><ArrowLeft className="mr-2 h-4 w-4" />Back to workflows</Button>
-          {!(draft.step === "orders" && draft.uiSubstep === "orders") &&
+          {!batchFinished && !(draft.step === "orders" && draft.uiSubstep === "orders") &&
             !(draft.step === "stage" && draft.uiSubstep === "pick") &&
             !(draft.step === "vehicle" && draft.uiSubstep === "verify") &&
             <Button type="button" variant="outline" disabled={busy || pendingLock || createLock} onClick={goBack}>
@@ -2442,7 +2443,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
             </Button>}
         </div>}
         <div className="flex flex-wrap justify-end gap-2">
-          {!showStart && !showResumeList && !reassignmentBatchId && !showCorrections && <>
+          {!showStart && !showResumeList && !reassignmentBatchId && !showCorrections && !batchFinished && <>
           {hasSaveableSetup && <Button type="button" variant="outline" disabled={savingDraft || busy}
             onClick={() => void saveSetupDraft()}>
             {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save Draft
@@ -2469,7 +2470,7 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
           </Button>}
           </>}
           <Button type="button" variant="outline" disabled={busy || savingDraft} onClick={() => void close(false)}>
-            {showStart || showResumeList || (!draft.batchId && (draft.mode === "crew" || draft.mode === "scheduled")) ? "Close" : "Save & leave"}
+            {batchFinished || showStart || showResumeList || (!draft.batchId && (draft.mode === "crew" || draft.mode === "scheduled")) ? "Close" : "Save & leave"}
           </Button>
         </div>
       </div>

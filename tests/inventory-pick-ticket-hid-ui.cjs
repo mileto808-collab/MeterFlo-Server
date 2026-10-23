@@ -128,6 +128,46 @@ const { randomUUID } = require("node:crypto");
     assert.equal((await request(admin, "GET", inventory)).state.revision, before, "Opening tickets must not post or reserve stock.");
     assert.deepEqual(errors, []);
     console.log("PASS HID pick-ticket scanning from Inventory, task chooser, fulfillment and desktop/mobile scan modal; Enter/Tab, Bluetooth pacing, no camera/keyboard autofocus, ordinary-input isolation and no stock posting.");
+
+    // Complete a real handoff: terminal batches must not retain capture-step footer controls.
+    const completionContext = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 },
+      isMobile: true, hasTouch: true });
+    await request(completionContext, "POST", "/api/auth/local/login", fixture);
+    const completionPage = await completionContext.newPage();
+    completionPage.on("pageerror", error => errors.push(error.message));
+    await completionPage.goto(`/projects/${fixture.projectId}/inventory`);
+    await expect(completionPage.getByTestId("button-start-inventory-mobile")).toBeVisible();
+    await completionPage.keyboard.type(ticket, { delay: 1 });
+    await completionPage.keyboard.press("Enter");
+    await expect(completionPage.getByTestId("fulfillment-batch-identity")).toContainText("HID batch - PICK-");
+    const pickup = completionPage.getByRole("button", { name: "Continue to vehicle pickup", exact: true });
+    if (await pickup.isVisible()) await pickup.click();
+    await completionPage.getByRole("button", { name: "Next: Capture handoff", exact: true }).click();
+    await completionPage.getByTestId("fulfillment-move-quantity-vehicle-hid-meter").fill("2");
+    await completionPage.getByTestId("fulfillment-custody-serials-vehicle-hid-meter").fill("HID-001\nHID-002\n");
+    await expect(completionPage.getByRole("button", { name: "Next: Confirm", exact: true })).toBeEnabled();
+    await completionPage.getByRole("button", { name: "Next: Confirm", exact: true }).click();
+    await completionPage.getByLabel("Physical move reason", { exact: true }).fill("Verified both meters physically loaded into the vehicle");
+    await completionPage.locator("#fulfillment-physical-confirmation").check();
+    await completionPage.getByRole("button", { name: "Next: Review movement", exact: true }).click();
+    await completionPage.getByRole("button", { name: "Record vehicle handoff", exact: true }).click();
+    await expect(completionPage.getByRole("heading", { name: "Vehicle handoff complete", exact: true })).toBeVisible();
+    const footer = completionPage.getByTestId("fulfillment-sticky-footer");
+    await expect(footer.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+    await expect(footer.getByRole("button", { name: "Back to workflows", exact: true })).toBeVisible();
+    await expect(footer.getByRole("button")).toHaveCount(2);
+    await expect(footer).not.toContainText("Next:");
+    await expect(footer).not.toContainText("Save & leave");
+    await expect(footer).not.toContainText("Enter quantities");
+    await expect(completionPage.getByRole("button", { name: "Print combined receipt", exact: true })).toBeVisible();
+    await completionPage.screenshot({ path: "generated-artifacts/inventory-pick-ticket-hid/completed-footer-mobile.png" });
+    const completedRevision = (await request(admin, "GET", inventory)).state.revision;
+    await footer.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(completionPage.getByTestId("inventory-fulfillment-page")).toHaveCount(0);
+    assert.equal((await request(admin, "GET", inventory)).state.revision, completedRevision, "Closing a completed batch must not post stock.");
+    assert.deepEqual(errors, []);
+    await completionContext.close();
+    console.log("PASS completed mobile handoff footer has only Back to workflows and Close, preserves receipt printing, and closes without posting stock.");
   } finally {
     await browser.close();
   }
