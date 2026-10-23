@@ -7,7 +7,7 @@ Schema declarations alone do not protect active fields during publishing. Change
 
 **Why:** A development snapshot lacked active visit-default columns that production startup could create. Publishing proposed dropping/recreating those columns and deleting their values. Startup-only upgrades depend on whether a preview has restarted and are not a reliable development schema application boundary. After schema alignment and the workspace guard correction, the user confirmed that republishing completed without errors; preservation of individual production values was not independently verified.
 
-**How to apply:** Keep additive development setup in post-merge maintenance and preserve nullable historical settings without backfilling business defaults. Test repeated reconciliation against a populated, owned PostgreSQL cluster, including column identities and constraint enforcement. Never use production data overwrite, publish-build database pushes, or new production startup DDL to repair the mismatch.
+**How to apply:** Keep additive development setup in post-merge maintenance and preserve nullable historical settings without backfilling business defaults. Test repeated reconciliation against a populated, owned PostgreSQL cluster, including column identities and constraint enforcement. Before delivery, apply and verify required tables and columns in the actual development database: a passing clean-schema sandbox does not prove the workspace schema was installed. Never use production data overwrite, publish-build database pushes, or new production startup DDL to repair the mismatch.
 
 Production diff tools can reject task-agent access even when publishing logs are readable.
 
