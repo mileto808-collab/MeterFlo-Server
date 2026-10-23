@@ -182,3 +182,17 @@ mtime_ms = 1792769250299
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/5cfda1f4-fe36-4bfe-bb75-b9a6c436c7f2/8dab3cd3-4f8e-4e14-a022-1a113916fd6a"
 storage_version_token = "1792769507163869"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "JWLvKs6vsoNjek_ZPsSjy"
+uri = "file://review-deliverables/meterflo-mobile/CHANGEOUT_WIZARD_INVENTORY_ADDENDUM.md"
+type = "text"
+title = "Mobile Changeout Wizard — Inventory Addendum"
+description = "Upload this guide to the mobile agent. Covers the physical changeout inventory display, actual-use capture, equipment serial binding, removed-equipment review, project settings, permissions, offline recovery and completion acceptance checks."
+logical_id = "0d749eae-cd5b-4a3a-a30c-2759fc60f693"
+content_hash = "sha256:c955d67f7ed0f53ecb817f61c24f043803555fbb46bdb44fb8eec896c749de12"
+size = 28739
+mtime_ms = 1792782539431
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/0d749eae-cd5b-4a3a-a30c-2759fc60f693/379677c8-1433-4640-9002-6a31b2bec4b9"
+storage_version_token = "1792782579302383"
+content_type = "text/markdown"

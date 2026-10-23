@@ -1,5 +1,9 @@
 # MeterFlo — implemented mobile read contract
 
+**Changeout wizard integration:** See `CHANGEOUT_WIZARD_INVENTORY_ADDENDUM.md`
+for the required inventory display/capture inside the physical changeout steps.
+The Work Order Details planning panel alone does not satisfy that requirement.
+
 **Pickups / Vehicle Stock supplement:** See `PICKUPS_VEHICLE_STOCK_HANDOFF.md`
 for complete response types, endpoint/query contracts, existing QR format and
 rendering, and confirmed technician versus warehouse access rules.

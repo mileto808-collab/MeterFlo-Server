@@ -520,6 +520,8 @@ Each phase should be its own reviewable change. Do not bundle a native SDK upgra
 
 ### Phase 6 — Inventory capture, removed equipment and replay-safe completion
 
+**Required screen-level supplement:** `CHANGEOUT_WIZARD_INVENTORY_ADDENDUM.md` explicitly maps Physical Changeout actual-use entry, installed-ID serial binding, removed-equipment review, offline retention and final completion. A Work Order Details inventory panel alone does not complete this phase.
+
 - **Goal:** complete enabled material work safely with offline captures and authoritative stock/custody.
 - **In scope:** applicable planned versus actual-use entry, effective source/vehicle, kit/component rules, serial verification, excess/duplicate prevention, removed-equipment policy/choices, meaningful saved drafts, stable submission/outbox identities and conflict correction.
 - **Out of scope:** automatic offline ledger postings, warehouse final return decisions, silent reassignment, treating speculative candidates as verified.

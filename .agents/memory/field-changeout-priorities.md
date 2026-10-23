@@ -32,3 +32,9 @@ Confirmed work-order completion clears every previous changeout draft for that o
 **Why:** The user explicitly clarified that previous drafts should be released and cleared on completion.
 
 **How to apply:** Clear server copies on confirmed completion and device copies after authoritative confirmation. Never erase captures just because a submission timed out or its result is unknown.
+
+The mobile inventory upgrade must show relevant inventory inside the physical changeout wizard, matching the web workflow, not just in Work Order Details.
+
+**Why:** The user explicitly reiterated this requirement and requested a screen-level mobile-agent addendum.
+
+**How to apply:** Include actual-use entry at Physical Changeout, applicable installed-ID serial binding and a dedicated inventory/removed-equipment review. Keep inventory-disabled mobile behavior unchanged.
