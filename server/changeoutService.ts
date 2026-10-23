@@ -7,6 +7,7 @@ import { auditContext } from "./auditContext";
 import { insertAuditEvent } from "./auditService";
 import { permissionKeys, type User } from "../shared/schema";
 import { inventoryDispatchScope } from "./inventoryDispatch";
+import { mobileSubmissionContext } from "./mobileSubmissionContext";
 
 export async function assertInventoryDispatchAllowed(client: Pick<PoolClient, "query">, projectId: number, row: any, user: User) {
   if (await storage.isAdminUser(user) || !user.subroleId ||
@@ -26,7 +27,7 @@ export async function assertInventoryDispatchAllowed(client: Pick<PoolClient, "q
 }
 
 export class ChangeoutError extends Error {
-  constructor(message: string, public status = 409) { super(message); }
+  constructor(message: string, public status = 409, public code = "CHANGEOUT_CONFLICT") { super(message); }
 }
 export const schemaName = (schema: string) => {
   if (!/^project_[a-z0-9_]+$/.test(schema)) throw new ChangeoutError("Invalid project schema", 400);
@@ -61,13 +62,20 @@ export async function assertClaimAllowed(client: PoolClient, row: any, userId: s
   }
 }
 
-export async function submissionReplay(client: PoolClient, projectId: number, workOrderId: number, token?: string) {
+export async function submissionReplay(client: PoolClient, projectId: number, workOrderId: number, token?: string,
+  requestFingerprint?: string, actorId = auditContext.getStore()?.actorId) {
   if (!token) return null;
   if (!z.string().uuid().safeParse(token).success) throw new ChangeoutError("Invalid submission identity.", 400);
   const { rows: [record] } = await client.query("SELECT * FROM public.changeout_completions WHERE id=$1", [token]);
   if (record && (record.project_id !== projectId || record.work_order_id !== workOrderId ||
-      record.actor_id !== auditContext.getStore()?.actorId))
+      record.actor_id !== actorId))
     throw new ChangeoutError("Submission identity belongs to another changeout.");
+  if (record) {
+    const accepted = record.evidence?.mobileSubmission?.fingerprint;
+    if ((accepted || requestFingerprint) && accepted !== requestFingerprint)
+      throw new ChangeoutError("This submission identity was used with different inputs. Retain the original request to recover its outcome.",
+        409, "CHANGEOUT_PAYLOAD_MISMATCH");
+  }
   return record;
 }
 
@@ -105,7 +113,9 @@ export async function acceptCompletion(client: PoolClient, schema: string, prior
     if (!Number.isInteger(version) || version !== prior.assignment_version)
       throw new ChangeoutError("This assignment changed. Your captured draft is retained, but this old attempt cannot be submitted.");
   }
-  const evidence = { schema, prior, next, usage: updates.inventoryUsage ?? null };
+  const mobile = mobileSubmissionContext.getStore();
+  const evidence = { schema, prior, next, usage: updates.inventoryUsage ?? null,
+    ...(mobile ? { mobileSubmission: { fingerprint: mobile.fingerprint, kind: mobile.kind } } : {}) };
   const fingerprint = createHash("sha256").update(JSON.stringify(evidence)).digest("hex");
   await client.query(`INSERT INTO public.changeout_completions
     (id,project_id,work_order_id,actor_id,actor_label,fingerprint,assignment_version,evidence,status,finished_at)
@@ -134,6 +144,21 @@ export async function acceptCompletion(client: PoolClient, schema: string, prior
     [project.id, next.id, actor.id, context.operationId]);
   await insertAuditEvent(client, { action: "workOrder.completionAccepted", entityType: "work_orders",
     entityId: String(next.id), projectId: project.id, metadata: { submissionId: token, inventory: project.inventory_enabled ? "pending" : "not_required" } });
+}
+
+/** Trouble is a retained field attempt, not replacement consumption or completed work. */
+export async function acceptMobileTrouble(client: PoolClient, schema: string, prior: any, next: any, project: any) {
+  const mobile = mobileSubmissionContext.getStore();
+  if (!mobile) return;
+  const evidence = { schema, prior, next, usage: null,
+    mobileSubmission: { fingerprint: mobile.fingerprint, kind: "trouble" } };
+  await client.query(`INSERT INTO public.changeout_completions
+    (id,project_id,work_order_id,actor_id,actor_label,fingerprint,assignment_version,evidence,status,finished_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,'not_required',now())`,
+  [mobile.id, project.id, next.id, mobile.actorId, auditContext.getStore()?.actorLabel ?? "",
+    createHash("sha256").update(JSON.stringify(evidence)).digest("hex"), prior.assignment_version, JSON.stringify(evidence)]);
+  await insertAuditEvent(client, { action: "workOrder.mobileTroubleAccepted", entityType: "work_orders",
+    entityId: String(next.id), projectId: project.id, metadata: { submissionId: mobile.id } });
 }
 
 export async function guardPendingInstallationUse(client: PoolClient, projectId: number, before: any, after: any) {

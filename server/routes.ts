@@ -56,6 +56,8 @@ import { InventoryError } from "../shared/inventory-engine";
 import { warehouseAccessible } from "../shared/inventory-location-types";
 import { canViewInventoryPricing, inventoryCatalogItems } from "../shared/inventory-catalog-projection";
 import { mobileDownloadQuerySchema, mobileVisibilitySnapshot, mobileWorkOrderDto } from "../shared/mobile-read-contract";
+import { mobileSubmissionRoute, mobileSubmissionBatchItem } from "./mobileSubmissions";
+import { mobileSubmissionMediaName } from "./mobileSubmissionContext";
 
 function mobileInventoryUsage(req: any): unknown {
   try {
@@ -4102,12 +4104,15 @@ export async function registerRoutes(
       // Parse the changeout data
       const changeoutData = JSON.parse(req.body.data || "{}");
       if (changeoutData.changeoutSubmissionId) {
-        const accepted = await pool.query("SELECT project_id,work_order_id,actor_id FROM public.changeout_completions WHERE id=$1",
+        const accepted = await pool.query("SELECT project_id,work_order_id,actor_id,evidence FROM public.changeout_completions WHERE id=$1",
           [z.string().uuid().parse(changeoutData.changeoutSubmissionId)]);
         if (accepted.rowCount) {
           const row = accepted.rows[0];
           if (row.project_id !== projectId || row.work_order_id !== workOrderId || row.actor_id !== currentUser.id)
             throw new ChangeoutError("Submission identity belongs to another changeout.");
+          if (row.evidence?.mobileSubmission)
+            throw new ChangeoutError("Recover this mobile submission using its original mobile request.",
+              409, "CHANGEOUT_PAYLOAD_MISMATCH");
           if (!["completed", "closed"].includes(String(workOrder.status).toLowerCase()))
             throw new ChangeoutError("This token completed an earlier attempt. Start a new changeout.");
           return res.json({ success: true, message: "Changeout already completed.", uploadedPhotos: [], replay: true });
@@ -9374,6 +9379,7 @@ export async function registerRoutes(
           },
           meta: {
             mobileReadContractVersion: 1,
+            mobileSubmissionContractVersion: 1,
             visibility: mobileVisibilitySnapshot(parsedQuery.data, {
               projectId, userId: currentUser.id, fieldTechnician: isFieldTechnician,
             }, snapshotId, serverTimestamp),
@@ -9411,6 +9417,7 @@ export async function registerRoutes(
   });
 
   // Mobile sync upload - batch submit completed work orders with conflict detection
+  let mobileCompleteHandler: RequestHandler, mobileTroubleHandler: RequestHandler;
   app.post("/api/projects/:projectId/mobile/sync/upload", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -9442,10 +9449,30 @@ export async function registerRoutes(
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       const updatedByUsername = currentUser.username || currentUser.id;
       
-      const results: { id: number; status: string; conflict?: boolean; message?: string; serverUpdatedAt?: Date | null; code?: string; errors?: ReadingValidationError[] }[] = [];
+      const results: { id: number; workOrderId?: number; submissionId?: string; status: string; conflict?: boolean; message?: string; serverUpdatedAt?: Date | null; code?: string; errors?: ReadingValidationError[]; submission?: any; httpStatus?: number }[] = [];
       
       for (const woUpdate of workOrders) {
         try {
+          // Replay new-protocol captures before legacy timestamp preflight.
+          const input = woUpdate.data && typeof woUpdate.data === "object" ? woUpdate.data : woUpdate;
+          if (input.changeoutSubmissionId !== undefined) {
+            const id = woUpdate.workOrderId ?? woUpdate.id;
+            const action = woUpdate.changeType ?? String(input.status ?? "").toLowerCase();
+            if (!["complete", "completed", "trouble"].includes(action) || !Number.isSafeInteger(id) || id <= 0) {
+              results.push({ id, submissionId: input.changeoutSubmissionId, status: "error", code: "MOBILE_SUBMISSION",
+                message: "A submission requires a valid workOrderId and complete/trouble action." });
+              continue;
+            }
+            const outcome = await mobileSubmissionBatchItem(action === "trouble" ? mobileTroubleHandler :
+              mobileCompleteHandler, req, id, input);
+            const accepted = outcome.payload?.submission;
+            results.push({ id, workOrderId: id, submissionId: input.changeoutSubmissionId, httpStatus: outcome.status,
+              status: accepted?.fieldStatus === "accepted" ? "success" : outcome.status === 409 ? "conflict" : "error",
+              ...(accepted ? { submission: accepted } : {
+                code: outcome.payload?.code, message: outcome.payload?.message ?? "Submission not confirmed.",
+              }) });
+            continue;
+          }
           const { id, clientUpdatedAt, forceOverwrite, ...updateData } = woUpdate;
           for (const [camel, snake] of [["serviceDurationMinutes","service_duration_minutes"],
             ["appointmentWindowStart","appointment_window_start"],["appointmentWindowEnd","appointment_window_end"]]) {
@@ -9704,7 +9731,7 @@ export async function registerRoutes(
   });
 
   // Mobile system changeout - complete a system changeout from mobile device
-  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
+  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout", isAuthenticated, upload.array("photos", 20), mobileSubmissionRoute("auto", async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -9822,7 +9849,7 @@ export async function registerRoutes(
           
           const timestamp = Date.now();
           const ext = path.extname(file.originalname) || ".jpg";
-          const filename = `${photoType}_${timestamp}_${i}${ext}`;
+          const filename = mobileSubmissionMediaName(photoType, i, ext, `${photoType}_${timestamp}_${i}${ext}`);
           const filePath = path.join(typeFolder, filename);
           
           await fs.writeFile(filePath, file.buffer);
@@ -9920,15 +9947,16 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error completing mobile system changeout:", error);
+      if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message, code: error.code });
       if (["GPS_ACCURACY", "GPS_CAPTURE"].includes((error as any)?.code)) return res.status(400).json({ message: (error as Error).message, code: (error as any).code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to complete system changeout" });
     }
-  });
+  }));
 
   // Project-scoped mobile trouble endpoint - accepts both camelCase and snake_case field names
   // This endpoint uses projectId in URL for per-project integrity
-  app.post("/api/mobile/projects/:projectId/work-orders/:workOrderId/trouble", isAuthenticated, async (req: any, res) => {
+  app.post("/api/mobile/projects/:projectId/work-orders/:workOrderId/trouble", isAuthenticated, mobileTroubleHandler = mobileSubmissionRoute("trouble", async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -10019,7 +10047,7 @@ export async function registerRoutes(
             
             const buffer = Buffer.from(base64Data, "base64");
             const uniqueId = randomUUID();
-            const filename = `${folderName}-trouble-${dateStr}-${uniqueId}.jpg`;
+            const filename = mobileSubmissionMediaName("trouble", i, ".jpg", `${folderName}-trouble-${dateStr}-${uniqueId}.jpg`);
             const filePath = path.join(workOrderFolder, filename);
             await fs.writeFile(filePath, buffer);
           }
@@ -10081,13 +10109,14 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error in project-scoped mobile trouble endpoint:", error);
+      if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message, code: error.code });
       res.status(500).json({ message: error.message || "Failed to report trouble" });
     }
-  });
+  }));
 
   // Project-scoped mobile complete endpoint - accepts both camelCase and snake_case field names
   // This endpoint uses projectId in URL for per-project integrity
-  app.post("/api/mobile/projects/:projectId/work-orders/:workOrderId/complete", isAuthenticated, async (req: any, res) => {
+  app.post("/api/mobile/projects/:projectId/work-orders/:workOrderId/complete", isAuthenticated, mobileCompleteHandler = mobileSubmissionRoute("complete", async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -10191,7 +10220,7 @@ export async function registerRoutes(
             
             const buffer = Buffer.from(base64Data, "base64");
             const uniqueId = randomUUID();
-            const filename = `${folderName}-${photoType}-${dateStr}-${uniqueId}.jpg`;
+            const filename = mobileSubmissionMediaName(photoType, i, ".jpg", `${folderName}-${photoType}-${dateStr}-${uniqueId}.jpg`);
             const filePath = path.join(workOrderFolder, filename);
             await fs.writeFile(filePath, buffer);
           }
@@ -10221,7 +10250,7 @@ export async function registerRoutes(
         }
         
         const sigBuffer = Buffer.from(sigBase64, "base64");
-        const sigFilename = `${folderName}-signature.png`;
+        const sigFilename = mobileSubmissionMediaName("signature", 0, ".png", `${folderName}-signature.png`);
         const sigFilePath = path.join(workOrderFolder, sigFilename);
         await fs.writeFile(sigFilePath, sigBuffer);
       }
@@ -10401,11 +10430,12 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error in project-scoped mobile complete endpoint:", error);
+      if (error instanceof ChangeoutError) return res.status(error.status).json({ message: error.message, code: error.code });
       if (["GPS_ACCURACY", "GPS_CAPTURE"].includes(error.code)) return res.status(400).json({ message: error.message, code: error.code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to complete system changeout" });
     }
-  });
+  }));
 
   // Bulk claim work orders - mobile batch operation
   app.post("/api/projects/:projectId/mobile/work-orders/bulk-claim", isAuthenticated, async (req: any, res) => {

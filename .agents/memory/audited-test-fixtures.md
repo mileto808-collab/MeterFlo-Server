@@ -15,6 +15,12 @@ Synthetic business-service projects need their normal public project-catalog ide
 
 **How to apply:** Repair disposable fixtures to match real project registration and clean up their owned records. Do not weaken production ownership checks to accommodate an unregistered test schema.
 
+Fixtures that exercise completion must also provide an assigned, authorized actor and authenticated audit context.
+
+**Why:** A reading-persistence regression can cross the real completion boundary before its reset assertions. A registered schema alone is insufficient, and a legacy role label need not grant administrator authority.
+
+**How to apply:** Match normal assignment and role/subrole handling for the owned fixture. Keep authorization checks enabled rather than bypassing completion to reach later assertions.
+
 Keep catalog fixture identities independent of customer-restored identity sequences.
 
 **Why:** Shared type-catalog sequences can lag existing rows after restores; otherwise unrelated fixture creation can fail with duplicate primary keys.

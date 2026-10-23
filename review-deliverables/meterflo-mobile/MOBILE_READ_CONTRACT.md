@@ -1,5 +1,10 @@
 # MeterFlo — implemented mobile read contract
 
+**Update:** The separate completion/retry package is now implemented too. See
+`MOBILE_SUBMISSION_CONTRACT.md`; bootstrap advertises
+`meta.mobileSubmissionContractVersion: 1`. The scope and historical verification
+below describe the read package, not the combined implementation's remaining work.
+
 ## Scope
 
 This server package implements additive read/synchronization support. It does **not** implement new native screens, change the approved field-first completion model, or finish completion/replay Package B.

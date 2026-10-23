@@ -126,3 +126,17 @@ mtime_ms = 1792725278762
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/8d66b662-b53d-4470-8f35-1b156f363405/dd7ea55d-782f-4760-95cc-674d7771c4e4"
 storage_version_token = "1792725330675301"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "jb0DSp1AAGA6ySmjCnBXd"
+uri = "file://review-deliverables/meterflo-mobile/MOBILE_SUBMISSION_CONTRACT.md"
+type = "text"
+title = "Mobile Completion & Retry — Implemented Server Contract"
+description = "Mobile-agent handoff: stable identities, direct and batch requests, durable field/media acknowledgements, inventory reconciliation, compatibility and verified failure handling."
+logical_id = "2aa6dd88-186e-4d54-9988-851552e1d5df"
+content_hash = "sha256:8e634e59f420eb518e02670a0926f957dbe37fa31d1f1d5bdbcb4ba41b3f227e"
+size = 9631
+mtime_ms = 1792727258298
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/2aa6dd88-186e-4d54-9988-851552e1d5df/0f0e4349-fcae-4ebb-8c48-3511159659a9"
+storage_version_token = "1792727309808745"
+content_type = "text/markdown"

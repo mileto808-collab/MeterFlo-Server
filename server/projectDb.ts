@@ -12,7 +12,8 @@ import { auditedOperation, insertAuditEvent } from "./auditService";
 import { auditingEnabled, auditContext } from "./auditContext";
 import { exactReadingDto, exactReadingFields, capturedReadingText, readingParameter, withExactReadings } from "../shared/exact-readings";
 import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventoryService";
-import { acceptCompletion, assertClaimAllowed, canonicalStatus, ChangeoutError, submissionReplay } from "./changeoutService";
+import { acceptCompletion, acceptMobileTrouble, assertClaimAllowed, canonicalStatus, ChangeoutError, submissionReplay } from "./changeoutService";
+import { mobileSubmissionContext } from "./mobileSubmissionContext";
 import { installChangeoutProject } from "./changeoutSchema";
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { installProjectSubStatuses, listSubStatuses, restoreSubStatusDefinitions } from "./workOrderSubStatuses";
@@ -1598,14 +1599,38 @@ export class ProjectWorkOrderStorage {
         if (!completing) await lockInventoryForSchema(client, this.schemaName);
         const { rows: [prior] } = await client.query(`SELECT * FROM "${this.schemaName}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
         const { rows: [project] } = await client.query("SELECT id,inventory_enabled FROM public.projects WHERE database_name=$1", [this.schemaName]);
-        const replay = await submissionReplay(client, project.id, id, (updates as any).changeoutSubmissionId);
+        const mobile = mobileSubmissionContext.getStore();
+        if (mobile && (mobile.projectId !== project.id || mobile.workOrderId !== id ||
+            mobile.actorId !== auditContext.getStore()?.actorId))
+          throw new ChangeoutError("Submission scope does not match this work order.", 403);
+        if (mobile) Object.assign(updates, { changeoutSubmissionId: mobile.id,
+          changeoutAssignmentVersion: mobile.assignmentVersion });
+        const replay = await submissionReplay(client, project.id, id, (updates as any).changeoutSubmissionId, mobile?.fingerprint);
         if (replay) {
           // Do not replay old completion over a subsequently reopened order.
-          if (await canonicalStatus(client, prior?.status) !== "completed" &&
-              await canonicalStatus(client, prior?.status) !== "closed")
+          const replayStatus = await canonicalStatus(client, prior?.status);
+          if (mobile?.kind === "trouble" ?
+              prior?.assignment_version !== replay.assignment_version ||
+                replayStatus !== await canonicalStatus(client, replay.evidence.next.status) :
+              replayStatus !== "completed" && replayStatus !== "closed")
             throw new ChangeoutError("This submission already completed an earlier attempt. Start a new changeout.");
           await client.query("COMMIT");
           return await this.getWorkOrder(id);
+        }
+        if (mobile) {
+          const actor = await storage.getUser(mobile.actorId);
+          if (!actor || actor.isLocked || actor.role === "customer" || !await storage.hasPermission(actor, "workOrders.meterChangeout") ||
+              !await storage.hasPermission(actor, "workOrders.view"))
+            throw new ChangeoutError("Changeout permission is required.", 403);
+          if (!await storage.isAdminUser(actor) && !await storage.isUserAssignedToProject(actor.id, project.id))
+            throw new ChangeoutError("Project access required.", 403);
+          if (!prior || prior.assignment_version !== mobile.assignmentVersion ||
+              ["completed", "closed"].includes(await canonicalStatus(client, prior.status)))
+            throw new ChangeoutError("This assignment or work attempt changed. Retain the captured inputs.", 409, "CHANGEOUT_ATTEMPT_CHANGED");
+          if (!await storage.isAdminUser(actor) && prior.assigned_user_id !== actor.id)
+            throw new ChangeoutError("Claim this work order before submitting.", 403);
+          if ((mobile.kind === "complete") !== completing)
+            throw new ChangeoutError("Submission action does not match the requested work-order change.", 400);
         }
         const result = await client.query(
           `UPDATE "${this.schemaName}".work_orders SET ${setClauses.join(", ")} WHERE id = $${paramCount} RETURNING *`,
@@ -1619,6 +1644,7 @@ export class ProjectWorkOrderStorage {
           await acceptCompletion(client, this.schemaName, prior, result.rows[0], updates, project);
         } else {
           await inventoryWorkOrderChange(client, this.schemaName, prior, result.rows[0], (updates as any).inventoryUsage, (updates as any).inventoryItems, ordinaryImport);
+          if (mobile?.kind === "trouble") await acceptMobileTrouble(client, this.schemaName, prior, result.rows[0], project);
           await client.query("INSERT INTO public.changeout_events(project_id,work_order_id,type,actor_id,operation_id) VALUES($1,$2,'workorder_updated',$3,$4) ON CONFLICT DO NOTHING",
             [project.id, id, auditContext.getStore()?.actorId ?? null, auditContext.getStore()?.operationId ?? null]);
         }

@@ -7,19 +7,27 @@ import { createProjectSchema, migrateProjectSchema, getProjectWorkOrderStorage, 
 import { exactReadingFields, withExactReadings } from "../shared/exact-readings";
 import { buildCustomerPayload } from "../server/customerApiPayload";
 import { validateCapturedReadings } from "../shared/reading-precision";
+import { auditContext } from "../server/auditContext";
 
 test("exact reading persistence, legacy compatibility, backup, reset and spreadsheet round trips", async () => {
-  const schema = await createProjectSchema(`Exact ${randomUUID().replace(/-/g,"")}`,900001);
-  const restoredSchema = await createProjectSchema(`Exact ${randomUUID().replace(/-/g,"")}`,900002);
-  const store = getProjectWorkOrderStorage(schema);
+  const names = [`Exact ${randomUUID().replace(/-/g,"")}`, `Exact ${randomUUID().replace(/-/g,"")}`];
+  const { rows: projects } = await pool.query(
+    "INSERT INTO public.projects(name,inventory_enabled) VALUES($1,false),($2,false) RETURNING id",
+    names);
+  let schema: string | undefined, restoredSchema: string | undefined;
   const actorId = randomUUID(), actor = `exact-fixture-${randomUUID()}`;
   try {
-    await pool.query("INSERT INTO public.users(id,username,role) VALUES($1,$2,'user')",[actorId,actor]);
+    schema = await createProjectSchema(names[0], projects[0].id);
+    restoredSchema = await createProjectSchema(names[1], projects[1].id);
+    await pool.query("UPDATE public.projects SET database_name=$1 WHERE id=$2", [schema, projects[0].id]);
+    await pool.query("UPDATE public.projects SET database_name=$1 WHERE id=$2", [restoredSchema, projects[1].id]);
+    const store = getProjectWorkOrderStorage(schema);
+    await pool.query("INSERT INTO public.users(id,username,role) VALUES($1,$2,'admin')",[actorId,actor]);
     const values = ["00001.001200","00000","00900719925474099312345.123456","00023.000000"];
     const input = Object.fromEntries(exactReadingFields.map(({key},i) => [key,values[i]]));
     const saved = await store.createWorkOrder({
       customerWoId:"EXACT-1",customerId:"FIXTURE",customerName:"Fixture",address:"Fixture",
-      status:"Open",...input,
+      status:"Open",assignedUserId:actorId,...input,
     } as any);
     let fetched = await store.getWorkOrder(saved.id);
     assert.ok(fetched);
@@ -46,7 +54,7 @@ test("exact reading persistence, legacy compatibility, backup, reset and spreads
       {new_system_reading:"1.0012",new_system_reading_text:"00001.0012"}),[],
       "native snake-case baselines accept an unchanged legacy numeric echo");
 
-    const payload = buildCustomerPayload(fetched as any,{id:900001,name:"Fixture"},"fixture-delivery");
+    const payload = buildCustomerPayload(fetched as any,{id:projects[0].id,name:"Fixture"},"fixture-delivery");
     assert.equal(payload.oldSystemReading,values[0]);
     assert.equal(payload.oldMeterReading,values[0]);
     assert.equal(payload.oldModuleReading,values[2]);
@@ -68,8 +76,9 @@ test("exact reading persistence, legacy compatibility, backup, reset and spreads
     assert.equal(reloaded.Sheets.Readings.A2.t,"s");
     assert.equal(reloaded.Sheets.Readings.A2.v,values[2],"spreadsheet reading is text, not a rounded number");
 
-    await store.updateWorkOrder(saved.id,{newSystemReading:"00001.0012",status:"Completed"} as any);
-    await store.resetCompletedWorkOrder(saved.id,-900001,{assignment:"keep",capturedData:"clear",attachments:"keep"},actor,
+    await auditContext.run({ actorId, actorLabel: actor, actorKind: "user", source: "test", operationId: randomUUID() },
+      () => store.updateWorkOrder(saved.id,{newSystemReading:"00001.0012",status:"Completed"} as any, actor));
+    await store.resetCompletedWorkOrder(saved.id,projects[0].id,{assignment:"keep",capturedData:"clear",attachments:"keep"},actor,
       async () => ({removedNames:[],commit:async () => {},rollback:async () => {}}));
     fetched = await store.getWorkOrder(saved.id);
     assert.equal(fetched?.newSystemReading,null);
@@ -86,8 +95,9 @@ test("exact reading persistence, legacy compatibility, backup, reset and spreads
     assert.equal((await store.getWorkOrder(saved.id))?.oldModuleReadText,values[2].replace(/^0+(?=\d)/,""),
       "numeric-only history retains every database digit without inventing leading zeros");
   } finally {
-    await pool.query(`DROP SCHEMA "${schema}" CASCADE`);
-    await pool.query(`DROP SCHEMA "${restoredSchema}" CASCADE`);
+    if (schema) await pool.query(`DROP SCHEMA "${schema}" CASCADE`);
+    if (restoredSchema) await pool.query(`DROP SCHEMA "${restoredSchema}" CASCADE`);
+    await pool.query("DELETE FROM public.projects WHERE id=ANY($1::int[])", [projects.map(project => project.id)]);
     await pool.query("DELETE FROM public.users WHERE id=$1",[actorId]);
     await pool.end();
   }
