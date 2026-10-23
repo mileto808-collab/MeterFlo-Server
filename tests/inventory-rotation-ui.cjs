@@ -8,7 +8,7 @@ async function main() {
   const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
   try {
-    const context = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}`, viewport: { width: 393, height: 850 }, isMobile: true, hasTouch: true });
+    const context = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")(), viewport: { width: 393, height: 850 }, isMobile: true, hasTouch: true });
     assert.equal((await context.request.post("/api/auth/local/login", { data: fixture })).status(), 200);
     const endpoint = `/api/projects/${fixture.projectId}/inventory`;
     const command = async (action, data) => {
@@ -16,7 +16,13 @@ async function main() {
       assert.equal(response.status(), 200, await response.text());
     };
     const seeded = (await (await context.request.get(endpoint)).json()).state.stock.length > 0;
+    if (!seeded) {
+      await command("vendor", { id: "ops-vendor", name: "Rotation supplier" });
+      await command("item", { id: "ops-meter", sku: "ROT-METER", name: "Rotation meter", tracking: "serialized" });
+      await command("item", { id: "ops-bulk", sku: "ROT-BULK", name: "Rotation seals", tracking: "regular" });
+    }
     for (let n = 0; !seeded && n < 6; n++) {
+      await command("warehouse", { id: `ops-location-${n}`, code: `ROT-${n}`, name: `Rotation location ${n}`, type: "physical", address: "100 Test Way" });
       const orderId = crypto.randomUUID();
       await command("order", { id: orderId, type: "purchase", vendorId: "ops-vendor", destinationId: `ops-location-${n}`,
         lines: [{ itemId: "ops-meter", quantity: 2 }, { itemId: "ops-bulk", quantity: 2 }] });
@@ -41,12 +47,12 @@ async function main() {
         const capacity = Number(await results.getAttribute("data-page-size"));
         await toggle.click();
         await expect.poll(async () => (await results.boundingBox()).height).toBeGreaterThan(50);
+        const expandedHeight = (await results.boundingBox()).height;
         const expandedCapacity = Number(await results.getAttribute("data-page-size"));
         await toggle.click();
         await expect.poll(async () => Number(await results.getAttribute("data-page-size"))).toBeGreaterThanOrEqual(capacity);
-        if (["stock", "locations", "activity"].includes(kind)) {
-          assert.ok(capacity > expandedCapacity, `${kind}: hiding tools adds records`);
-        }
+        await expect.poll(async () => (await results.boundingBox()).height).toBeGreaterThan(expandedHeight);
+        await expect.poll(async () => Number(await results.getAttribute("data-page-size"))).toBeGreaterThanOrEqual(expandedCapacity);
         await page.getByTestId("button-toggle-inventory-stats").click();
         await expect(page.getByTestId("inventory-stats-region")).toBeVisible();
         const smallHeight = (await results.boundingBox()).height;

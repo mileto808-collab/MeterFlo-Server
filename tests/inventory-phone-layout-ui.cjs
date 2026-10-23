@@ -108,10 +108,14 @@ async function main() {
     await expect(page.getByTestId("inventory-page-editor")).toBeVisible();
     await page.getByTestId("inventory-editor-back").click();
     await expect(page.getByTestId("inventory-page-editor")).toBeHidden();
-    await expect(page.getByRole("tab", { name: "Locations", exact: true })).toBeVisible();
-    await page.getByRole("tab", { name: "Locations", exact: true }).click();
+    // A wide touch device still uses compact navigation. Fine-pointer desktop
+    // navigation is covered independently by inventory-short-desktop-ui.cjs.
+    await page.getByTestId("inventory-mobile-menu").click();
+    await page.getByTestId("inventory-mobile-menu-item-locations").click();
+    const locationTools = page.getByTestId("inventory-mobile-tools-locations-toggle");
+    if (await locationTools.getAttribute("aria-expanded") === "false") await locationTools.click();
     await expect(page.getByRole("searchbox", { name: "Search locations", exact: true })).toBeVisible();
-    await expect(page.getByTestId("inventory-mobile-menu")).toBeHidden();
+    await expect(page.getByTestId("inventory-mobile-menu")).toBeVisible();
     assert.deepEqual((await (await context.request.get(endpoint)).json()).state, before.state, "Read-only phone browsing must not alter inventory");
     assert.deepEqual(errors, []);
     console.log("PASS: all nine mobile tabs, compact headers, collapsed/preserved tools, 360/390/430px layouts, usable records, adaptive pagination, drafts and desktop navigation.");

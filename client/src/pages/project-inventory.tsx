@@ -683,7 +683,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       const height = viewport?.height ?? window.innerHeight;
       const viewportTop = viewport?.offsetTop ?? 0;
       const actualTop = main.getBoundingClientRect().top;
-      main.style.height = `${Math.max(0, height - Math.max(0, actualTop - viewportTop))}px`;
+      const availableHeight = Math.max(0, height - Math.max(0, actualTop - viewportTop));
+      main.style.height = `${availableHeight}px`;
+      // Use the space left by the sidebar and hosting/app chrome, not the
+      // screen's nominal width. This policy is separate from touch navigation.
+      main.dataset.compactDesktop = String(window.matchMedia("(pointer: fine)").matches &&
+        (main.clientWidth < 900 || availableHeight < 520));
     };
     const observer = new ResizeObserver(fit);
     if (main.parentElement) observer.observe(main.parentElement);
@@ -1595,8 +1600,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <ProjectInventoryDesktopTabs can={can} />
       </div>
 
-    {/* Preserve the existing navigation policy, but let these toolbar surfaces
-        scroll into view when that navigation leaves very little desktop height. */}
+    {/* Each section owns its records/tools scrollers; layout changes do not remount them. */}
     <div className={`min-h-0 flex-1 ${["locations", "returns"].includes(inventoryTab) ? "flex flex-col overflow-y-auto overscroll-contain" : ["orders", "stock", "items", "vendors", "categories", "exceptions", "counts", "activity", "stock-discrepancies"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
     {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors", "categories"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 

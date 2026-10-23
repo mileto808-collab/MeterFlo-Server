@@ -383,6 +383,115 @@
 }
 
 /* Touch devices keep the same Inventory section menu in either orientation. */
+/* Fine-pointer windows can be short or narrow after the sidebar and browser
+ * chrome take their share. Keep this independent of phone/touch breakpoints.
+ * Only presentation changes: mounted tools, filters and editors retain state. */
+.inventory-workspace-shell[data-compact-desktop="true"] {
+  padding: 0.5rem !important;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-desktop-heading,
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-desktop-tabs,
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-start-mobile {
+  display: none !important;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-mobile-menu,
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-start-desktop {
+  display: flex !important;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] :is(.inventory-start-desktop, [data-testid="button-vehicle-transfers"], [data-testid="button-toggle-inventory-stats"]) {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  gap: 0;
+}
+
+/* Keep the text as the accessible name of these compact icon buttons. */
+.inventory-workspace-shell[data-compact-desktop="true"] :is(.inventory-start-desktop, [data-testid="button-vehicle-transfers"], [data-testid="button-toggle-inventory-stats"]) > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] :is(.inventory-start-desktop, [data-testid="button-toggle-inventory-stats"]) > svg:first-child {
+  margin: 0;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid="button-toggle-inventory-stats"] > svg:not(:first-child) {
+  display: none;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-sticky-header {
+  max-height: 45%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 0.25rem !important;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-sticky-header > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.25rem;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid="inventory-stats-region"] {
+  max-height: min(18dvh, 8rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid$="-subheader"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-height: 2.5rem;
+  max-height: 45%;
+  overflow: clip;
+  padding-bottom: 0.25rem !important;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid$="-subheader"] > div:first-child {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid$="-subheader"] > div:first-child p.hidden {
+  display: none !important;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid$="-subheader"] > .inventory-mobile-tools {
+  display: contents;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid$="-subheader"] .inventory-mobile-tools-toggle {
+  grid-column: 2;
+  grid-row: 1;
+  width: auto;
+  margin: 0;
+  padding-inline: 0.5rem;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] .inventory-mobile-tools-content[data-open="true"] {
+  min-height: 0;
+  max-height: min(22dvh, 8rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.inventory-workspace-shell[data-compact-desktop="true"] [data-testid$="-subheader"] .inventory-mobile-tools-content {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-self: stretch;
+  min-width: 0;
+}
+
 @media (pointer: coarse) {
   .inventory-desktop-heading,
   .inventory-desktop-tabs {

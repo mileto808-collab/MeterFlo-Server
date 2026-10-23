@@ -14,3 +14,9 @@ Wait for animated or measured workspace geometry to settle before diagnosing cli
 **Why:** Immediate bounding-box checks have reported oversized dialogs and a footer below the viewport while a subsequent settled capture showed the correctly fitted layout. Animations and available-height measurements can finish after the resize event; two animation frames were not sufficient in one case.
 
 **How to apply:** Poll viewport bounds after resizing, then inspect the viewport screenshot and nested scroll-container widths. For persistent wizard controls, include the footer's bottom edge and a positive content-pane height. Do not infer a permanent CSS defect from an intermediate size.
+
+Treat short fine-pointer desktop windows separately from touch-phone landscape, and measure the available workspace after sidebar and hosting chrome.
+
+**Why:** Touch landscape could pass while a mouse-driven window of the same nominal dimensions exhausted its height with wrapped desktop navigation. Viewport width alone did not describe the room left for Inventory.
+
+**How to apply:** Keep independent fine/coarse-pointer acceptance contexts. Preserve mounted tools and unsaved editors during layout changes, and verify record capacity after navigation, tools, or statistics resize.
