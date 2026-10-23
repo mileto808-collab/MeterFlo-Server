@@ -196,3 +196,17 @@ mtime_ms = 1792782539431
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/0d749eae-cd5b-4a3a-a30c-2759fc60f693/379677c8-1433-4640-9002-6a31b2bec4b9"
 storage_version_token = "1792782579302383"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "AnySHcwvlc5K0lb6eixcq"
+uri = "file://generated-artifacts/mobile-changeout-source/meterflo-mobile-changeout-inventory-source.zip"
+type = "unspecified"
+title = "Mobile Changeout Inventory — Source Bundle"
+description = "Upload this ZIP to the mobile agent. Includes current shared rules/types, the web actual-use collector, physical-changeout inventory excerpts, local helper dependencies, existing contracts and a validated synthetic technician response. No credentials or customer data."
+logical_id = "804aa563-d805-40e4-9f00-9656b9b2f8da"
+content_hash = "sha256:62634f63fef6cbe218199a08d974e80a43184b6df570dac1cedee295eec31c62"
+size = 136359
+mtime_ms = 1792785706687
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/804aa563-d805-40e4-9f00-9656b9b2f8da/86572f33-8fd6-4f90-804b-65ca620019e1"
+storage_version_token = "1792785714009982"
+content_type = "application/octet-stream"
