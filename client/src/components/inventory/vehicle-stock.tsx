@@ -1,3 +1,4 @@
+import { useInventoryHistory } from "@/hooks/use-inventory-history";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { VehicleStockDirectory, VehicleStockLocation, VehicleStockResponse, VehicleStockSerials } from "@shared/inventory-vehicle-stock";
@@ -300,6 +301,7 @@ export function VehicleStockButton() {
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<number | undefined>();
   const canView = !isLoading && hasPermission("inventory.view");
+  useInventoryHistory("vehicle-stock-dialog", open, setOpen, { enabled: canView });
   useEffect(() => {
     const openReview = () => {
       const match = window.location.pathname.match(/^\/projects\/(\d+)\/inventory/);

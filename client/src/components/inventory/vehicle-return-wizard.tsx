@@ -1,3 +1,4 @@
+import { useInventoryHistory } from "@/hooks/use-inventory-history";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Loader2, Truck } from "lucide-react";
@@ -51,6 +52,9 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
   const [receiptId, setReceiptId] = useState("");
   const [receiptEvidence, setReceiptEvidence] = useState<Pick<VehicleReturnEvidence, "needsReview" | "countId"> | null>(null);
   const [prepared, setPrepared] = useState(false);
+  useInventoryHistory(`vehicle-return:${projectId}:${kind}:${draft?.id ?? "new"}`, step,
+    value => setStep(draft?.status === "posted" ? "receipt" : value),
+    { enabled: restoreReady, canRestore: !busy && !prepared });
   const [addItemId, setAddItemId] = useState("");
   const captureRef = useRef(capture);
   captureRef.current = capture;

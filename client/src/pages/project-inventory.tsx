@@ -14,6 +14,7 @@ import { inventoryCapabilities } from "@shared/inventory-capabilities";
 import { InventoryWorkflowLauncher, StartInventoryButton } from "@/components/start-inventory-button";
 import type { VehicleReturnScreen } from "@/components/inventory/vehicle-return-wizard";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
+import { useInventoryHistory } from "@/hooks/use-inventory-history";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { countStockMatches, countStockScopeMatches } from "@shared/inventory-count-stock";
 import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
@@ -218,6 +219,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     try { window.sessionStorage.setItem(inventoryTabKey, value); }
     catch { console.warn("Browser storage is unavailable; the selected Inventory tab cannot be remembered on refresh."); }
   };
+  useInventoryHistory(`inventory:${user?.id ?? "pending"}:${projectId}`,
+    { workspace: inventoryWorkspace, tab: inventoryTab }, view => {
+      setInventoryWorkspace(view.workspace);
+      setInventoryTab(view.tab);
+    }, { enabled: !!user?.id && fulfillmentSessionReadyKey === fulfillmentSessionKey });
   const inventoryMainRef = useRef<HTMLElement>(null);
   const editorHostRef = useRef<HTMLDivElement>(null);
   const inventoryTabsHostRef = useRef<HTMLDivElement>(null);
@@ -402,6 +408,35 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countSerialDialog, setCountSerialDialog] = useState<{ itemId: string; countId: string } | null>(null);
   const [countReason, setCountReason] = useState("");
   const [countDraftId, setCountDraftId] = useState<string | null>(null);
+  useInventoryHistory(`inventory-editors:${user?.id ?? "pending"}:${projectId}`, {
+    resource, resourceId: resourceBaseline.current?.copied ? "" : resourceBaseline.current?.id ?? "",
+    order: orderEditorOpen ? editingOrderId || "new" : "",
+    count: activeCount?.id ?? "", countStartOpen, locationTypesManagerOpen,
+    kitDialogMode, vendorKitOpen,
+  }, view => {
+    if (!view.resource) setResource(null);
+    else if (view.resource !== resource || view.resourceId !== resourceBaseline.current?.id) {
+      const rows = view.resource === "item" ? state?.items : view.resource === "warehouse" ? state?.warehouses : state?.vendors;
+      const existing = rows?.find(row => row.id === view.resourceId);
+      if (!view.resourceId || existing) openResource(view.resource, existing);
+    }
+    if (!view.order) setOrderEditorOpen(false);
+    else if (view.order === "new") startNewOrderDraft();
+    else {
+      const order = state?.orders.find(row => row.id === view.order);
+      if (order?.status === "draft") loadOrderDraft(order);
+    }
+    if (!view.count) setActiveCount(null);
+    else {
+      const count = state?.counts.find(row => row.id === view.count);
+      if (count) openCount(count);
+    }
+    setCountStartOpen(view.countStartOpen);
+    setLocationTypesManagerOpen(view.locationTypesManagerOpen);
+    setKitDialogMode(view.kitDialogMode);
+    setVendorKitOpen(view.vendorKitOpen);
+  }, { enabled: !!user?.id && !!data?.state && inventoryWorkspace === "inventory",
+    canRestore: !resourceSaving.current && !imageBusy && !movementCheckpointBusy && !kitOperationPending });
   const [countDraftRevision, setCountDraftRevision] = useState(0);
   const [countDraftMessage, setCountDraftMessage] = useState("");
   const [pendingCountReview, setPendingCountReview] = useState<CountDiscrepancyReviewPayload | null>(null);

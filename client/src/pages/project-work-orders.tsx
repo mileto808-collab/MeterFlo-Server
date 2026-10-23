@@ -3920,7 +3920,7 @@ export default function ProjectWorkOrders() {
     <div className="p-4 flex flex-col gap-2 h-[calc(100vh-72px)] overflow-hidden">
       {projectId && <ProjectPickupBanner projectId={projectId} />}
       {(project as any)?.inventoryEnabled === true && (
-        <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground" data-testid="inventory-crew-help">
+        <div className="hidden rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground sm:block" data-testid="inventory-crew-help">
           <span className="font-medium text-foreground">Crew access:</span> An authorized manager adds helpers to a vehicle in Inventory &gt; Locations. Scheduled work orders require reassignment after the vehicle crew changes.
         </div>
       )}

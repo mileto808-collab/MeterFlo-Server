@@ -32,13 +32,15 @@ update or integration changes that affect other users.
 replacing a settings pane. Verify unsaved values after switching sections and
 rotating a phone, and verify that navigation sends no configuration writes.
 
-Remembering an Inventory tab is a browser preference, not a draft save or an
-additional navigation. Keep that persistence separate from unsaved-edit guards.
+Remembering an Inventory tab is a browser preference, not a draft save.
+Deliberate Inventory view and tab changes also need browser Back history,
+but that navigation is separate from the remembered preference.
 
 **Why:** The global history guard intercepts query-only URL changes too. Updating
-the URL solely to remember a confirmed tab transition can prompt again before
-the editor's clean state commits.
+the URL solely to remember a confirmed tab transition could prompt before
+the editor's clean state committed. Later, the user needed the device Back
+button to retrace Inventory screens rather than skip to the dashboard.
 
-**How to apply:** Preserve the existing guarded transitions and keep tab
-preferences scoped to the project and signed-in user. Any future URL-based tab
-links must deliberately coordinate with the global navigation guard.
+**How to apply:** Keep tab preferences scoped to the project and signed-in user.
+Give genuine screen transitions same-page browser history, without storing
+business inputs there or bypassing the existing unsaved-edit guard.

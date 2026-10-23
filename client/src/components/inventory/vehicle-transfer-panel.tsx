@@ -1,3 +1,4 @@
+import { useInventoryHistory } from "@/hooks/use-inventory-history";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -114,6 +115,10 @@ export function VehicleTransferPanel({ projectId, permissions, timezone }: {
   const [storageError, setStorageError] = useState("");
   const [receiptId, setReceiptId] = useState("");
   const [posting, setPosting] = useState(false);
+  useInventoryHistory(`vehicle-transfer:${projectId}`, { open, step }, view => {
+    if (!view.open) setOpen(false);
+    else { setOpen(true); setStep(view.step); }
+  }, { canRestore: !posting });
   const verificationRuns = useRef(new Map<string, number>());
   const identityRef = useRef(`${projectId}:${userId}`);
   const base = `/api/projects/${projectId}/inventory`;

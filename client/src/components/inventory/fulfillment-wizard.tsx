@@ -1,3 +1,4 @@
+import { useInventoryHistory } from "@/hooks/use-inventory-history";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWizardStepFocus } from "@/hooks/useWizardStepFocus";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
@@ -455,6 +456,16 @@ export function FulfillmentWizard({ projectId, open, onOpenChange, pickTicketQr,
   };
   const updateDraftRef = useRef(update);
   updateDraftRef.current = update;
+  useInventoryHistory(`fulfillment:${projectId}:${draft.batchId ?? "new"}`,
+    { showStart, showResumeList, showHistory, showBlocked, showCorrections,
+      step: draft.step, uiSubstep: draft.uiSubstep }, view => {
+      setShowStart(view.showStart);
+      setShowResumeList(view.showResumeList);
+      setShowHistory(view.showHistory);
+      setShowBlocked(view.showBlocked);
+      setShowCorrections(view.showCorrections);
+      update({ step: view.step, uiSubstep: view.uiSubstep });
+    }, { enabled: open && storageReady && checkedOnEntry, canRestore: !busy && !draft.pending });
   useEffect(() => {
     if (!open || !activeBatch || currentDraftRef.current.batchId !== activeBatch.id) return;
     const fresh = {

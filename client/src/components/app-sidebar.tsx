@@ -15,6 +15,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,15 @@ import { useCustomerExtensions } from "@/pages/customer-extension";
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { isMobile, setOpenMobile } = useSidebar();
+  useEffect(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [location, isMobile, setOpenMobile]);
+  useEffect(() => {
+    const closeAfterSelection = () => { if (isMobile) setOpenMobile(false); };
+    window.addEventListener("meterflo:navigate", closeAfterSelection);
+    return () => window.removeEventListener("meterflo:navigate", closeAfterSelection);
+  }, [isMobile, setOpenMobile]);
   const { user, hasPermission } = usePermissions();
   const customerExtensions = useCustomerExtensions();
   const role = user?.role || "user";
@@ -424,7 +434,7 @@ export function AppSidebar() {
         <Button 
           variant="ghost" 
           className="w-full justify-start" 
-          onClick={() => setSupportDialogOpen(true)}
+          onClick={() => { setOpenMobile(false); setSupportDialogOpen(true); }}
           data-testid="button-support"
         >
           <HelpCircle className="h-4 w-4 mr-2" />
