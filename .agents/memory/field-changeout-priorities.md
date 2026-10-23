@@ -3,6 +3,12 @@ name: Field changeout priorities
 description: User-defined field-first completion, shared work-order claiming and durable wizard captures.
 ---
 
+Post-completion defective-equipment replacement must be a streamlined step wizard and must also be supported by the mobile app, with a handoff prepared for the mobile agent.
+
+**Why:** The user explicitly required both the focused wizard and mobile-agent handoff when requesting the linked replacement workflow plan.
+
+**How to apply:** Treat web/server behavior and the mobile implementation contract as one feature requirement; a web-only workflow or prose-only mobile description is not sufficient.
+
 Completing work orders through Start Changeout is the first priority for field technicians and authorized users. Inventory reconciliation should happen on the backend after the changeout is completed.
 
 **Why:** The user clarified the operational priority: technicians physically perform the changeout, while inventory bookkeeping is reconciled afterward.
