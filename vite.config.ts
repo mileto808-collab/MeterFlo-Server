@@ -4,6 +4,11 @@ import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 export default defineConfig({
+  // An isolated development acceptance server must not replace the live
+  // workspace server's optimized dependencies while both are running.
+  ...(process.env.WORKSPACE_UI_SANDBOX_CONFIG ? {
+    cacheDir: path.join(path.dirname(process.env.WORKSPACE_UI_SANDBOX_CONFIG), "vite-cache"),
+  } : {}),
   plugins: [
     react(),
     {

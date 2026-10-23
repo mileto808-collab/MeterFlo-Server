@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
+import { watchPageActivity } from "@/lib/page-stream-lifecycle";
 
 interface ProjectEvent {
   type: "workorder_created" | "workorder_updated" | "workorder_deleted" | "file_added" | "file_deleted";
@@ -69,6 +70,7 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
   }, [options?.onWorkOrderUpdated]);
 
   const connect = useCallback(() => {
+    if (document.visibilityState === "hidden") return;
     if (!projectId) return;
 
     if (reconnectTimeoutRef.current) {
@@ -123,15 +125,7 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
 
   useEffect(() => {
     setStatus("connecting");
-    connect();
-    const resume = () => {
-      if (document.visibilityState === "visible" && projectId)
-        invalidateProjectQueries({ type: "workorder_updated", projectId, timestamp: new Date().toISOString() });
-    };
-    document.addEventListener("visibilitychange", resume);
-
-    return () => {
-      document.removeEventListener("visibilitychange", resume);
+    return watchPageActivity(connect, () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -140,7 +134,8 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-    };
+      setStatus("reconnecting");
+    });
   }, [connect]);
 
   return { status };
@@ -190,6 +185,11 @@ export function useGlobalEvents() {
   }, []);
 
   const connect = useCallback(() => {
+    if (document.visibilityState === "hidden") return;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
@@ -199,10 +199,18 @@ export function useGlobalEvents() {
     });
 
     eventSource.onopen = () => {
+      if (eventSourceRef.current !== eventSource) return;
       console.log("Global SSE connected");
+      // Events may have been missed while this tab released its connections.
+      void queryClient.invalidateQueries({ predicate: query => {
+        const key = query.queryKey[0];
+        return typeof key === "string" &&
+          (key.includes("/work-orders") || key.includes("/dashboard") || key.includes("/stats"));
+      } });
     };
 
     eventSource.onmessage = (event) => {
+      if (eventSourceRef.current !== eventSource) return;
       try {
         const data: ProjectEvent = JSON.parse(event.data);
         invalidateGlobalQueries(data);
@@ -212,7 +220,9 @@ export function useGlobalEvents() {
     };
 
     eventSource.onerror = () => {
+      if (eventSourceRef.current !== eventSource) return;
       eventSource.close();
+      eventSourceRef.current = null;
       
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -226,9 +236,7 @@ export function useGlobalEvents() {
   }, [invalidateGlobalQueries]);
 
   useEffect(() => {
-    connect();
-
-    return () => {
+    return watchPageActivity(connect, () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -237,7 +245,7 @@ export function useGlobalEvents() {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-    };
+    });
   }, [connect]);
 
   return null;

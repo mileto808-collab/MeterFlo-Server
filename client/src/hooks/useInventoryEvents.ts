@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { queryClient } from "@/lib/queryClient";
+import { watchPageActivity } from "@/lib/page-stream-lifecycle";
 import { isInventoryQueryForProject, type InventoryLiveEvent } from "@shared/inventory-events";
 
 type Status = "connecting" | "live" | "reconnecting" | "unavailable";
@@ -13,6 +14,7 @@ function createChannel(projectId: number) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposeTimer: ReturnType<typeof setTimeout> | null = null;
   let generation = 0, retry = 0;
+  let stopActivity: (() => void) | null = null;
   const url = `/api/projects/${projectId}/inventory/events`;
   const update = (next: Snapshot) => { snapshot = next; listeners.forEach(callback => callback()); };
   const invalidate = (event: InventoryLiveEvent) => {
@@ -24,7 +26,7 @@ function createChannel(projectId: number) {
     source?.close();
     if (timer) clearTimeout(timer);
     timer = null;
-    if (!listeners.size) return;
+    if (!listeners.size || document.visibilityState === "hidden") return;
     update({ ...snapshot, status: snapshot.version ? "reconnecting" : "connecting" });
     const stream = new EventSource(url, { withCredentials: true });
     source = stream;
@@ -70,8 +72,14 @@ function createChannel(projectId: number) {
       });
     };
   };
-  const wake = () => {
-    if (document.visibilityState !== "hidden" && snapshot.status !== "live") connect();
+  const wake = () => { if (snapshot.status !== "live") connect(); };
+  const pause = () => {
+    ++generation;
+    source?.close();
+    source = null;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    update({ ...snapshot, status: "reconnecting" });
   };
   return {
     getSnapshot: () => snapshot,
@@ -80,21 +88,18 @@ function createChannel(projectId: number) {
       if (disposeTimer) clearTimeout(disposeTimer);
       disposeTimer = null;
       listeners.add(callback);
-      if (listeners.size === 1 && !source) {
+      if (listeners.size === 1 && !stopActivity) {
         window.addEventListener("online", wake);
-        document.addEventListener("visibilitychange", wake);
-        connect();
+        stopActivity = watchPageActivity(connect, pause);
       }
       return () => {
         listeners.delete(callback);
         if (listeners.size) return;
         disposeTimer = setTimeout(() => {
-          ++generation;
-          source?.close();
-          source = null;
-          if (timer) clearTimeout(timer);
+          stopActivity?.();
+          stopActivity = null;
+          pause();
           window.removeEventListener("online", wake);
-          document.removeEventListener("visibilitychange", wake);
           channels.delete(projectId);
         }, 0);
       };

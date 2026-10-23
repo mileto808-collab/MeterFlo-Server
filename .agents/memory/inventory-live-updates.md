@@ -32,3 +32,9 @@ A locally saved fulfillment draft must not, by itself, make a remotely completed
 **Why:** The user completed a batch on one device but another still offered Continue saved workflow based on browser-local inputs.
 
 **How to apply:** Check a fresh server snapshot on entry and reconcile live terminal-state changes. Clear obsolete, capture-free continuation state; retain unposted captures as review-only evidence. A completed batch is not proof that an uncertain operation succeeded: preserve its exact retry identity until a matching receipt confirms it.
+
+Live streams must release connections in hidden tabs and before navigation, then resynchronize on return.
+
+**Why:** Multiple signed-in Inventory tabs reproduced a document-navigation timeout under HTTP/1 connection limits. Public-page speed checks missed it; waiting until pagehide to close streams can be too late because the next document is already queued.
+
+**How to apply:** Include authenticated, multi-tab development-browser refresh checks when changing loading or live-update behavior. Reconnect through normal authorization, invalidate potentially missed changes without replacing local captures, and recover streams if navigation is cancelled.

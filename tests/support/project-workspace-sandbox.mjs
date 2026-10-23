@@ -17,6 +17,7 @@ const root = await mkdtemp(path.join(os.tmpdir(), "meterflo-workspace-"));
 const out = path.join(cwd, "generated-artifacts/project-workspace");
 await mkdir(out, { recursive: true });
 const runId = randomUUID();
+const development = process.env.WORKSPACE_UI_DEVELOPMENT === "1";
 const freePort = () => new Promise(resolve => {
   const server = net.createServer().listen(0, "127.0.0.1", () => {
     const port = server.address().port;
@@ -28,9 +29,10 @@ const env = {};
 for (const key of ["PATH", "HOME", "LANG", "TMPDIR"]) if (process.env[key]) env[key] = process.env[key];
 Object.assign(env, {
   DATABASE_URL: `postgresql://workspace_ui@127.0.0.1:${databasePort}/postgres`,
-  SESSION_SECRET: randomUUID() + randomUUID(), COOKIE_SECURE: "false", NODE_ENV: "production",
+  SESSION_SECRET: randomUUID() + randomUUID(), COOKIE_SECURE: "false", NODE_ENV: development ? "development" : "production",
   HOST: "127.0.0.1", PORT: String(appPort), DOTENV_CONFIG_PATH: path.join(root, "empty.env"),
   WORKSPACE_UI_SANDBOX_CONFIG: path.join(root, "browser.json"),
+  TSX_TSCONFIG_PATH: path.join(cwd, "tsconfig.json"),
 });
 await writeFile(env.DOTENV_CONFIG_PATH, "", { mode: 0o600 });
 await writeFile(env.WORKSPACE_UI_SANDBOX_CONFIG, JSON.stringify({
@@ -55,7 +57,10 @@ try {
     await db.query("INSERT INTO public.system_types(product_id,product_label) VALUES('workspace-fixture','Workspace meter')");
   } finally { await db.end(); }
   const log = createWriteStream(path.join(out, "server.log"));
-  app = spawn(process.execPath, [path.join(cwd, "dist/index.cjs")], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  const appArgs = development
+    ? ["--import", path.join(cwd, "node_modules/tsx/dist/loader.mjs"), path.join(cwd, "server/index.ts")]
+    : [path.join(cwd, "dist/index.cjs")];
+  app = spawn(process.execPath, appArgs, { cwd: development ? cwd : root, env, stdio: ["ignore", "pipe", "pipe"] });
   app.stdout.pipe(log); app.stderr.pipe(log);
   let ready = false;
   for (let attempt = 0; attempt < 120; attempt++) {

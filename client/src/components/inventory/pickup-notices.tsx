@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { watchPageActivity } from "@/lib/page-stream-lifecycle";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InventoryPickupNotice, InventoryPickupResponse } from "@shared/inventory-pickups";
 import { Badge } from "@/components/ui/badge";
@@ -55,11 +56,22 @@ let eventSource: EventSource | null = null;
 let subscribers = 0;
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let stopPickupActivity: (() => void) | null = null;
+let pickupGeneration = 0;
+function pausePickupEvents() {
+  ++pickupGeneration;
+  eventSource?.close();
+  eventSource = null;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
 function connectPickupEvents(client: ReturnType<typeof useQueryClient>) {
-  if (!subscribers || eventSource) return;
+  if (!subscribers || eventSource || document.visibilityState === "hidden") return;
+  const generation = ++pickupGeneration;
   const stream = new EventSource("/api/inventory/pickups/events", { withCredentials: true });
   eventSource = stream;
   stream.onmessage = event => {
+    if (generation !== pickupGeneration) return;
     try {
       const data = JSON.parse(event.data);
       if (data.type === "access_lost") {
@@ -68,11 +80,15 @@ function connectPickupEvents(client: ReturnType<typeof useQueryClient>) {
       } else if (data.type === "resync") void client.invalidateQueries({ queryKey: pickupQueryKey });
     } catch { /* Ignore malformed event metadata. */ }
   };
-  stream.onopen = () => { void client.invalidateQueries({ queryKey: pickupQueryKey }); };
+  stream.onopen = () => {
+    if (generation === pickupGeneration) void client.invalidateQueries({ queryKey: pickupQueryKey });
+  };
   stream.onerror = () => {
+    if (generation !== pickupGeneration) return;
     stream.close();
     if (eventSource === stream) eventSource = null;
     void fetch("/api/inventory/pickups", { credentials: "include" }).then(response => {
+      if (generation !== pickupGeneration) return;
       if (isAccessError(response.status)) {
         clearPickupCache();
         void client.invalidateQueries({ queryKey: pickupQueryKey });
@@ -84,6 +100,7 @@ function connectPickupEvents(client: ReturnType<typeof useQueryClient>) {
         connectPickupEvents(client);
       }, 4000);
     }).catch(() => {
+      if (generation !== pickupGeneration) return;
       if (subscribers && !reconnectTimer) reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         connectPickupEvents(client);
@@ -98,15 +115,14 @@ function usePickupEvents(enabled = true) {
     subscribers++;
     if (closeTimer) clearTimeout(closeTimer);
     closeTimer = null;
-    connectPickupEvents(client);
+    if (!stopPickupActivity) stopPickupActivity = watchPageActivity(() => connectPickupEvents(client), pausePickupEvents);
     return () => {
       subscribers--;
       if (subscribers <= 0) closeTimer = setTimeout(() => {
         if (subscribers > 0) return;
-        eventSource?.close();
-        eventSource = null;
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = null;
+        stopPickupActivity?.();
+        stopPickupActivity = null;
+        pausePickupEvents();
       }, 0);
     };
   }, [client, enabled]);
