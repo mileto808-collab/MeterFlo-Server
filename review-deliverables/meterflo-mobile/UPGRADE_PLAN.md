@@ -2,6 +2,8 @@
 
 Read with `REVIEW_FINDINGS.md` and `OPEN_QUESTIONS.md`.
 
+**Phase 0 verification correction:** also read `SERVER_PHASE_0_RESPONSE.md`. The current host already returns dispatch in mobile download through its second visibility pass. Completion is intentionally field-first: work-order completion, accepted evidence, installation claims and a durable reconciliation job commit together; inventory accounting follows in a separate worker transaction. Any wording below implying synchronous atomic work-order/ledger finalization is superseded by that distinction.
+
 **Status:** proposed implementation plan, not implemented changes.  
 **Source convention:** M = supplied mobile ZIP; H = current host workspace.  
 **Primary requirement:** the mobile app already works when Inventory is disabled. Preserve that behavior. Extend enabled projects using current server-owned policy, dispatch and relational inventory.
@@ -445,7 +447,7 @@ Each phase should be its own reviewable change. Do not bundle a native SDK upgra
 - **Out of scope:** new native screens, warehouse administration, credential redesign, production data changes.
 - **Files:** H: mobile routes/visibility/projections and contract tests; M: small typed adapter/fixture modules and existing targeted tests.
 - **Dependencies/decisions:** confirm supported host versions; choose first-release full reconciliation versus a new dispatch cursor; agree completion transport/version expectations.
-- **Data/API changes:** additive mobile dispatch/assignment fields; safe inventory catalog DTO; document existing v1 versus proposed additions. No schema migration merely to expose already stored data.
+- **Data/API changes:** document and consume existing download dispatch/assignment fields; normalize remaining response differences, safe inventory catalog DTO and full-snapshot metadata; document existing v1 versus proposed additions. No schema migration merely to expose already stored data.
 - **Risk/migration:** old clients/hosts must keep working; never change numeric legacy reading contract or clear caches by default.
 - **Acceptance:** disabled project runs existing flow without inventory calls; staging is visible but not startable; handoff grants startability; inventory-only changes arrive without a work-order timestamp change; revoked work loses actionability without capture loss; restricted prices absent.
 - **Regression:** existing 67 mobile tests and host dispatch/capability tests plus synthetic server/client integration fixtures.
@@ -525,7 +527,7 @@ Each phase should be its own reviewable change. Do not bundle a native SDK upgra
 - **Dependencies/decisions:** Phases 0–4; agreed atomic/replay completion contract; offline start policy; transactional local storage/native package validation.
 - **Data/API changes:** additive mobile submission/version transport and confirmation capability agreed with server; usage/assignment/allocation revisions; explicit media upload state. Any new server persistence needs a reviewed additive migration and portability plan.
 - **Risk/migration:** uncertain outcomes, duplicated stock use, consumption from old vehicle, strict changed precision/removal policy, media-only partial success, process death and legacy ownership.
-- **Acceptance:** offline capture for downloaded and not-downloaded work; later correct matching/claim; network drop before/after commit; same UUID retries exactly once; atomic completion/use; legitimate quantity-shortage completion records a discrepancy without inventing stock; duplicate/other-owner serials remain blocked; pending media preserved; changed assignment/stock/policy produces actionable retained conflict; capture never disappears during concurrent download/remap.
+- **Acceptance:** offline capture for downloaded and not-downloaded work; later correct matching/claim; network drop before/after commit; stable-identity replay; atomic field completion/evidence/job acceptance with separately transactional inventory reconciliation; legitimate quantity-shortage reconciliation records a discrepancy without inventing stock; duplicate/other-owner serial protection remains; pending media preserved; changed assignment/stock/policy produces actionable retained conflict or a distinct reconciliation-review outcome as appropriate; capture never disappears during concurrent download/remap.
 - **Regression:** all section-4 brief invariants; system/module/both × reading/changeout × enabled/disabled × automatic/manual sync; different-device handoff/correction/vehicle transfer during capture.
 - **Recovery:** retain immutable uncertain request and original evidence; reconcile server status/receipt before replacement. No rollback may restore a pre-post ledger state by overwriting the database.
 

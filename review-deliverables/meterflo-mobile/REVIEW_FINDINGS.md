@@ -62,7 +62,7 @@ The review included the supplied source/configuration, mobile architecture and o
 
 ## 4. High-priority findings
 
-### H1 — Inventory dispatch is missing from the mobile model and mobile download DTO
+### H1 — Inventory dispatch is missing from the mobile model
 
 **Classification:** integration gap, source-confirmed.  
 **Affected path:** inventory-enabled technician work list, offline list, claim/start, completion.
@@ -72,11 +72,11 @@ The review included the supplied source/configuration, mobile architecture and o
 - M: `client/contexts/WorkOrderContext.tsx:175–212` defines legacy project configuration without inventory enablement/capabilities; `:228–281` maps work-order data without a dispatch/startability model; `:753–795` consumes work orders/reference data from mobile download.
 - H: `server/workOrderVisibility.ts:12–33` distinguishes ordinary assignment from inventory dispatch and supplies `inventoryDispatch`, including per-user `canStart`.
 - H: `shared/inventory-dispatch.ts:1–44` differentiates `awaiting_pickup`, `ready_for_field`, and `needs_review`.
-- H: `server/routes.ts:9213–9228` applies inventory visibility to determine IDs for mobile download. Its response at `:9320–9358` maps SQL rows and allocations, but does not attach the visibility helper's `inventoryDispatch` object.
+- Correction after Phase 0 verification: H: `server/routes.ts:9213–9228` first determines authorized IDs, then `:9273–9278` runs `visibleAssignedOrders` again over the result rows. That second pass attaches `inventoryDispatch`, and the response preserves it. `shared/exact-readings.ts:33–47` preserves those object properties. The earlier claim that download drops dispatch was incorrect.
 
 **Impact**
 
-Being included in a download is not sufficient evidence that a technician may start work. Mobile must distinguish visible staged pickups from startable, physically handed-off work. A new native screen alone cannot recover missing authoritative DTO fields.
+Being included in a download is not sufficient evidence that a technician may start work. Mobile must retain the existing authoritative dispatch projection and distinguish visible staged pickups from startable, physically handed-off work.
 
 **Reproduction / limitation**
 
@@ -84,7 +84,7 @@ Static integration comparison. A required integration fixture is a ready-at-stag
 
 **Recommendation**
 
-Publish a documented, permission-aware mobile dispatch projection and map it explicitly. Keep server enforcement. Do not duplicate dispatch rules in React Native or infer startability from stock quantity, batch status, group membership, or QR possession.
+Document the existing permission-aware dispatch projection and map it explicitly in mobile. Verify consistent detail/search/claim serialization. Keep server enforcement. Do not duplicate dispatch rules in React Native or infer startability from stock quantity, batch status, group membership, or QR possession.
 
 ### H2 — Work-order timestamp deltas do not fully represent inventory visibility changes
 

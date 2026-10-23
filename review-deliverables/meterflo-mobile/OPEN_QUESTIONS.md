@@ -2,6 +2,8 @@
 
 These questions distinguish decisions still needed from behavior already established by the user/server. They are not requests for passwords, API keys, signing files or production records.
 
+**Phase 0 update:** `SERVER_PHASE_0_RESPONSE.md` corrects the original download finding and confirms the existing field-first, deferred-inventory completion design. Read that response before treating any earlier suggested API addition as necessary.
+
 ## 1. Already settled — do not ask the mobile agent to reinvent these
 
 - The existing inventory-disabled mobile workflow works and must remain compatible.
@@ -37,7 +39,7 @@ These questions distinguish decisions still needed from behavior already establi
 
 **Why:** existing mobile usage parsing, web completion identity handling and deferred completion services are not identical contracts.  
 **Need:** exact request/response schemas, assignment/allocation revision meanings, replay outcome/receipt behavior, media ordering, and per-item batch failure handling.  
-**Recommendation:** one stable owned submission with atomic host work-order/ledger effects and safe unknown-outcome recovery. Reuse host services; do not invent client stock deduction.
+**Recommendation:** one stable owned submission with atomic host field-completion/evidence/job acceptance, then separately transactional backend inventory reconciliation and safe unknown-outcome recovery. Distinguish accepted work from pending/succeeded/failed inventory accounting. Reuse host services; do not invent client stock deduction or require inventory accounting to finish before acknowledging durable field completion.
 
 ### Q4 — What is the intended effective technician permission set?
 
