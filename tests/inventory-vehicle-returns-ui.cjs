@@ -47,10 +47,71 @@ const { execFileSync } = require("node:child_process");
       await expect(page.getByTestId(`vehicle-return-${kind}`)).toBeVisible();
       await page.getByRole("button", { name: "Back to tasks", exact: true }).click();
     }
+    // Distinct IDs, not vehicle names or equal captures, identify the active draft.
+    // Exercise the shared setup rendering and automatic recovery for every kind.
+    for (const kind of ["equipment", "count", "stock"]) {
+      const first = await save(capture(kind)), second = await save(capture(kind));
+      const task = `inventory-task-${kind === "equipment" ? "return-equipment" : kind === "count" ? "vehicle-count" : "return-stock"}`;
+      const row = draft => page.getByTestId(`vehicle-return-draft-${draft.id}`);
+      const localKey = `meterflo:vehicle-return:${encodeURIComponent(fixture.id)}:${fixture.projectId}:${kind}`;
+      await page.getByTestId(task).click();
+      await row(first).getByRole("button", { name: "Open draft", exact: true }).click();
+      await expect(row(first).getByText("Currently open", { exact: true })).toHaveAttribute("aria-current", "true");
+      await expect(row(first).getByRole("button")).toHaveCount(0);
+      await expect(row(second).getByRole("button", { name: "Open draft", exact: true })).toBeEnabled();
+      await page.reload();
+      await expect(row(first).getByText("Currently open", { exact: true })).toBeVisible();
+      await expect(row(second).getByRole("button", { name: "Open draft", exact: true })).toBeEnabled();
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      const reason = page.locator(kind === "equipment" ? "#equipment-return-reason" : "#return-reason");
+      await expect(reason).toHaveValue(first.capture.reason);
+      // An uncertain save must retain its exact identity and newer local inputs.
+      const saveURL = `**/vehicle-return-workflows/drafts/${first.id}`;
+      await page.route(saveURL, route => route.request().method() === "POST" ? route.abort() : route.continue());
+      const localReason = `Local ${kind} capture must survive current-row interaction`;
+      await reason.fill(localReason);
+      await expect(page.getByText("Draft sync needs attention", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(row(second).getByRole("button", { name: "Open draft", exact: true })).toBeDisabled();
+      const before = await page.evaluate(key => localStorage.getItem(key), localKey);
+      assert.ok(JSON.parse(before).pendingSave, "The failed save retains a pending identity");
+      const serverBefore = (await request("get", `${prefix}/drafts/${first.id}`)).draft;
+      await row(first).getByText("Currently open", { exact: true }).click();
+      assert.equal(await page.evaluate(key => localStorage.getItem(key), localKey), before, "Current indicator does not rewrite recovery");
+      assert.deepEqual((await request("get", `${prefix}/drafts/${first.id}`)).draft, serverBefore, "Current indicator does not revise or prepare a draft");
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await expect(reason).toHaveValue(localReason);
+      await page.unroute(saveURL);
+      await page.getByRole("button", { name: "Retry sync", exact: true }).click();
+      await expect(page.getByText("Draft sync needs attention", { exact: true })).toHaveCount(0);
+      await expect.poll(async () => (await request("get", `${prefix}/drafts/${first.id}`)).draft.capture.reason).toBe(localReason);
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(row(second).getByRole("button", { name: "Open draft", exact: true })).toBeEnabled();
+      page.once("dialog", dialog => dialog.dismiss());
+      await row(second).getByRole("button", { name: "Open draft", exact: true }).click();
+      await expect(row(first).getByText("Currently open", { exact: true })).toBeVisible();
+      page.once("dialog", dialog => dialog.accept());
+      await row(second).getByRole("button", { name: "Open draft", exact: true }).click();
+      await expect(row(second).getByText("Currently open", { exact: true })).toBeVisible();
+      await expect(row(first).getByRole("button", { name: "Open draft", exact: true })).toBeEnabled();
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await expect(reason).toHaveValue(second.capture.reason);
+      await page.getByRole("button", { name: "Back to tasks", exact: true }).click();
+      await page.evaluate(key => localStorage.removeItem(key), localKey);
+      for (const value of [first, second]) {
+        const current = (await request("get", `${prefix}/drafts/${value.id}`)).draft;
+        await request("delete", `${prefix}/drafts/${value.id}`, { revision: current.revision });
+      }
+    }
     const editing = await save(capture("stock"));
     await request("post", `${prefix}/drafts/${editing.id}`, { revision: 0, saveId: randomUUID(), capture: { ...editing.capture, reason: "Different stale writer" } }, 409);
     await page.getByTestId("inventory-task-return-stock").click();
-    await page.getByRole("button", { name: "Open draft", exact: true }).click();
+    await page.getByTestId(`vehicle-return-draft-${editing.id}`).getByRole("button", { name: "Open draft", exact: true }).click();
     await expect(page.getByRole("combobox").first()).toContainText("Return vehicle");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await page.getByRole("button", { name: "Continue", exact: true }).click();

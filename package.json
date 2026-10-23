@@ -27,6 +27,7 @@
     "test:inventory-location-types": "tsx --test tests/inventory-location-types.test.ts",
     "test:inventory-stock-discrepancies": "tsx --test tests/inventory-stock-discrepancies.test.ts tests/inventory-wizard-use.test.ts",
     "test:inventory-stock-discrepancies:browser": "npm run build && node tests/support/project-workspace-sandbox.mjs tests/inventory-stock-discrepancies-ui.cjs",
+    "test:inventory-vehicle-returns:browser": "npm run build && node tests/support/project-workspace-sandbox.mjs tests/inventory-vehicle-returns-ui.cjs",
     "test:inventory-location-types:database": "tsx --test tests/inventory-location-types-database.test.ts",
     "test:inventory-location-types:browser": "node tests/inventory-location-types-ui.cjs",
     "test:inventory-kits": "tsx --test tests/inventory-kits.test.ts",

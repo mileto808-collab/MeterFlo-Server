@@ -602,6 +602,7 @@ export function VehicleReturnWizard({ projectId, kind, permissions, onClose }: {
         updateCapture={updateCapture} toggleItem={toggleItem} verifyScans={verifyScans} setScope={setScope}
         setAddItemId={setAddItemId} addItem={addItem} baselineFor={baselineFor}
         onOpenDraft={value => {
+          if (value.id === draft?.id || pendingSaveRef.current || syncing) return;
           if (meaningfulVehicleReturn(capture) && value.id !== draft?.id &&
             !window.confirm("Open this shared draft and replace the current local capture? Continue only if the current text is saved or no longer needed.")) return;
           setDraft(value); frozenCommandRef.current = value.command; setCapture(value.capture);
