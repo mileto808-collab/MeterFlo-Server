@@ -154,3 +154,17 @@ mtime_ms = 1792729366988
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/723a4d7b-bd6e-44fd-a815-255e7d98927d/072124a9-c9e8-432c-930c-3d877e5b1385"
 storage_version_token = "1792729372973897"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "OjsirQgiKP3_msBusy1o-"
+uri = "file://review-deliverables/meterflo-mobile/WORK_ORDER_INVENTORY_PLANNING_CONTRACT.md"
+type = "text"
+title = "Work-order inventory planning contract"
+description = "Upload this file to the mobile agent. Includes implemented GET/POST contracts, schemas, sanitized examples, permissions, whole-plan replacement, retries, fulfilled-demand protection, and publication verification limits."
+logical_id = "fe478a13-be58-4b6e-8842-0ca3664b12e1"
+content_hash = "sha256:93a46f81f49b921357357469775a81c8d28e398b8b8bf69594cf273b78374d64"
+size = 22783
+mtime_ms = 1792767092159
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/fe478a13-be58-4b6e-8842-0ca3664b12e1/6402236d-79cf-497c-bd5f-7e9af70af4ac"
+storage_version_token = "1792767105203359"
+content_type = "text/markdown"
