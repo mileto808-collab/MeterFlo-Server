@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SerialScanField, serialTokens } from "@/components/inventory/serial-scan-field";
+import { inventoryDateTime } from "@shared/inventory-date-time";
 import type { SavedVehicleReturnDraft, VehicleReturnCapture, VehicleReturnKind, VehicleReturnEvidence } from "@shared/inventory-vehicle-returns";
 import type { ReturnEquipment, VehicleReturnLine, VehicleReturnStep, WorkflowData } from "@/components/inventory/vehicle-return-workflow-types";
 
@@ -107,7 +108,7 @@ export function VehicleReturnWizardSteps(props: Props) {
               {kind === "equipment" ? "Equipment return" : kind === "count" ? "Vehicle count" : "Stock return"}
               {" — "}{data.vehicles.find(vehicle => vehicle.id === value.capture.sourceId)?.name ||
                 (value.capture.sourceId ? "Vehicle unavailable" : "Vehicle not selected")}
-            </strong> · {new Date(value.savedAt).toLocaleString()} · {value.status}</span>
+            </strong> · {inventoryDateTime(value.savedAt, data.timezone)} · {value.status}</span>
             <Button size="sm" variant="outline" onClick={() => onOpenDraft(value)} disabled={!canOpenSharedDraft}>Open draft</Button>
           </div>)}
         </div> : <p className="mt-3 text-sm text-muted-foreground">No saved workflow draft for this task.</p>}

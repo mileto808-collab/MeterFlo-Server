@@ -17,6 +17,26 @@ test("missing, invalid and unconfigured timestamps are explicit without crashing
   assert.match(inventoryDateTime("2026-10-19T03:01:17Z", "bad/timezone"), /UTC \(project timezone unavailable\)$/);
 });
 
+test("project times skip the spring gap and distinguish the repeated autumn hour regardless of host timezone", () => {
+  const previous = process.env.TZ;
+  try {
+    for (const browserZone of ["Asia/Tokyo", "Pacific/Honolulu", "UTC"]) {
+      process.env.TZ = browserZone;
+      for (const [timestamp, expected] of [
+        ["2026-03-08T06:59:59.000Z", "Mar 8, 2026, 1:59:59 AM EST"],
+        ["2026-03-08T07:00:00.000Z", "Mar 8, 2026, 3:00:00 AM EDT"],
+        ["2026-11-01T05:30:00.000Z", "Nov 1, 2026, 1:30:00 AM EDT"],
+        ["2026-11-01T06:30:00.000Z", "Nov 1, 2026, 1:30:00 AM EST"],
+      ]) {
+        assert.equal(inventoryDateTime(timestamp, "America/New_York"), expected);
+      }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+});
+
 test("receipt, order and count print headers format dates without changing stored evidence", () => {
   const state = emptyInventory();
   const timestamp = "2026-10-19T03:01:17.028Z";

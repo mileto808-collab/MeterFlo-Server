@@ -105,7 +105,8 @@ export function registerVehicleReturnRoutes(app: Express, base: string,
         try { await authorizeVehicleReturn(state, draft.capture, c.user, c.admin); drafts.push(draft); } catch {}
       }
       await client.query("COMMIT");
-      return { revision: state.revision, vehicles: accessible.filter(row => row.type === "vehicle"),
+      return { revision: state.revision, timezone: c.project.timezone ?? "UTC",
+        vehicles: accessible.filter(row => row.type === "vehicle"),
         destinations: accessible.filter(row => row.type === "physical"),
         items: state.items.filter(row => row.active && !isLaborItem(row)),
         stock: state.stock.filter(row => row.warehouseId === sourceId).map(row => ({ ...row,

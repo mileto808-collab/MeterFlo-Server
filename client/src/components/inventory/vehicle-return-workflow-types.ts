@@ -13,6 +13,7 @@ export type ReturnEquipment = {
 };
 export type WorkflowData = {
   revision: number;
+  timezone: string;
   vehicles: Warehouse[];
   destinations: Warehouse[];
   items: InventoryItem[];
