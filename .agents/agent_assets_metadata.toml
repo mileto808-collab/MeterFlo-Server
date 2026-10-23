@@ -140,3 +140,17 @@ mtime_ms = 1792727258298
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/2aa6dd88-186e-4d54-9988-851552e1d5df/0f0e4349-fcae-4ebb-8c48-3511159659a9"
 storage_version_token = "1792727309808745"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "jJnbuSfKWvssqSaXq92bX"
+uri = "file://generated-artifacts/mobile-pickups-vehicle-stock-handoff.zip"
+type = "unspecified"
+title = "Mobile Agent — Pickup, Vehicle Stock & QR Source Package"
+description = "Complete API types, technician access rules, QR implementation, query contracts, and 14 supporting source/reference files. Upload this ZIP to the mobile agent."
+logical_id = "723a4d7b-bd6e-44fd-a815-255e7d98927d"
+content_hash = "sha256:e210416f47c5746803ceedc1a0d3f536926961d275253b8d1e86c1e53109dc4f"
+size = 56766
+mtime_ms = 1792729366988
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/723a4d7b-bd6e-44fd-a815-255e7d98927d/072124a9-c9e8-432c-930c-3d877e5b1385"
+storage_version_token = "1792729372973897"
+content_type = "application/octet-stream"

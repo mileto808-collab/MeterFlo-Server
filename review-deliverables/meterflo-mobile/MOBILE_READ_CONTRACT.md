@@ -1,5 +1,9 @@
 # MeterFlo — implemented mobile read contract
 
+**Pickups / Vehicle Stock supplement:** See `PICKUPS_VEHICLE_STOCK_HANDOFF.md`
+for complete response types, endpoint/query contracts, existing QR format and
+rendering, and confirmed technician versus warehouse access rules.
+
 **Update:** The separate completion/retry package is now implemented too. See
 `MOBILE_SUBMISSION_CONTRACT.md`; bootstrap advertises
 `meta.mobileSubmissionContractVersion: 1`. The scope and historical verification
