@@ -73,6 +73,6 @@ export function registerReplacementRoutes(app: Express, auth: any) {
   }));
   app.get(`${route}/receipt`, auth, handle(async (_req: any, res: any, { project, user, id, schema }: any) => {
     const context = await replacementContext(pool, schema, project, user, id);
-    res.type("html").send(replacementReceipt(project.name, context));
+    res.type("html").send(replacementReceipt(project.name, context, project.wizard_mode === "reading_only"));
   }));
 }

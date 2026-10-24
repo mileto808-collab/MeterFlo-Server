@@ -39,8 +39,20 @@ const assert = require("node:assert/strict");
         const reading = mode === "reading_only";
         await expect(page.getByRole("heading", { name: reading ? "Existing System" : "Old System", exact: true }).filter({ visible: true })).toHaveCount(1);
         await expect(page.getByRole("heading", { name: reading ? "Captured System" : "New System", exact: true }).filter({ visible: true })).toHaveCount(1);
+        await expect(page.getByTestId("defective-replacement-panel")).toBeVisible();
         await expect(page.getByText("Defective equipment replacement", { exact: true })).toHaveCount(reading ? 0 : 1);
         await expect(page.getByText("Replacement history", { exact: true })).toHaveCount(reading ? 0 : 1);
+        if (reading) {
+          await expect(page.getByText("Read history", { exact: true })).toHaveCount(2);
+          await expect(page.getByTestId("defective-replacement-panel")).not.toContainText("Removed:");
+          await expect(page.getByTestId("defective-replacement-panel")).not.toContainText("Installed:");
+          await expect(page.getByTestId("defective-replacement-panel")).not.toContainText("Reading-only projects cannot replace equipment.");
+          await expect(page.getByTestId("button-print-replacement-history")).toBeVisible();
+        }
+        const receipt = await context.request.get(`${root}/work-orders/${order.id}/replacement/receipt`);
+        assert.equal(receipt.status(), 200);
+        const html = await receipt.text();
+        assert.ok(html.includes(reading ? "<h1>Read history</h1>" : "<h1>Replacement installation history</h1>"));
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
         fs.mkdirSync("generated-artifacts/reading-only-detail", { recursive: true });
         await page.screenshot({ path: `generated-artifacts/reading-only-detail/${mode}-${width}.jpg` });
@@ -50,6 +62,6 @@ const assert = require("node:assert/strict");
     for (const key of ["oldSystemId", "newSystemId", "oldModuleId", "newModuleId", "oldSystemReading", "newSystemReading"])
       assert.equal(after[key], before[key], `${key} must remain unchanged`);
     assert.deepEqual(errors, []);
-    console.log("PASS: Reading-only terminology and hidden replacement actions; changeout parity, desktop/phone, preserved equipment data.");
+    console.log("PASS: Visible reading-only history panel and matching print terminology; changeout parity, desktop/phone, preserved equipment data.");
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

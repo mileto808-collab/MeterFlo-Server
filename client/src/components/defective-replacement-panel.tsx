@@ -35,12 +35,13 @@ type RecoveryAction = { kind: "restore" | "delete"; row: ReplacementHistoryRow }
 interface DefectiveReplacementPanelProps {
   projectId: number;
   workOrder: any;
+  readingOnly?: boolean;
   onLaunch: (workOrder: any, visit: ReplacementVisit, inventoryEnabled: boolean) => void;
   onOpenWorkOrder?: (workOrderId: number) => void | Promise<boolean | void>;
   onDeletedVisit?: () => void;
 }
 
-export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOpenWorkOrder, onDeletedVisit }: DefectiveReplacementPanelProps) {
+export function DefectiveReplacementPanel({ projectId, workOrder, readingOnly = false, onLaunch, onOpenWorkOrder, onDeletedVisit }: DefectiveReplacementPanelProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -337,6 +338,12 @@ export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOp
     const hasEvidence = accountingEvidence || oldIds.length > 0 || newIds.length > 0;
     const mayDescribeRemoval = completed && hasEvidence;
     const mayDescribeInstallation = completed && hasEvidence;
+    if (readingOnly) {
+      return [
+        oldIds.length ? `Existing: ${oldIds.join(" · ")}` : "Existing equipment not recorded",
+        newIds.length ? `Captured: ${newIds.join(" · ")}` : "Captured equipment not recorded",
+      ].join(" · ");
+    }
     return [
       oldIds.length
         ? `${mayDescribeRemoval ? "Removed" : "Previous installed"}: ${oldIds.join(" · ")}`
@@ -470,7 +477,7 @@ export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOp
   };
 
   if (isLoading) return <div className="rounded-xl border border-teal-900/10 bg-teal-50/30 p-5" data-testid="replacement-loading"><div className="h-4 w-40 animate-pulse rounded bg-muted" /><div className="mt-3 h-3 w-3/4 animate-pulse rounded bg-muted" /></div>;
-  if (isError) return <div className="flex items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4" data-testid="replacement-error"><span className="text-sm">Replacement options could not load.</span><Button size="sm" variant="outline" onClick={() => void refetch()} data-testid="button-retry-replacement-eligibility">Retry</Button></div>;
+  if (isError) return <div className="flex items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4" data-testid="replacement-error"><span className="text-sm">{readingOnly ? "Read history could not load." : "Replacement options could not load."}</span><Button size="sm" variant="outline" onClick={() => void refetch()} data-testid="button-retry-replacement-eligibility">Retry</Button></div>;
   if (!eligibility) return null;
 
   return (
@@ -479,7 +486,7 @@ export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOp
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <span className="rounded-lg bg-teal-900/8 p-2.5 text-teal-900 dark:text-teal-100"><Wrench className="h-5 w-5" /></span>
-            <div><CardTitle className="text-base">Defective equipment replacement</CardTitle><p className="mt-1 text-sm text-muted-foreground">Open a tracked replacement visit for this work order.</p></div>
+            <div><CardTitle className="text-base">{readingOnly ? "Read history" : "Defective equipment replacement"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{readingOnly ? "Review captured readings for this work order." : "Open a tracked replacement visit for this work order."}</p></div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={printReplacementHistory} data-testid="button-print-replacement-history">
@@ -497,7 +504,7 @@ export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOp
           <span className="font-medium">{eligibility.activeVisit.label}</span><span className="ml-2 text-muted-foreground">#{eligibility.activeVisit.workOrderId}</span>
           {!eligibility.activeVisit.canResume && <p className="mt-1 text-xs text-muted-foreground">This visit is active but not available to resume under the current assignment.</p>}
         </div>}
-        {!eligibility.activeVisit && eligibility.canCreate && <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)_minmax(0,0.9fr)]">
+        {!readingOnly && !eligibility.activeVisit && eligibility.canCreate && <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)_minmax(0,0.9fr)]">
           <div className="space-y-2">
             <Label htmlFor={`replacement-equipment-${workOrder.id}`}>Equipment scope</Label>
             <Select value={currentPendingOperation?.payload.equipment ?? equipment} onValueChange={value => setEquipment(value as typeof equipment)} disabled={!!currentPendingOperation}>
@@ -531,9 +538,11 @@ export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOp
             Cancel unused visit
           </Button>
         </div>}
-        {!eligibility.canCreate && !eligibility.activeVisit && <div className="flex items-start gap-2 rounded-lg border border-amber-700/20 bg-amber-50/60 p-3 text-sm dark:bg-amber-950/20" data-testid="replacement-ineligible"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" /><span>{eligibility.reason || "A replacement visit cannot be created for this work order."}</span></div>}
+        {!eligibility.activeVisit && (readingOnly || !eligibility.canCreate) && (readingOnly
+          ? <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground" data-testid="replacement-ineligible">This project records readings only; equipment is not replaced.</p>
+          : <div className="flex items-start gap-2 rounded-lg border border-amber-700/20 bg-amber-50/60 p-3 text-sm dark:bg-amber-950/20" data-testid="replacement-ineligible"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" /><span>{eligibility.reason || "A replacement visit cannot be created for this work order."}</span></div>)}
         {actionError && <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive" data-testid="replacement-action-error"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{actionError}</span></div>}
-        {(currentPendingOperation || (!eligibility.activeVisit && eligibility.canCreate)) && <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        {!readingOnly && (currentPendingOperation || (!eligibility.activeVisit && eligibility.canCreate)) && <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
           <p className="text-xs text-muted-foreground">The original work order remains in history. Replacement evidence is captured in a linked visit.</p>
           <Button type="button" onClick={() => void submit()} disabled={busy || (!currentPendingOperation && reason.trim().length < 10)} data-testid={currentPendingOperation ? "button-retry-replacement" : "button-create-replacement"}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : currentPendingOperation ? <RotateCcw className="mr-2 h-4 w-4" /> : <ArrowRight className="mr-2 h-4 w-4" />}
@@ -541,11 +550,11 @@ export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOp
           </Button>
         </div>}
         <section className="border-t pt-4" data-testid="replacement-history">
-          <h3 className="text-sm font-semibold">Replacement history</h3>
+          <h3 className="text-sm font-semibold">{readingOnly ? "Read history" : "Replacement history"}</h3>
           {eligibility.history.length > 0 ? <ol className="mt-2 divide-y">
             {eligibility.history.map(row => <li key={row.workOrderId} className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-sm" data-testid={`replacement-history-row-${row.workOrderId}`}>
               <div className="min-w-0"><p className="font-medium">{row.label} <span className="font-normal text-muted-foreground">· #{row.workOrderId}</span></p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{row.equipment ? row.equipment === "both" ? "System + module" : row.equipment : "Replacement"}{row.reason ? ` — ${row.reason}` : ""}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{row.equipment ? row.equipment === "both" ? "System + module" : row.equipment : readingOnly ? "Reading capture" : "Replacement"}{row.reason ? ` — ${row.reason}` : ""}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                    {historyEquipmentSummary(row)}
                   {row.completedAt ? ` · ${formatHistoryDate(row.completedAt)}` : ""}
@@ -555,7 +564,7 @@ export function DefectiveReplacementPanel({ projectId, workOrder, onLaunch, onOp
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <span className="rounded-full bg-muted px-2.5 py-1 text-xs capitalize">{row.status.replaceAll("_", " ")}</span>
-                {row.accountingStatus && <span className="text-xs text-muted-foreground">Stock: {row.accountingStatus.replaceAll("_", " ")}</span>}
+                 {!readingOnly && row.accountingStatus && <span className="text-xs text-muted-foreground">Stock: {row.accountingStatus.replaceAll("_", " ")}</span>}
                  {row.recovery?.canRestore && <Button type="button" size="sm" variant="outline" disabled={busy}
                    onClick={() => openRecoveryAction("restore", row)} data-testid={`button-restore-replacement-${row.workOrderId}`}>Restore</Button>}
                  {row.recovery?.canDelete && <Button type="button" size="sm" variant="outline" disabled={busy}

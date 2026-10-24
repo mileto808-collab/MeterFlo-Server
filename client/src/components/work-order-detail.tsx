@@ -215,7 +215,7 @@ export function WorkOrderDetail({
   const isClosed = String(workOrder.statusCode ?? workOrder.status_code ?? matchedStatus?.code ?? rawStatus ?? "").toLowerCase() === "closed";
   const replacementVisitForWorkOrder = workOrder.replacementVisit ?? workOrder.replacement_visit ?? replacementVisitDto(workOrder);
   const isCompleted = String(matchedStatus?.label ?? rawStatus ?? "").toLowerCase() === "completed";
-  const showDefectiveReplacementPanel = !isReadingOnly && canSystemChangeout && (isClosed || isCompleted || !!replacementVisitForWorkOrder);
+  const showDefectiveReplacementPanel = canSystemChangeout && (isClosed || isCompleted || !!replacementVisitForWorkOrder);
   const dispatchBlocked = !!inventoryDispatch && (
     inventoryDispatch.canStart === false ||
     inventoryDispatch.stage === "awaiting_pickup" ||
@@ -687,6 +687,7 @@ export function WorkOrderDetail({
       {showDefectiveReplacementPanel && <DefectiveReplacementPanel
         projectId={typeof projectId === "string" ? parseInt(projectId) : projectId}
         workOrder={workOrder}
+        readingOnly={isReadingOnly}
         onLaunch={launchReplacement}
         onOpenWorkOrder={onOpenWorkOrder}
         onDeletedVisit={onBack}

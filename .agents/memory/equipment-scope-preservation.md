@@ -20,6 +20,7 @@ implies equipment was removed, installed or replaced.
 
 **Why:** The user explicitly requested terminology that reflects reading-only work.
 
-**How to apply:** Keep replacement-only tools out of ordinary reading-only
-details and distinguish existing equipment from captured observations without
-rewriting historical equipment data.
+**How to apply:** Keep the history panel visible in reading-only details; use
+“Read history” rather than “Replacement history.” The user explicitly corrected
+hiding the panel: change terminology, not history visibility. Distinguish
+existing equipment from captured observations without rewriting historical data.
