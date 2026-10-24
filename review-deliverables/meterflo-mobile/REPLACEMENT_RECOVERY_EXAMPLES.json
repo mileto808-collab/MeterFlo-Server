@@ -1,0 +1,56 @@
+{
+  "_notice": "Synthetic illustrative recovery shapes, not captured HTTP responses. Full technician eligibility/create/inventory HTTP captures are in examples/technician-api.json. IDs and labels below are examples only.",
+  "cancelledHistoryRow": {
+    "workOrderId": 202,
+    "label": "RPL-201-202",
+    "status": "Cancelled",
+    "equipment": "system",
+    "reason": "Replacement system failed commissioning.",
+    "oldSystemId": "EXAMPLE-PREVIOUS-SYSTEM",
+    "newSystemId": null,
+    "oldModuleId": null,
+    "newModuleId": null,
+    "completedAt": null,
+    "accountingStatus": null,
+    "operationId": "11111111-1111-4111-8111-111111111111",
+    "cancelledAt": "2026-10-23T12:00:00.000Z",
+    "recovery": {
+      "canRestore": true,
+      "canDelete": true,
+      "restoreReason": null,
+      "deleteReason": null,
+      "restoreAssigneeLabel": "Example Technician",
+      "usesOriginalRequester": false
+    }
+  },
+  "operationStatus200": {
+    "operationId": "11111111-1111-4111-8111-111111111111",
+    "workOrderId": 202,
+    "label": "RPL-201-202",
+    "status": "cancelled"
+  },
+  "restoreRequest": {
+    "reason": "Cancelled accidentally before any physical replacement."
+  },
+  "deleteRequest": {
+    "reason": "Started against the wrong order before performing physical work.",
+    "noPhysicalReplacement": true
+  },
+  "deleteResponse200": {
+    "deleted": true,
+    "workOrderId": 202,
+    "replay": false
+  },
+  "unknownOperation404": {
+    "message": "The operation has not been confirmed. Keep its identity when retrying.",
+    "code": "REPLACEMENT_OPERATION_UNKNOWN"
+  },
+  "deletedVisit410": {
+    "message": "This unused visit was deleted. Start a new request.",
+    "code": "REPLACEMENT_DELETED"
+  },
+  "blockedRecovery409": {
+    "message": "This visit has inventory posting history. Keep that evidence and use inventory corrections instead.",
+    "code": "REPLACEMENT_RECOVERY_BLOCKED"
+  }
+}

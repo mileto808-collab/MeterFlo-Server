@@ -24,18 +24,19 @@ const roots = [
 ];
 const serverFiles = [
   "server/replacementRoutes.ts", "server/replacementService.ts", "server/replacementSchema.ts",
-  "server/replacementBackup.ts", "server/replacementReceipt.ts", "server/inventoryRequirements.ts",
+  "server/replacementBackup.ts", "server/replacementRecovery.ts", "server/replacementReceipt.ts", "server/inventoryRequirements.ts",
   "server/changeoutService.ts", "server/changeoutWorker.ts", "server/inventoryDispatch.ts",
   "server/mobileSubmissions.ts",
-  "server/projectDb.ts", "server/inventoryRoutes.ts",
+  "server/projectDb.ts", "server/inventoryRoutes.ts", "server/inventoryFulfillment.ts",
   "client/src/components/work-order-detail.tsx", "client/src/components/start-system-changeout-dialog.tsx",
+  "tests/defective-replacement.test.ts", "tests/defective-replacement-ui.cjs",
 ];
 const seen = new Set<string>(), external = new Set<string>();
 const manifest: { path: string; sha256: string; bytes: number }[] = [];
 async function copy(file: string, follow = true) {
   file = path.normalize(file);
   if (seen.has(file)) return;
-  if (!/^(shared|client\/src|server)\/[\w/.-]+\.(ts|tsx)$/.test(file)) throw new Error(`Source outside allowlist: ${file}`);
+  if (!/^(shared|client\/src|server|tests)\/[\w/.-]+\.(ts|tsx|cjs)$/.test(file)) throw new Error(`Source outside allowlist: ${file}`);
   const bytes = await fs.readFile(file);
   seen.add(file);
   await emit(`source/${file}`, bytes);
@@ -63,6 +64,7 @@ for (const name of [
   "MOBILE_SUBMISSION_CONTRACT.md", "INVENTORY_PLAN_RECOVERY_CONTRACT.md", "CHANGEOUT_WIZARD_INVENTORY_ADDENDUM.md",
 ]) await emit(`docs/${name}`, await fs.readFile(`review-deliverables/meterflo-mobile/${name}`));
 await emit("examples/technician-api.json", await fs.readFile("generated-artifacts/project-workspace/replacement-mobile-examples.json"));
+await emit("examples/recovery-illustrative.json", await fs.readFile("review-deliverables/meterflo-mobile/REPLACEMENT_RECOVERY_EXAMPLES.json"));
 await emit("SOURCE_MANIFEST.json", JSON.stringify({ sourceOnly: true, publicationVerified: false,
   customerData: false, files: manifest.sort((a, b) => a.path.localeCompare(b.path)),
   externalImports: [...external].sort() }, null, 2));
