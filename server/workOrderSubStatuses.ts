@@ -19,9 +19,16 @@ const createSchema = mutable.extend({ parentStatusId: z.number().int().positive(
 const patchSchema = mutable.partial().strict().refine(value => Object.keys(value).length > 0);
 
 export async function initializeSubStatusTables(client: Pick<PoolClient, "query"> = pool) {
-  // Older standalone schemas enforce unique status codes but lack the numeric
-  // ID constraint declared in Drizzle. Preserve their code FKs and add the ID key.
+  // Older schemas have a unique ID index but no primary-key constraint. A
+  // unique index alone cannot identify rows to portable backup/restore tools.
+  // Preserve all IDs/code FKs; fail explicitly if existing IDs are invalid.
   await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS work_order_statuses_id_reference_idx ON public.work_order_statuses(id);
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conrelid='public.work_order_statuses'::regclass AND contype='p') THEN
+        ALTER TABLE public.work_order_statuses ADD PRIMARY KEY (id);
+      END IF;
+    END $$;
     CREATE TABLE IF NOT EXISTS public.work_order_sub_statuses (
     id uuid PRIMARY KEY, parent_status_id integer NOT NULL REFERENCES public.work_order_statuses(id) ON DELETE RESTRICT,
     project_id integer REFERENCES public.projects(id) ON DELETE CASCADE, code varchar(50) NOT NULL, label varchar(100) NOT NULL,

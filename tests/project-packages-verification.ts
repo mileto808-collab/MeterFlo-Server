@@ -19,8 +19,28 @@ import { createWriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
 import { defaultExchangeRef, exchangeStore } from "../server/file-transfers/https-storage";
 import { deleteProjectCompletely } from "../server/projectDeletion";
+import { initializeSubStatusTables } from "../server/workOrderSubStatuses";
+import { catalog } from "../server/project-packages/catalog";
 
 assert.ok(process.env.WORKSPACE_UI_SANDBOX_CONFIG, "Never run on a real database.");
+// Reproduce the legacy unique-index-only status schema in a rolled-back,
+// owned-database transaction. Never drop constraints on a real installation.
+const statusClient = await pool.connect();
+try {
+  await statusClient.query("BEGIN");
+  const before = (await statusClient.query("SELECT id,code,label FROM public.work_order_statuses ORDER BY id")).rows;
+  const primary = (await statusClient.query(`SELECT conname FROM pg_constraint
+    WHERE conrelid='public.work_order_statuses'::regclass AND contype='p'`)).rows;
+  for (const key of primary) await statusClient.query(`ALTER TABLE public.work_order_statuses DROP CONSTRAINT "${key.conname.replaceAll('"', '""')}" CASCADE`);
+  assert.deepEqual((await catalog(statusClient, ["public"])).find(table => table.name === "work_order_statuses")?.primary, []);
+  await initializeSubStatusTables(statusClient);
+  await initializeSubStatusTables(statusClient);
+  assert.deepEqual((await catalog(statusClient, ["public"])).find(table => table.name === "work_order_statuses")?.primary, ["id"]);
+  assert.deepEqual((await statusClient.query("SELECT id,code,label FROM public.work_order_statuses ORDER BY id")).rows, before);
+} finally {
+  await statusClient.query("ROLLBACK");
+  statusClient.release();
+}
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "meterflo-package-test-"));
 const source = (await pool.query("SELECT * FROM public.projects ORDER BY id LIMIT 1")).rows[0];
 const other = await storage.createProject({ name: "Unrelated PRIVATE Canary " + randomUUID().slice(0, 8) });
