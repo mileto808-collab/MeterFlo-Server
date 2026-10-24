@@ -14,3 +14,12 @@ can outlive a workflow configuration change; hiding them must not clear them.
 **How to apply:** Omit hidden equipment fields from manual write payloads, rather
 than replacing them with blanks/nulls. Do not interpret this display rule as
 authorization for database cleanup, import scrubbing, or resetting hidden limits.
+
+Reading-only projects must use reading-capture terminology, not language that
+implies equipment was removed, installed or replaced.
+
+**Why:** The user explicitly requested terminology that reflects reading-only work.
+
+**How to apply:** Keep replacement-only tools out of ordinary reading-only
+details and distinguish existing equipment from captured observations without
+rewriting historical equipment data.

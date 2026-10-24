@@ -205,6 +205,7 @@ export function WorkOrderDetail({
     (workOrder as any).assignmentVersion ?? (workOrder as any).assignment_version
   );
   const [changeoutWizardSession, setChangeoutWizardSession] = useState(0);
+  const isReadingOnly = wizardConfig?.wizardMode === "reading_only";
   useEffect(() => {
     setClaimedAssignmentVersion((workOrder as any).assignmentVersion ?? (workOrder as any).assignment_version);
   }, [workOrder.id, (workOrder as any).assignmentVersion, (workOrder as any).assignment_version]);
@@ -214,7 +215,7 @@ export function WorkOrderDetail({
   const isClosed = String(workOrder.statusCode ?? workOrder.status_code ?? matchedStatus?.code ?? rawStatus ?? "").toLowerCase() === "closed";
   const replacementVisitForWorkOrder = workOrder.replacementVisit ?? workOrder.replacement_visit ?? replacementVisitDto(workOrder);
   const isCompleted = String(matchedStatus?.label ?? rawStatus ?? "").toLowerCase() === "completed";
-  const showDefectiveReplacementPanel = canSystemChangeout && (isClosed || isCompleted || !!replacementVisitForWorkOrder);
+  const showDefectiveReplacementPanel = !isReadingOnly && canSystemChangeout && (isClosed || isCompleted || !!replacementVisitForWorkOrder);
   const dispatchBlocked = !!inventoryDispatch && (
     inventoryDispatch.canStart === false ||
     inventoryDispatch.stage === "awaiting_pickup" ||
@@ -415,7 +416,7 @@ export function WorkOrderDetail({
   const handleStartSystemChangeout = useCallback(async () => {
     if (dispatchBlocked) {
       toast({
-        title: "Changeout not ready",
+        title: isReadingOnly ? "Reading capture not ready" : "Changeout not ready",
         description: inventoryDispatch?.reason || "This work order is not cleared for field work yet.",
         variant: "destructive",
       });
@@ -448,13 +449,13 @@ export function WorkOrderDetail({
       
       toast({
         title: isAlreadyClaimed ? "Work Order Unavailable" : "Error",
-        description: error.message || "Failed to claim work order",
+        description: error.message || (isReadingOnly ? "Failed to start reading capture" : "Failed to claim work order"),
         variant: "destructive",
       });
     } finally {
       setIsClaiming(false);
     }
-  }, [projectId, workOrder.id, toast, isClosed, dispatchBlocked, inventoryDispatch?.reason]);
+  }, [projectId, workOrder.id, toast, isClosed, dispatchBlocked, inventoryDispatch?.reason, isReadingOnly]);
 
   // Scroll to top when component mounts (triggered by key prop change)
   useEffect(() => {
@@ -1287,7 +1288,7 @@ export function WorkOrderDetail({
                     {/* Old System - Green border - only show if has data */}
                     {equipmentVisibility.showSystem && (workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
+                        <h4 className="text-base font-semibold text-green-500 mb-2">{isReadingOnly ? "Existing System" : "Old System"}</h4>
                         <div className="grid grid-cols-3 gap-2">
                           {workOrder.oldSystemId && (
                             <div>
@@ -1320,7 +1321,7 @@ export function WorkOrderDetail({
                     {/* Old Module - Green border - only show if has data */}
                     {equipmentVisibility.showModule && (workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
+                        <h4 className="text-base font-semibold text-muted-foreground mb-2">{isReadingOnly ? "Existing Module" : "Old Module"}</h4>
                         <div className="grid grid-cols-3 gap-2">
                           {workOrder.oldModuleId && (
                             <div>
@@ -1357,7 +1358,7 @@ export function WorkOrderDetail({
                         <div className="space-y-2">
                           {workOrder.oldGps && (
                             <div>
-                              <p className="text-xs text-muted-foreground">Old GPS</p>
+                              <p className="text-xs text-muted-foreground">{isReadingOnly ? "Existing GPS" : "Old GPS"}</p>
                               <a
                                 href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
                                 target="_blank"
@@ -1372,7 +1373,7 @@ export function WorkOrderDetail({
                           {workOrder.newGps && (
                             <div>
                               <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                                New GPS
+                                {isReadingOnly ? "Captured GPS" : "New GPS"}
                                 {newGpsAccuracy && <span className="whitespace-nowrap" data-testid="mobile-new-gps-accuracy">Accuracy: {newGpsAccuracy}</span>}
                               </p>
                               <a
@@ -1393,7 +1394,7 @@ export function WorkOrderDetail({
                     {/* New System - Cyan border - only show if has data */}
                     {equipmentVisibility.showSystem && (workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">{isReadingOnly ? "Captured System" : "New System"}</h4>
                         <div className="grid grid-cols-3 gap-2">
                           {workOrder.newSystemId && (
                             <div>
@@ -1426,7 +1427,7 @@ export function WorkOrderDetail({
                     {/* New Module - Cyan border - only show if has data */}
                     {equipmentVisibility.showModule && (workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">{isReadingOnly ? "Captured Module" : "New Module"}</h4>
                         <div className="grid grid-cols-3 gap-2">
                           {workOrder.newModuleId && (
                             <div>
@@ -1527,7 +1528,7 @@ export function WorkOrderDetail({
 
                     {/* Old System Section */}
                     {equipmentVisibility.showSystem && <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
-                      <h4 className="text-sm font-medium text-green-500">Old System</h4>
+                      <h4 className="text-sm font-medium text-green-500">{isReadingOnly ? "Existing System" : "Old System"}</h4>
                       <FormField
                         control={form.control}
                         name="oldSystemId"
@@ -1596,7 +1597,7 @@ export function WorkOrderDetail({
 
                     {/* Old Module Section */}
                     {equipmentVisibility.showModule && <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
-                      <h4 className="text-sm font-medium text-muted-foreground">Old Module</h4>
+                      <h4 className="text-sm font-medium text-muted-foreground">{isReadingOnly ? "Existing Module" : "Old Module"}</h4>
                       <FormField
                         control={form.control}
                         name="oldModuleId"
@@ -1665,7 +1666,7 @@ export function WorkOrderDetail({
 
                     {/* New System Section */}
                     {equipmentVisibility.showSystem && <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
-                      <h4 className="text-sm font-medium text-cyan-500">New System</h4>
+                      <h4 className="text-sm font-medium text-cyan-500">{isReadingOnly ? "Captured System" : "New System"}</h4>
                       <FormField
                         control={form.control}
                         name="newSystemId"
@@ -1734,7 +1735,7 @@ export function WorkOrderDetail({
 
                     {/* New Module Section */}
                     {equipmentVisibility.showModule && <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
-                      <h4 className="text-sm font-medium text-cyan-500">New Module</h4>
+                      <h4 className="text-sm font-medium text-cyan-500">{isReadingOnly ? "Captured Module" : "New Module"}</h4>
                       <FormField
                         control={form.control}
                         name="newModuleId"
@@ -1835,7 +1836,7 @@ export function WorkOrderDetail({
                     {/* Old System - Green border - only show if has data */}
                     {equipmentVisibility.showSystem && (workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
+                        <h4 className="text-base font-semibold text-green-500 mb-2">{isReadingOnly ? "Existing System" : "Old System"}</h4>
                         <div className="grid grid-cols-3 gap-4">
                           {workOrder.oldSystemId && (
                             <div>
@@ -1868,7 +1869,7 @@ export function WorkOrderDetail({
                     {/* Old Module - Green border - only show if has data */}
                     {equipmentVisibility.showModule && (workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
+                        <h4 className="text-base font-semibold text-muted-foreground mb-2">{isReadingOnly ? "Existing Module" : "Old Module"}</h4>
                         <div className="grid grid-cols-3 gap-4">
                           {workOrder.oldModuleId && (
                             <div>
@@ -1905,7 +1906,7 @@ export function WorkOrderDetail({
                         <div className="grid grid-cols-2 gap-4">
                           {workOrder.oldGps && (
                             <div>
-                              <p className="text-xs text-muted-foreground">Old GPS</p>
+                              <p className="text-xs text-muted-foreground">{isReadingOnly ? "Existing GPS" : "Old GPS"}</p>
                               <a
                                 href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
                                 target="_blank"
@@ -1920,7 +1921,7 @@ export function WorkOrderDetail({
                           {workOrder.newGps && (
                             <div>
                               <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                                New GPS
+                                {isReadingOnly ? "Captured GPS" : "New GPS"}
                                 {newGpsAccuracy && <span className="whitespace-nowrap" data-testid="desktop-new-gps-accuracy">Accuracy: {newGpsAccuracy}</span>}
                               </p>
                               <a
@@ -1941,7 +1942,7 @@ export function WorkOrderDetail({
                     {/* New System - Cyan border - only show if has data */}
                     {equipmentVisibility.showSystem && (workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">{isReadingOnly ? "Captured System" : "New System"}</h4>
                         <div className="grid grid-cols-3 gap-4">
                           {workOrder.newSystemId && (
                             <div>
@@ -1974,7 +1975,7 @@ export function WorkOrderDetail({
                     {/* New Module - Cyan border - only show if has data */}
                     {equipmentVisibility.showModule && (workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">{isReadingOnly ? "Captured Module" : "New Module"}</h4>
                         <div className="grid grid-cols-3 gap-4">
                           {workOrder.newModuleId && (
                             <div>
@@ -2102,7 +2103,7 @@ export function WorkOrderDetail({
                   
                   {/* Old System Section */}
                   {equipmentVisibility.showSystem && <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">Old System</h4>
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">{isReadingOnly ? "Existing System" : "Old System"}</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
                         control={form.control}
@@ -2192,7 +2193,7 @@ export function WorkOrderDetail({
 
                   {/* Old Module Section */}
                   {equipmentVisibility.showModule && <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">Old Module</h4>
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">{isReadingOnly ? "Existing Module" : "Old Module"}</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
                         control={form.control}
@@ -2273,7 +2274,7 @@ export function WorkOrderDetail({
                         name="oldGps"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Old GPS</FormLabel>
+                            <FormLabel>{isReadingOnly ? "Existing GPS" : "Old GPS"}</FormLabel>
                             <div className="flex items-center gap-2">
                               <FormControl>
                                 <GPSCapture 
@@ -2306,7 +2307,7 @@ export function WorkOrderDetail({
                         name="newGps"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>New GPS</FormLabel>
+                            <FormLabel>{isReadingOnly ? "Captured GPS" : "New GPS"}</FormLabel>
                             <div className="flex items-center gap-2">
                               <FormControl>
                                 <GPSCapture 
@@ -2340,7 +2341,7 @@ export function WorkOrderDetail({
 
                   {/* New System Section */}
                   {equipmentVisibility.showSystem && <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">New System</h4>
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">{isReadingOnly ? "Captured System" : "New System"}</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
                         control={form.control}
@@ -2430,7 +2431,7 @@ export function WorkOrderDetail({
 
                   {/* New Module Section */}
                   {equipmentVisibility.showModule && <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">New Module</h4>
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">{isReadingOnly ? "Captured Module" : "New Module"}</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
                         control={form.control}
@@ -3687,7 +3688,7 @@ export function WorkOrderDetail({
           
           if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.message || "Failed to submit system changeout");
+            throw new Error(error.message || (isReadingOnly ? "Failed to submit reading capture" : "Failed to submit system changeout"));
           }
           
           if (onSystemChangeoutComplete) {
