@@ -4,6 +4,7 @@ export type RestoreState = {
   phase: "uploading" | "processing" | "complete" | "incomplete" | "unconfirmed";
   message: string;
   percent?: number;
+  warnings?: string[];
 };
 const marker = "meterflo:system-restore";
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
@@ -34,8 +35,12 @@ export function createRestoreStore(storage?: Storage) {
       if (state?.phase === "uploading" || state?.phase === "processing")
         publish({ phase: progress.stage, message: progress.message, percent: progress.percent });
     },
-    finish: (phase: "complete" | "incomplete" | "unconfirmed", message: string) => {
-      if (state) publish({ phase, message });
+    finish: (phase: "complete" | "incomplete" | "unconfirmed", message: string, warnings?: string[]) => {
+      if (state) publish({
+        phase,
+        message,
+        ...(warnings?.length ? { warnings: [...warnings] } : {}),
+      });
     },
     clearMarkerForNavigation: () => {
       // Keep the screen mounted until hard navigation actually replaces it.

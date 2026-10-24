@@ -81,6 +81,7 @@ import { ExternalDatabaseService } from "./externalDbService";
 import { restoreFullSystem, restoreFilesFromArchive, SystemRestoreError } from "./systemBackup";
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, restoreWebAppFilesFromArchive, BackupType } from "./pgBackup";
 import { chooseSftpRestoreMode } from "./file-transfers/restore-local-sftp";
+import { recordRestoreWarnings } from "./restoreWarnings";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { retryCustomerDelivery } from "./customerApiService";
 import { registerApiImportRoutes } from "./apiImportRoutes";
@@ -8237,7 +8238,7 @@ export async function registerRoutes(
   });
 
   // Supports both new SQL format (pg_dump) and legacy JSON format for backward compatibility
-  app.post("/api/system/restore", isAuthenticated, largeUpload.single("backup"), async (req: any, res) => {
+  app.post("/api/system/restore", isAuthenticated, largeUpload.single("backup"), recordRestoreWarnings, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -8868,7 +8869,7 @@ export async function registerRoutes(
   });
 
   // Finalize the chunked upload and process the restore
-  app.post("/api/system/restore/finalize", isAuthenticated, async (req: any, res) => {
+  app.post("/api/system/restore/finalize", isAuthenticated, recordRestoreWarnings, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {

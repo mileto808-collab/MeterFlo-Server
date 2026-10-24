@@ -37,7 +37,7 @@ export function SystemRestoreBoundary({ children }: { children: ReactNode }) {
       {restore && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background p-5"
           data-testid="system-restore-screen">
-          <section className="w-full max-w-lg space-y-5 rounded-lg border bg-card p-6 text-card-foreground shadow-sm"
+          <section className="max-h-[calc(100dvh-2.5rem)] w-full max-w-lg space-y-5 overflow-y-auto overscroll-contain rounded-lg border bg-card p-6 text-card-foreground shadow-sm"
             aria-labelledby="restore-screen-title" aria-busy={pending}>
             {pending ? <RefreshCw className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
               : restore.phase === "complete" ? <CheckCircle2 className="h-6 w-6 text-primary" aria-hidden="true" />
@@ -46,6 +46,21 @@ export function SystemRestoreBoundary({ children }: { children: ReactNode }) {
               <h1 id="restore-screen-title" className="text-xl font-semibold">{title}</h1>
               <p className="text-sm text-muted-foreground">{restore.message}</p>
             </div>
+            {!!restore.warnings?.length && (
+              <section aria-labelledby="restore-warnings-title" className="space-y-2">
+                <h2 id="restore-warnings-title" className="text-sm font-semibold">
+                  Restore warnings ({restore.warnings.length})
+                </h2>
+                <ul aria-label={`${restore.warnings.length} restore warnings`}
+                  className="max-h-[min(40dvh,20rem)] space-y-2 overflow-y-auto overscroll-contain rounded-md border bg-muted/40 p-3 text-sm">
+                  {restore.warnings.map((warning, index) => (
+                    <li key={`${index}-${warning}`} className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {pending ? (
               <>
                 {restore.phase === "uploading" && <Progress value={restore.percent ?? 0} aria-label="Backup upload progress" />}

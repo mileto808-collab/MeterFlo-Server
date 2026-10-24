@@ -38,3 +38,31 @@ test("partial failures, lost responses and unavailable browser storage remain ex
   assert.equal(store.getSnapshot()?.phase, "unconfirmed");
   store.clearMarkerForNavigation();
 });
+test("completion warnings are available in memory for complete and incomplete restores", () => {
+  const complete = createRestoreStore();
+  complete.begin();
+  const completeWarnings = ["Skipped optional index", "<b>literal warning</b>"];
+  complete.finish("complete", "Restore complete", completeWarnings);
+  assert.deepEqual(complete.getSnapshot(), {
+    phase: "complete",
+    message: "Restore complete",
+    warnings: completeWarnings,
+  });
+
+  const incomplete = createRestoreStore();
+  incomplete.begin();
+  incomplete.finish("incomplete", "Restore incomplete", ["Some files could not be copied"]);
+  assert.deepEqual(incomplete.getSnapshot(), {
+    phase: "incomplete",
+    message: "Restore incomplete",
+    warnings: ["Some files could not be copied"],
+  });
+});
+test("empty completion warnings preserve the existing state shape and only the marker is persisted", () => {
+  const storage = memoryStorage();
+  const store = createRestoreStore(storage);
+  store.begin();
+  store.finish("complete", "Restore complete", []);
+  assert.deepEqual(store.getSnapshot(), { phase: "complete", message: "Restore complete" });
+  assert.equal(storage.getItem("meterflo:system-restore"), "1");
+});

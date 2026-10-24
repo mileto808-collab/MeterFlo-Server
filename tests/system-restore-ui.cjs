@@ -19,12 +19,17 @@ const server = http.createServer((req, res) => {
   const baseURL = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
   try {
-    for (const mode of ["direct", "chunked", "incomplete", "lost", "server-error", "expired", "access-retry"]) {
+    for (const mode of ["direct", "chunked", "many-warnings", "no-warnings", "incomplete", "lost", "server-error", "expired", "access-retry"]) {
       const context = await browser.newContext({ baseURL });
       const page = await context.newPage();
       let logout = false, restoring = false, calls = 0, release, accessUnavailable = true;
       const waiting = new Promise(resolve => { release = resolve; });
       const errors = [];
+      const warnings = mode === "no-warnings" ? [] : [
+        'NOTICE: schema "fixture" already exists, skipping',
+        'WARNING: <script>window.restoreWarningExecuted=true</script>',
+        ...(mode === "many-warnings" ? Array.from({ length: 40 }, (_, i) => `NOTICE ${i}: ${"long_identifier_".repeat(30)}`) : []),
+      ];
       page.on("pageerror", error => errors.push(error.stack || error.message));
       await context.route("**/api/**", async route => {
         const url = new URL(route.request().url()), p = url.pathname;
@@ -44,7 +49,7 @@ const server = http.createServer((req, res) => {
           if (mode === "lost") return route.abort("failed");
           if (mode === "server-error") return json({ message: "SQL restore failed" }, 500);
           return json({ success: mode !== "incomplete", databaseCommitted: true, format: "pg_dump_sql",
-            schemas: ["public"], filesRestored: 2, errors: mode === "incomplete" ? ["Fixture file failed"] : [] });
+            schemas: ["public"], filesRestored: 2, warnings, errors: mode === "incomplete" ? ["Fixture file failed"] : [] });
         }
         if (["/api/projects", "/api/maintenance/projects", "/api/users/restore-fixture/permissions"].includes(p)) return json([]);
         // Unrelated Settings widgets have different response contracts. Leave
@@ -62,9 +67,11 @@ const server = http.createServer((req, res) => {
         await expect(page.getByRole("heading", { name: "Access status unavailable" })).toBeVisible();
         accessUnavailable = false;
         await page.getByRole("button", { name: "Retry", exact: true }).click();
+        await page.getByRole("tab", { name: "Manual system", exact: true }).click();
         await expect(page.getByTestId("button-full-system-restore")).toBeVisible();
         assert.equal(calls, 0);
       } else {
+        await page.getByRole("tab", { name: "Manual system", exact: true }).click();
         await page.getByTestId("button-full-system-restore").click({ timeout: 12_000 }).catch(async error => {
           console.error("Fixture page:", await page.locator("body").innerText(), "Browser errors:", errors);
           throw error;
@@ -87,16 +94,30 @@ const server = http.createServer((req, res) => {
         const title = mode === "incomplete" ? "Restore incomplete" : ["lost", "server-error"].includes(mode)
           ? "Restore completion not confirmed" : "Restore completed";
         await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+        if (!["lost", "server-error"].includes(mode)) {
+          if (warnings.length) {
+            await expect(page.getByRole("heading", { name: `Restore warnings (${warnings.length})`, exact: true })).toBeVisible();
+            const list = page.getByRole("list", { name: `${warnings.length} restore warnings` });
+            await expect(list.locator("li")).toHaveText(warnings);
+            assert.equal(await page.evaluate(() => window.restoreWarningExecuted), undefined);
+            assert.equal(await page.evaluate(() => sessionStorage.getItem("meterflo:system-restore")), "1");
+          } else {
+            await expect(page.getByRole("heading", { name: /Restore warnings/ })).toHaveCount(0);
+          }
+        }
         if (mode === "lost") {
           await page.reload();
           await expect(page.getByRole("heading", { name: "Restore completion not confirmed" })).toBeVisible();
           assert.equal(calls, 1, "Reload must not replay a restore");
         }
-        if (mode === "direct") {
-          await page.setViewportSize({ width: 390, height: 844 });
-          await expect(page.getByTestId("restore-sign-in")).toBeInViewport();
-          fs.mkdirSync("generated-artifacts/restore-ui", { recursive: true });
-          await page.screenshot({ path: "generated-artifacts/restore-ui/completed-phone.png" });
+        if (mode === "direct" || mode === "many-warnings") {
+          for (const width of [1280, 390]) {
+            await page.setViewportSize({ width, height: 844 });
+            await expect(page.getByTestId("restore-sign-in")).toBeInViewport();
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+            fs.mkdirSync("generated-artifacts/restore-ui", { recursive: true });
+            await page.screenshot({ path: `generated-artifacts/restore-ui/${mode}-${width}.png` });
+          }
         }
         await page.getByTestId("restore-sign-in").click();
         await expect(page).toHaveURL(/\/login$/);

@@ -441,7 +441,8 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
           variant: incomplete ? "destructive" : "default",
         });
         systemRestoreStore.finish(incomplete ? "incomplete" : "complete",
-          `${incomplete ? `${result.message || "Some data or files could not be restored."} ` : ""}${description}${result.warnings?.length ? ` ${result.warnings.length} restore warnings; review the server logs.` : ""}`);
+          `${incomplete ? `${result.message || "Some data or files could not be restored."} ` : ""}${description}${result.warnings?.length ? ` ${result.warnings.length} restore warning(s). Details are shown below and recorded in the server logs.` : ""}`,
+          Array.isArray(result.warnings) ? result.warnings : []);
 
         if (result.errors?.length > 0) {
           console.error("Restore errors:", result.errors);
@@ -496,7 +497,8 @@ export function ManualMaintenance({ embedded = true, active = true, section = "s
           variant: incomplete ? "destructive" : "default",
         });
         systemRestoreStore.finish(incomplete ? "incomplete" : "complete",
-          `${incomplete ? `${result.message || "Some data or files could not be restored."} ` : ""}${description}${result.warnings?.length ? ` ${result.warnings.length} restore warnings; review the server logs.` : ""}`);
+          `${incomplete ? `${result.message || "Some data or files could not be restored."} ` : ""}${description}${result.warnings?.length ? ` ${result.warnings.length} restore warning(s). Details are shown below and recorded in the server logs.` : ""}`,
+          Array.isArray(result.warnings) ? result.warnings : []);
 
         if (result.errors?.length > 0) {
           console.error("Restore errors:", result.errors);
